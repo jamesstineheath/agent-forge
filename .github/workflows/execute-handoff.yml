@@ -27,10 +27,13 @@ jobs:
   execute:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # For workflow_run: only run if spec review succeeded
+    # For workflow_run: only run if spec review succeeded AND not on main/master
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch != 'main' &&
+       github.event.workflow_run.head_branch != 'master')
     steps:
       - name: Determine branch and handoff file
         id: params
@@ -57,12 +60,24 @@ jobs:
           if [ "${{ steps.params.outputs.handoff_file }}" != "auto" ]; then
             echo "file=${{ steps.params.outputs.handoff_file }}" >> $GITHUB_OUTPUT
           else
-            # Search both handoffs/ and handoffs/awaiting_handoff/ for the most recent .md file
-            HANDOFF=$(find handoffs -name '*.md' -not -name 'README*' 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
+            # Strategy: find handoff .md files that were added or modified on this
+            # branch compared to main. This avoids picking up stale handoff files
+            # from previous PRs that were already merged.
+            # git diff --diff-filter=AM only shows Added or Modified files.
+            HANDOFF=$(git diff --name-only --diff-filter=AM origin/main...HEAD -- 'handoffs/**/*.md' 'handoffs/*.md' | grep -v README | head -1)
+
+            # Fallback: if git diff finds nothing (e.g. branch is behind main),
+            # try the filesystem search but prefer awaiting_handoff/ files
             if [ -z "$HANDOFF" ]; then
-              echo "No handoff files found in handoffs/ directory tree"
+              echo "git diff found no new handoff files, trying filesystem fallback..."
+              HANDOFF=$(find handoffs/awaiting_handoff -name '*.md' -not -name 'README*' 2>/dev/null | head -1)
+            fi
+
+            if [ -z "$HANDOFF" ]; then
+              echo "No handoff files found on this branch"
               exit 1
             fi
+            echo "Auto-detected handoff: $HANDOFF"
             echo "file=$HANDOFF" >> $GITHUB_OUTPUT
           fi
 
