@@ -1,0 +1,43 @@
+name: TLM Outcome Tracker
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Daily at 9am UTC
+  workflow_dispatch: {}
+
+# Only one tracker run at a time
+concurrency:
+  group: tlm-outcome-tracker
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: read
+  checks: read
+
+jobs:
+  track-outcomes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run TLM Outcome Tracker
+        uses: ./.github/actions/tlm-outcome-tracker
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          model: "claude-opus-4-6"
+          lookback-days: "14"
+
+      - name: Commit memory updates
+        run: |
+          git config user.name "TLM Outcome Tracker"
+          git config user.email "tlm@github-actions"
+          git add docs/tlm-memory.md
+          git diff --cached --quiet || git commit -m "chore(tlm): update review memory with outcome assessments"
+          git push

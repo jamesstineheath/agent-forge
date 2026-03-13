@@ -1,0 +1,217 @@
+name: Execute Handoff
+
+on:
+  workflow_run:
+    workflows: ["TLM Spec Review"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch containing the handoff file'
+        required: true
+      handoff_file:
+        description: 'Path to handoff file (e.g. handoffs/awaiting_handoff/my-handoff.md)'
+        required: true
+
+# Per-branch concurrency so parallel handoffs don't cancel each other
+concurrency:
+  group: execute-handoff-${{ github.event.workflow_run.head_branch || github.event.inputs.branch || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # For workflow_run: only run if spec review succeeded
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    steps:
+      - name: Determine branch and handoff file
+        id: params
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+            echo "handoff_file=${{ github.event.inputs.handoff_file }}" >> $GITHUB_OUTPUT
+          else
+            BRANCH="${{ github.event.workflow_run.head_branch }}"
+            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+            # Will be resolved after checkout
+            echo "handoff_file=auto" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.params.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Find handoff file
+        id: handoff
+        run: |
+          if [ "${{ steps.params.outputs.handoff_file }}" != "auto" ]; then
+            echo "file=${{ steps.params.outputs.handoff_file }}" >> $GITHUB_OUTPUT
+          else
+            # Search both handoffs/ and handoffs/awaiting_handoff/ for the most recent .md file
+            HANDOFF=$(find handoffs -name '*.md' -not -name 'README*' 2>/dev/null | xargs ls -t 2>/dev/null | head -1)
+            if [ -z "$HANDOFF" ]; then
+              echo "No handoff files found in handoffs/ directory tree"
+              exit 1
+            fi
+            echo "file=$HANDOFF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify handoff file exists
+        run: |
+          if [ ! -f "${{ steps.handoff.outputs.file }}" ]; then
+            echo "Handoff file not found: ${{ steps.handoff.outputs.file }}"
+            exit 1
+          fi
+          echo "Executing handoff: ${{ steps.handoff.outputs.file }}"
+          head -20 "${{ steps.handoff.outputs.file }}"
+
+      - name: Parse budget from handoff metadata
+        id: budget
+        run: |
+          # Look for "Max Budget: $X" or "Max Budget: $X.XX" in the metadata section
+          BUDGET=$(grep -i 'max budget' "${{ steps.handoff.outputs.file }}" | head -1 | grep -oP '\$\K[0-9]+(\.[0-9]+)?' || echo "")
+          if [ -z "$BUDGET" ]; then
+            echo "No budget found in handoff metadata, using default: \$5"
+            BUDGET="5"
+          else
+            echo "Budget from handoff: \$$BUDGET"
+          fi
+          echo "amount=$BUDGET" >> $GITHUB_OUTPUT
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure git
+        run: |
+          git config user.name "claude[bot]"
+          git config user.email "209825114+claude[bot]@users.noreply.github.com"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Write execution prompt
+        run: |
+          cat > /tmp/execute-prompt.txt <<'ENDPROMPT'
+          You are executing a handoff file for the personal-assistant project.
+
+          Read and execute the handoff file at `${{ steps.handoff.outputs.file }}`.
+
+          Follow the handoff file's own step numbering exactly. The handoff file is the
+          single source of truth for what needs to happen. Do not assume any steps exist
+          that are not written in the file.
+
+          Important context:
+          - Step 0 (branch setup) is already complete. The branch is checked out and
+            dependencies are installed via npm ci. Skip Step 0 entirely.
+          - Start from the Pre-flight Self-Check, then execute each numbered
+            implementation step in order.
+          - Do NOT skip verification steps (tsc, build, lint).
+          - If build fails after 3 attempts, follow the Session Abort Protocol in the
+            handoff file.
+          - After implementation and verification pass, commit all changes and push to
+            this branch.
+          - Open a PR against main using `gh pr create`. GITHUB_TOKEN is available in
+            the environment for gh CLI operations.
+          - Git is already configured. Use `gh pr create` for PRs.
+          - If the handoff specifies auto-merge for low-risk items, run:
+            gh pr merge --auto --squash
+          ENDPROMPT
+
+      - name: Execute handoff with Claude Code
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # GH_PAT is a fine-grained PAT that triggers downstream workflows.
+          # The default GITHUB_TOKEN suppresses workflow triggers (GitHub's
+          # infinite-loop prevention). Without GH_PAT, TLM Code Review won't
+          # run on pipeline-generated PRs.
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        timeout-minutes: 25
+        run: |
+          echo "Using budget: \$${{ steps.budget.outputs.amount }}"
+          claude -p "$(cat /tmp/execute-prompt.txt)" \
+            --dangerously-skip-permissions \
+            --model claude-sonnet-4-6 \
+            --max-budget-usd ${{ steps.budget.outputs.amount }} \
+            2>&1 | tee /tmp/claude-output.log
+
+      - name: Parse execution cost
+        id: cost
+        if: always()
+        run: |
+          COST=""
+          TOKENS=""
+
+          if [ -f /tmp/claude-output.log ]; then
+            # Pattern 1: "Total cost: $X.XX"
+            COST=$(grep -i 'total cost' /tmp/claude-output.log | tail -1 | grep -oP '\$[\d.]+' || echo "")
+
+            # Pattern 2: "Cost: $X.XX"
+            if [ -z "$COST" ]; then
+              COST=$(grep -i 'cost:' /tmp/claude-output.log | tail -1 | grep -oP '\$[\d.]+' || echo "")
+            fi
+
+            # Token counts
+            TOKENS=$(grep -i 'token' /tmp/claude-output.log | tail -1 || echo "")
+          fi
+
+          echo "cost=${COST:-unknown}" >> $GITHUB_OUTPUT
+          echo "tokens=${TOKENS:-unknown}" >> $GITHUB_OUTPUT
+
+          # Write a multi-line summary for the PR comment
+          cat > /tmp/cost-summary.md <<EOF
+          ### Execution Cost
+          - **Budget:** \$${{ steps.budget.outputs.amount }}
+          - **Actual cost:** ${COST:-unknown}
+          - **Tokens:** ${TOKENS:-unknown}
+          - **Model:** claude-sonnet-4-6
+          EOF
+
+      - name: Comment cost on PR
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          # Find open PR for this branch
+          PR_NUMBER=$(gh pr list --head "${{ steps.params.outputs.branch }}" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+            gh pr comment "$PR_NUMBER" --body "$(cat /tmp/cost-summary.md)"
+            echo "Cost summary posted to PR #$PR_NUMBER"
+          else
+            echo "No open PR found for branch ${{ steps.params.outputs.branch }}, skipping cost comment"
+          fi
+
+      - name: Report results
+        if: always()
+        run: |
+          echo "=== Post-execution status ==="
+          echo "Branch: ${{ steps.params.outputs.branch }}"
+          echo "Handoff: ${{ steps.handoff.outputs.file }}"
+          echo "Budget: \$${{ steps.budget.outputs.amount }}"
+          echo "Actual cost: ${{ steps.cost.outputs.cost }}"
+          echo "Tokens: ${{ steps.cost.outputs.tokens }}"
+          echo ""
+          echo "Git log (last 3 commits):"
+          git log --oneline -3
+          echo ""
+          echo "Git status:"
+          git status --short
+          echo ""
+          echo "Open PRs from this branch:"
+          gh pr list --head "${{ steps.params.outputs.branch }}" --state open || echo "No PRs found"

@@ -1,0 +1,38 @@
+name: TLM Spec Review
+
+on:
+  push:
+    paths:
+      - 'handoffs/**'
+  workflow_dispatch:
+    inputs:
+      handoff_file:
+        description: 'Full file path to review (e.g. handoffs/awaiting_handoff/my-feature.md). Leave empty to auto-detect from branch diff.'
+        required: false
+
+# Only run one spec review at a time per branch
+concurrency:
+  group: tlm-spec-review-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  spec-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 2
+
+      - name: Run TLM Spec Review
+        uses: ./.github/actions/tlm-spec-review
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          model: "claude-opus-4-6"

@@ -1,0 +1,29 @@
+name: "TLM Code Review"
+description: "Automated PR review using Claude API with auto-merge for qualifying PRs"
+inputs:
+  anthropic-api-key:
+    description: "Anthropic API key"
+    required: true
+  github-token:
+    description: "GitHub token with PR write permissions"
+    required: true
+  model:
+    description: "Claude model for review"
+    required: false
+    default: "claude-opus-4-6"
+  auto-merge:
+    description: "Whether to auto-merge approved PRs after CI passes"
+    required: false
+    default: "true"
+  max-diff-lines:
+    description: "Maximum diff lines before flagging for human review"
+    required: false
+    default: "500"
+outputs:
+  decision:
+    description: "Review decision: approve, request_changes, or flag_for_human"
+  summary:
+    description: "Review summary text"
+runs:
+  using: "node20"
+  main: "dist/index.js"

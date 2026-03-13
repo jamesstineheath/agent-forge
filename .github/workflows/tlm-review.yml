@@ -1,0 +1,37 @@
+name: TLM Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  check_suite:
+    types: [completed]
+
+# Only run one review at a time per PR
+concurrency:
+  group: tlm-review-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Skip if CI workflow (don't review CI-only events unless check_suite)
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'check_suite' && github.event.check_suite.conclusion == 'success')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run TLM Review
+        uses: ./.github/actions/tlm-review
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          model: "claude-opus-4-6"
+          auto-merge: "true"
+          max-diff-lines: "500"
