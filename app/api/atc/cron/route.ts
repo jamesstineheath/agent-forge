@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runATCCycle } from "@/lib/atc";
 
-export async function POST(req: NextRequest) {
+async function handleCron(req: NextRequest) {
   const authHeader = req.headers.get("Authorization");
   const cronSecret = process.env.CRON_SECRET;
 
@@ -27,3 +27,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
+
+// Vercel cron jobs send GET requests
+export const GET = handleCron;
+// Keep POST for manual triggers
+export const POST = handleCron;
