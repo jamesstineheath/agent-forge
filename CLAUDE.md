@@ -41,7 +41,7 @@ Agent Forge communicates with target repos entirely through the GitHub API:
 ## Tech Stack
 
 - **Framework**: Next.js 16 App Router
-- **Auth**: Auth.js v5 (next-auth@beta) with Google OAuth
+- **Auth**: Auth.js v5 (next-auth@beta) with Google OAuth + API key Bearer tokens (`lib/api-auth.ts`)
 - **Storage**: Vercel Blob (production) / local files (development)
 - **UI**: Tailwind CSS v4, shadcn/ui
 - **AI**: Anthropic Claude via AI SDK (`@ai-sdk/anthropic`, `ai`)
@@ -87,6 +87,8 @@ handoffs/           # Handoff file directory
 - `GOOGLE_AUTH_CLIENT_ID` -- Google OAuth
 - `GOOGLE_AUTH_CLIENT_SECRET` -- Google OAuth
 - `CRON_SECRET` -- Vercel cron authentication
+- `WORK_ITEMS_API_KEY` -- Bearer token auth for `/api/work-items` (server-to-server calls from PA)
+- `ESCALATION_SECRET` -- Bearer token auth for `/api/escalations` (pipeline agent calls)
 
 ### GitHub Secrets
 - `ANTHROPIC_API_KEY` -- For TLM agents in GitHub Actions
