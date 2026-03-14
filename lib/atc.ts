@@ -2,14 +2,18 @@ import { randomUUID } from "crypto";
 import { loadJson, saveJson } from "./storage";
 import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
-import { getWorkflowRuns, getPRByBranch, getPRFiles } from "./github";
+import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState } from "./types";
 
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
+const ATC_BRANCH_CLEANUP_KEY = "atc/last-branch-cleanup";
 const STALL_TIMEOUT_MINUTES = 30;
 const MAX_EVENTS = 200;
+const CLEANUP_THROTTLE_MINUTES = 60;
+const STALE_BRANCH_HOURS = 48;
+const MAX_BRANCHES_PER_REPO = 20;
 
 function parseEstimatedFiles(handoffContent: string): string[] {
   const match = handoffContent.match(/\*\*Estimated files:\*\*\s*(.+)/i);
@@ -326,7 +330,97 @@ export async function runATCCycle(): Promise<ATCState> {
     await saveJson(ATC_EVENTS_KEY, updated);
   }
 
+  // 8. Periodic branch cleanup
+  try {
+    const cleanupResult = await cleanupStaleBranches();
+    if (cleanupResult && cleanupResult.deletedCount > 0) {
+      events.push(makeEvent(
+        "cleanup", "system", undefined, undefined,
+        `Branch cleanup: deleted ${cleanupResult.deletedCount}, skipped ${cleanupResult.skipped}, errors ${cleanupResult.errors}`
+      ));
+      // Re-save events since we added cleanup events
+      const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
+      const updated = [...existing, ...events.filter(e => e.type === "cleanup")].slice(-MAX_EVENTS);
+      await saveJson(ATC_EVENTS_KEY, updated);
+    }
+  } catch (err) {
+    console.error("[atc] Branch cleanup failed:", err);
+  }
+
   return state;
+}
+
+export async function cleanupStaleBranches(): Promise<{ deletedCount: number; skipped: number; errors: number }> {
+  const now = new Date();
+
+  // Throttle check
+  const lastRun = await loadJson<{ lastRunAt: string }>(ATC_BRANCH_CLEANUP_KEY);
+  if (lastRun) {
+    const elapsed = (now.getTime() - new Date(lastRun.lastRunAt).getTime()) / 60_000;
+    if (elapsed < CLEANUP_THROTTLE_MINUTES) {
+      return { deletedCount: 0, skipped: 0, errors: 0 };
+    }
+  }
+
+  let deletedCount = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  const repoIndex = await listRepos();
+  for (const repoEntry of repoIndex) {
+    const repo = await getRepo(repoEntry.id);
+    if (!repo) continue;
+
+    let branches: string[];
+    try {
+      branches = await listBranches(repo.fullName);
+    } catch {
+      errors++;
+      continue;
+    }
+
+    if (branches.length > MAX_BRANCHES_PER_REPO) {
+      console.log(`[atc] ${repo.fullName} has ${branches.length} branches, capping at ${MAX_BRANCHES_PER_REPO}. Remaining will be processed next cycle.`);
+      branches = branches.slice(0, MAX_BRANCHES_PER_REPO);
+    }
+
+    for (const branch of branches) {
+      try {
+        const pr = await getPRByBranch(repo.fullName, branch);
+        if (pr && pr.state === "open") {
+          skipped++;
+          continue;
+        }
+
+        const lastCommitDate = await getBranchLastCommitDate(repo.fullName, branch);
+        if (!lastCommitDate) {
+          skipped++;
+          continue;
+        }
+
+        const ageHours = (now.getTime() - new Date(lastCommitDate).getTime()) / 3_600_000;
+        if (ageHours < STALE_BRANCH_HOURS) {
+          skipped++;
+          continue;
+        }
+
+        const deleted = await deleteBranch(repo.fullName, branch);
+        if (deleted) {
+          deletedCount++;
+          console.log(`[atc] Deleted stale branch: ${branch} from ${repo.fullName} (last commit: ${lastCommitDate})`);
+        } else {
+          errors++;
+        }
+      } catch {
+        errors++;
+      }
+    }
+  }
+
+  // Save timestamp
+  await saveJson(ATC_BRANCH_CLEANUP_KEY, { lastRunAt: now.toISOString() });
+
+  return { deletedCount, skipped, errors };
 }
 
 export async function getATCState(): Promise<ATCState> {

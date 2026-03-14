@@ -233,3 +233,40 @@ export async function getPRByBranch(repo: string, branch: string): Promise<PR | 
     mergedAt: pr.merged_at,
   };
 }
+
+export async function listBranches(repo: string): Promise<string[]> {
+  const repoRes = await ghFetch(`${GITHUB_API}/repos/${repo}`);
+  if (!repoRes.ok) return [];
+  const repoData = (await repoRes.json()) as { default_branch: string };
+  const defaultBranch = repoData.default_branch;
+
+  const url = `${GITHUB_API}/repos/${repo}/branches?per_page=100`;
+  const res = await ghFetch(url);
+  if (!res.ok) return [];
+  const branches = (await res.json()) as Array<{ name: string }>;
+  return branches.map((b) => b.name).filter((name) => name !== defaultBranch);
+}
+
+export async function deleteBranch(repo: string, branch: string): Promise<boolean> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${repo}/git/refs/heads/${encodeURIComponent(branch)}`,
+    { method: "DELETE" }
+  );
+  if (res.status === 204) return true;
+  console.error(`[github] deleteBranch failed for ${repo}/${branch}: ${res.status}`);
+  return false;
+}
+
+export async function getBranchLastCommitDate(
+  repo: string,
+  branch: string
+): Promise<string | null> {
+  const url = `${GITHUB_API}/repos/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=1`;
+  const res = await ghFetch(url);
+  if (!res.ok) return null;
+  const commits = (await res.json()) as Array<{
+    commit: { committer: { date: string } };
+  }>;
+  if (commits.length === 0) return null;
+  return commits[0].commit.committer.date;
+}
