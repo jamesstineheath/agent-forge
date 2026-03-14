@@ -179,7 +179,7 @@ export type UpdateRepoInput = z.infer<typeof updateRepoSchema>;
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup";
   workItemId: string;
   details: string;
   previousStatus?: string;
