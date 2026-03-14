@@ -4,8 +4,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { PipelineStatus } from "@/components/pipeline-status";
-import { useWorkItems } from "@/lib/hooks";
-import { useRepos } from "@/lib/hooks";
+import { useWorkItems, useRepos, useATCState } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
 const ACTIVE_STATUSES: WorkItem["status"][] = [
@@ -14,9 +13,21 @@ const ACTIVE_STATUSES: WorkItem["status"][] = [
   "reviewing",
 ];
 
+function formatRelativeTime(ts?: string): string {
+  if (!ts) return "—";
+  const ms = Date.now() - new Date(ts).getTime();
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
 export default function DashboardPage() {
   const { data: workItems, isLoading: itemsLoading } = useWorkItems();
   const { data: repos, isLoading: reposLoading } = useRepos();
+  const { data: atcState, isLoading: atcLoading } = useATCState();
 
   const totalItems = workItems?.length ?? 0;
   const readyItems = workItems?.filter((i) => i.status === "ready").length ?? 0;
@@ -83,6 +94,19 @@ export default function DashboardPage() {
           <CardContent>
             <p className="text-3xl font-bold">
               {reposLoading ? "—" : totalRepos}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              ATC Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm font-medium">
+              {atcLoading ? "—" : `Last run: ${formatRelativeTime(atcState?.lastRunAt)}`}
             </p>
           </CardContent>
         </Card>
