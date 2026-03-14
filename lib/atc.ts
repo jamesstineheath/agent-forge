@@ -4,7 +4,7 @@ import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable } from 
 import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
-import type { ATCEvent, ATCState, Project } from "./types";
+import type { ATCEvent, ATCState, Project, WorkItem } from "./types";
 import { getExecuteProjects, transitionToExecuting } from "./projects";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
 
@@ -271,6 +271,30 @@ export async function runATCCycle(): Promise<ATCState> {
     }
   }
 
+  // 4.1: Dependency block detection
+  for (const repoEntry of repoIndex) {
+    const repo = await getRepo(repoEntry.id);
+    if (!repo) continue;
+    const { getBlockedByDependencies } = await import("./work-items");
+    const blocked = await getBlockedByDependencies(repo.fullName);
+    for (const item of blocked) {
+      const unmetDeps: string[] = [];
+      for (const depId of item.dependencies) {
+        const dep = await getWorkItem(depId);
+        if (dep && dep.status !== "merged") {
+          unmetDeps.push(`${dep.title} (${dep.status})`);
+        }
+      }
+      events.push(makeEvent(
+        "dependency_block",
+        item.id,
+        undefined,
+        undefined,
+        `Waiting on dependencies: ${unmetDeps.join(", ")}`
+      ));
+    }
+  }
+
   // 3.5: Retry failed items (max 2 retries, then park)
   const MAX_RETRIES = 2;
   const failedThisCycle = events
@@ -463,6 +487,54 @@ export async function runATCCycle(): Promise<ATCState> {
     }
   } catch (err) {
     console.error("[atc] Escalation reminder check failed:", err);
+  }
+
+  // Section 13: Project completion detection
+  try {
+    const { listProjects, transitionToComplete, transitionToFailed } = await import("./projects");
+    const executingProjects = await listProjects("Executing");
+
+    for (const project of executingProjects) {
+      // Find all work items for this project
+      const allItems = await listWorkItems({});
+      const projectItems: WorkItem[] = [];
+      for (const entry of allItems) {
+        const item = await getWorkItem(entry.id);
+        if (item && item.source.type === "project" && item.source.sourceId === project.projectId) {
+          projectItems.push(item);
+        }
+      }
+
+      // Skip if no work items yet (decomposition pending)
+      if (projectItems.length === 0) continue;
+
+      const terminalStatuses = ["merged", "parked", "failed"];
+      const allTerminal = projectItems.every((item) => terminalStatuses.includes(item.status));
+      if (!allTerminal) continue;
+
+      const hasFailed = projectItems.some((item) => item.status === "failed");
+      if (hasFailed) {
+        await transitionToFailed(project);
+        events.push(makeEvent(
+          "project_trigger",
+          project.projectId,
+          "Executing",
+          "Failed",
+          `Project "${project.title}" failed: ${projectItems.filter(i => i.status === "failed").length} work items failed`
+        ));
+      } else {
+        await transitionToComplete(project);
+        events.push(makeEvent(
+          "project_trigger",
+          project.projectId,
+          "Executing",
+          "Complete",
+          `Project "${project.title}" complete: ${projectItems.filter(i => i.status === "merged").length} merged, ${projectItems.filter(i => i.status === "parked").length} parked`
+        ));
+      }
+    }
+  } catch (err) {
+    console.error("[atc] Project completion detection failed:", err);
   }
 
   // Save events if Gmail sections produced any

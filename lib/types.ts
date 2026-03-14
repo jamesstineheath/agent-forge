@@ -214,7 +214,7 @@ export interface Project {
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "escalation" | "escalation_timeout" | "escalation_resolved";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block";
   workItemId: string;
   details: string;
   previousStatus?: string;
