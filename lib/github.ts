@@ -202,6 +202,14 @@ export async function getWorkflowRuns(
   }));
 }
 
+export async function getPRFiles(repo: string, prNumber: number): Promise<string[]> {
+  const url = `${GITHUB_API}/repos/${repo}/pulls/${prNumber}/files?per_page=100`;
+  const res = await ghFetch(url);
+  if (!res.ok) return [];
+  const files = (await res.json()) as Array<{ filename: string }>;
+  return files.map(f => f.filename);
+}
+
 export async function getPRByBranch(repo: string, branch: string): Promise<PR | null> {
   const url = `${GITHUB_API}/repos/${repo}/pulls?head=${encodeURIComponent(
     `${repo.split("/")[0]}:${branch}`

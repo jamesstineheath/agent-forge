@@ -39,6 +39,7 @@ export interface WorkItem {
     startedAt?: string;
     completedAt?: string;
     outcome?: "merged" | "failed" | "parked" | "reverted";
+    retryCount?: number;
   } | null;
   createdAt: string;
   updatedAt: string;
@@ -113,6 +114,7 @@ export const updateWorkItemSchema = z.object({
       startedAt: z.string().optional(),
       completedAt: z.string().optional(),
       outcome: z.enum(["merged", "failed", "parked", "reverted"]).optional(),
+      retryCount: z.number().optional(),
     })
     .nullable()
     .optional(),
@@ -177,7 +179,7 @@ export type UpdateRepoInput = z.infer<typeof updateRepoSchema>;
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "error";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error";
   workItemId: string;
   details: string;
   previousStatus?: string;
@@ -193,6 +195,7 @@ export interface ATCState {
     status: string;
     startedAt: string;
     elapsedMinutes: number;
+    filesBeingModified: string[];
   }[];
   queuedItems: number;
   recentEvents: ATCEvent[];
