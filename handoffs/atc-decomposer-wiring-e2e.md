@@ -13,7 +13,7 @@
 
 H14 (Plan Decomposer Core) added `decomposeProject()` in `lib/decomposer.ts`. H15 (Dependency-Aware Dispatch) added dependency enforcement and project completion detection. This handoff wires them together: when the ATC detects a Notion project with Status = "Execute", it calls the decomposer instead of just transitioning the status. It also adds a Gmail notification on decomposition completion and an E2E test.
 
-**This handoff depends on both H14 and H15 being merged first.**
+**Both H14 and H15 are now merged (PRs #17 and #18).** This branch is based on main which includes both.
 
 ### Current behavior (section 4.5 of atc.ts)
 
@@ -22,6 +22,14 @@ The ATC's section 4.5 detects projects with Status = "Execute" and calls `transi
 ### Target behavior
 
 Section 4.5 should: transition to "Executing", then call `decomposeProject(project)`, then send a Gmail notification summarizing the decomposition results. If decomposition fails, transition the project to "Failed" and send an error notification.
+
+### New files available from H14 and H15
+
+- `lib/decomposer.ts`: exports `decomposeProject(project: Project): Promise<WorkItem[]>`
+- `lib/types.ts`: `WorkItem.source.type` now includes `"project"`, `ATCEvent.type` includes `"dependency_block"`
+- `lib/work-items.ts`: `getNextDispatchable` now respects dependencies, new `getBlockedByDependencies` helper
+- `lib/projects.ts`: `transitionToComplete(project)` and `transitionToFailed(project)` now available
+- `lib/notion.ts`: `fetchPageContent(pageId)` available for reading Notion page blocks
 
 ## Requirements
 
@@ -46,7 +54,7 @@ git checkout -b feat/atc-decomposer-wiring-e2e
 
 ### Step 1: Wire decomposer into ATC section 4.5
 
-In `lib/atc.ts`, modify the project sweep section. Replace the simple transition loop:
+In `lib/atc.ts`, modify the project sweep section (section 4.5). Replace the simple transition loop:
 
 ```typescript
 // Current code:
@@ -278,14 +286,14 @@ Wires the Plan Decomposer into the ATC project trigger and adds end-to-end testi
 - `scripts/test-project-e2e.ts`: Full lifecycle E2E test
 
 ## Dependencies
-Requires H14 (Plan Decomposer Core) and H15 (Dependency-Aware Dispatch) to be merged first.
+Builds on H14 (PR #17) and H15 (PR #18), both merged.
 
 ## Testing
 - TypeScript compiles cleanly
 - Build succeeds
 - E2E test validates full project lifecycle
 
-Phase 2e-3 Handoff 16. Depends on H14 and H15."
+Phase 2e-3 Handoff 16."
 ```
 
 ## Session Abort Protocol
