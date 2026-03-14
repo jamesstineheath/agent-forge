@@ -116,6 +116,28 @@ export async function updateWorkItem(
   return updated;
 }
 
+const PRIORITY_ORDER: Record<WorkItem["priority"], number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+};
+
+export async function getNextDispatchable(targetRepo: string): Promise<WorkItem | null> {
+  const entries = await listWorkItems({ status: "ready", targetRepo });
+  if (entries.length === 0) return null;
+
+  const items = await Promise.all(entries.map((e) => getWorkItem(e.id)));
+  const valid = items.filter((i): i is WorkItem => i !== null);
+
+  valid.sort((a, b) => {
+    const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+    if (pd !== 0) return pd;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  return valid[0] ?? null;
+}
+
 export async function deleteWorkItem(id: string): Promise<boolean> {
   const existing = await getWorkItem(id);
   if (!existing) return false;

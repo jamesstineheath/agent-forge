@@ -1,8 +1,9 @@
 import { randomUUID } from "crypto";
 import { loadJson, saveJson } from "./storage";
-import { listWorkItems, getWorkItem, updateWorkItem } from "./work-items";
+import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch } from "./github";
+import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState } from "./types";
 
 const ATC_STATE_KEY = "atc/state";
@@ -197,12 +198,45 @@ export async function runATCCycle(): Promise<ATCState> {
     }
   }
 
-  // 4. Count queued items
+  // 4. Auto-dispatch: for repos with available capacity, dispatch next ready item
+  const GLOBAL_CONCURRENCY_LIMIT = 3;
+  const totalActive = activeExecutions.filter(
+    (e) => e.status === "executing" || e.status === "reviewing"
+  ).length;
+
+  if (totalActive < GLOBAL_CONCURRENCY_LIMIT) {
+    for (const repoEntry of repoIndex) {
+      if (activeExecutions.filter(e => e.status === "executing" || e.status === "reviewing").length >= GLOBAL_CONCURRENCY_LIMIT) break;
+      const repo = await getRepo(repoEntry.id);
+      if (!repo) continue;
+      const activeCount = concurrencyMap.get(repo.fullName) ?? 0;
+      if (activeCount >= repo.concurrencyLimit) continue;
+
+      const nextItem = await getNextDispatchable(repo.fullName);
+      if (!nextItem) continue;
+
+      try {
+        const result = await dispatchWorkItem(nextItem.id);
+        events.push(makeEvent(
+          "auto_dispatch", nextItem.id, "ready", "executing",
+          `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`
+        ));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        events.push(makeEvent(
+          "error", nextItem.id, undefined, undefined,
+          `Auto-dispatch failed: ${msg}`
+        ));
+      }
+    }
+  }
+
+  // 5. Count queued items
   const queuedEntries = await listWorkItems({ status: "queued" });
   const readyEntries = await listWorkItems({ status: "ready" });
   const queuedItems = queuedEntries.length + readyEntries.length;
 
-  // 5. Build and save state
+  // 6. Build and save state
   const state: ATCState = {
     lastRunAt: now.toISOString(),
     activeExecutions,
@@ -211,7 +245,7 @@ export async function runATCCycle(): Promise<ATCState> {
   };
   await saveJson(ATC_STATE_KEY, state);
 
-  // 6. Append events to rolling log (keep last 200)
+  // 7. Append events to rolling log (keep last 200)
   if (events.length > 0) {
     const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
     const updated = [...existing, ...events].slice(-MAX_EVENTS);

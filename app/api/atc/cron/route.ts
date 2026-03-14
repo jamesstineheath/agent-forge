@@ -11,6 +11,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const state = await runATCCycle();
+    const dispatchEvents = state.recentEvents.filter(e => e.type === "auto_dispatch");
     return NextResponse.json({
       success: true,
       state: {
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
         activeExecutions: state.activeExecutions.length,
         queuedItems: state.queuedItems,
         eventsThisCycle: state.recentEvents.length,
+        dispatchedThisCycle: dispatchEvents.length,
       },
     });
   } catch (err) {
