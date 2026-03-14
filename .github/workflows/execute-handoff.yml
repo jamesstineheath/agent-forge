@@ -158,6 +158,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         timeout-minutes: 25
         run: |
+          set -o pipefail
           echo "Using budget: \$${{ steps.budget.outputs.amount }}"
           claude -p "$(cat /tmp/execute-prompt.txt)" \
             --dangerously-skip-permissions \
