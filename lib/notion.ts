@@ -93,6 +93,102 @@ export async function queryProjects(statusFilter?: ProjectStatus): Promise<Proje
   }
 }
 
+// --- Block-to-markdown helpers ---
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function richTextToMarkdown(richText: any[]): string {
+  return richText.map((t: any) => t.plain_text ?? "").join("");
+}
+
+function blockToMarkdown(block: any): string {
+  const type: string = block.type;
+  switch (type) {
+    case "heading_1":
+      return `# ${richTextToMarkdown(block.heading_1.rich_text)}`;
+    case "heading_2":
+      return `## ${richTextToMarkdown(block.heading_2.rich_text)}`;
+    case "heading_3":
+      return `### ${richTextToMarkdown(block.heading_3.rich_text)}`;
+    case "paragraph":
+      return richTextToMarkdown(block.paragraph.rich_text);
+    case "bulleted_list_item":
+      return `- ${richTextToMarkdown(block.bulleted_list_item.rich_text)}`;
+    case "numbered_list_item":
+      return `1. ${richTextToMarkdown(block.numbered_list_item.rich_text)}`;
+    case "code":
+      return `\`\`\`${block.code.language ?? ""}\n${richTextToMarkdown(block.code.rich_text)}\n\`\`\``;
+    case "toggle": {
+      const title = richTextToMarkdown(block.toggle.rich_text);
+      // Children are fetched separately and appended by fetchPageContent
+      return `<details><summary>${title}</summary>`;
+    }
+    case "callout": {
+      const icon = block.callout.icon?.emoji ?? "💡";
+      return `> ${icon} ${richTextToMarkdown(block.callout.rich_text)}`;
+    }
+    case "divider":
+      return "---";
+    case "quote":
+      return `> ${richTextToMarkdown(block.quote.rich_text)}`;
+    default:
+      return "";
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * Fetch all block children of a Notion page, handling pagination.
+ */
+async function fetchAllBlocks(
+  client: Client,
+  blockId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const blocks: any[] = [];
+  let cursor: string | undefined;
+  do {
+    const response = await client.blocks.children.list({
+      block_id: blockId,
+      start_cursor: cursor,
+      page_size: 100,
+    });
+    blocks.push(...response.results);
+    cursor = response.has_more ? (response.next_cursor ?? undefined) : undefined;
+  } while (cursor);
+  return blocks;
+}
+
+/**
+ * Fetch a Notion page's block children and convert them to a markdown string.
+ * Handles headings (h1-h3), paragraphs, bulleted/numbered lists, code blocks,
+ * toggle blocks (recursively fetches children), callouts, quotes, and dividers.
+ */
+export async function fetchPageContent(pageId: string): Promise<string> {
+  const client = getClient();
+  if (!client) throw new Error("Notion client not configured (missing NOTION_API_KEY)");
+
+  const blocks = await fetchAllBlocks(client, pageId);
+  const lines: string[] = [];
+
+  for (const block of blocks) {
+    const md = blockToMarkdown(block);
+    if (md !== undefined) lines.push(md);
+
+    // For toggle blocks, recursively fetch and indent children
+    if (block.type === "toggle" && block.has_children) {
+      const children = await fetchAllBlocks(client, block.id);
+      for (const child of children) {
+        const childMd = blockToMarkdown(child);
+        if (childMd) lines.push(`  ${childMd}`);
+      }
+      lines.push("</details>");
+    }
+  }
+
+  return lines.join("\n\n");
+}
+
 export async function updateProjectStatus(
   pageId: string,
   status: ProjectStatus,
