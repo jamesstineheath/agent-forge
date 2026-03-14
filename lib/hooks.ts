@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent } from "@/lib/types";
 
 const fetcher = (url: string) =>
   fetch(url).then((res) => {
@@ -50,6 +50,24 @@ export function usePipelineStatus() {
     "/api/orchestrator/status",
     fetcher,
     { refreshInterval: 10000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useATCState() {
+  const { data, error, isLoading, mutate } = useSWR<ATCState & { recentEvents: ATCEvent[] }>(
+    "/api/atc",
+    fetcher,
+    { refreshInterval: 10000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useATCEvents(limit = 50) {
+  const { data, error, isLoading, mutate } = useSWR<ATCEvent[]>(
+    `/api/atc/events?limit=${limit}`,
+    fetcher,
+    { refreshInterval: 30000 }
   );
   return { data, error, isLoading, mutate };
 }
