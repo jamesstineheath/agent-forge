@@ -1,29 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
+import { validateAuth } from "@/lib/api-auth";
 import { listEscalations, escalate } from "@/lib/escalation";
 import { getWorkItem, updateWorkItem } from "@/lib/work-items";
-
-/**
- * Validate Bearer token for pipeline agent authentication.
- * Returns null if valid, or an error Response if invalid.
- */
-function validateBearerToken(req: NextRequest): NextResponse | null {
-  const authHeader = req.headers.get("Authorization");
-  const escalationSecret = process.env.ESCALATION_SECRET;
-
-  if (!escalationSecret) {
-    console.error("[api/escalations] ESCALATION_SECRET not configured");
-    return NextResponse.json(
-      { error: "Server misconfiguration: escalation auth not set up" },
-      { status: 500 }
-    );
-  }
-
-  if (!authHeader || authHeader !== `Bearer ${escalationSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  return null;
-}
 
 export async function GET(req: NextRequest) {
   // GET is unauthenticated — dashboard reads this endpoint.
@@ -45,7 +23,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = validateBearerToken(req);
+  const authError = await validateAuth(req, "ESCALATION_SECRET");
   if (authError) return authError;
 
   try {

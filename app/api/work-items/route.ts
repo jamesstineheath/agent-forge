@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { validateAuth } from "@/lib/api-auth";
 import {
   listWorkItems,
   createWorkItem,
@@ -9,10 +9,8 @@ import { createWorkItemSchema } from "@/lib/types";
 import type { WorkItem } from "@/lib/types";
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authError = await validateAuth(req, "WORK_ITEMS_API_KEY");
+  if (authError) return authError;
 
   const { searchParams } = req.nextUrl;
   const filters: WorkItemFilters = {};
@@ -33,10 +31,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authError = await validateAuth(req, "WORK_ITEMS_API_KEY");
+  if (authError) return authError;
 
   let body: unknown;
   try {
