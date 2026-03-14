@@ -74,6 +74,7 @@ async function saveToBlob(key: string, json: string): Promise<void> {
   const { put } = await import("@vercel/blob");
   const pathname = `af-data/${key}.json`;
   await put(pathname, json, {
+    access: "private",
     contentType: "application/json",
     addRandomSuffix: false,
     allowOverwrite: true,
