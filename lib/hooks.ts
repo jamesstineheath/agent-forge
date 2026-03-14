@@ -1,5 +1,6 @@
 import useSWR from "swr";
 import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project } from "@/lib/types";
+import type { Escalation } from "@/lib/escalation";
 
 const fetcher = (url: string) =>
   fetch(url).then((res) => {
@@ -68,6 +69,16 @@ export function useProjects() {
     "/api/projects",
     fetcher,
     { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useEscalations(statusFilter?: "pending" | "resolved" | "expired" | "all") {
+  const queryString = statusFilter ? `?status=${statusFilter}` : "";
+  const { data, error, isLoading, mutate } = useSWR<Escalation[]>(
+    `/api/escalations${queryString}`,
+    fetcher,
+    { refreshInterval: 15000 }
   );
   return { data, error, isLoading, mutate };
 }

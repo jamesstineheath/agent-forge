@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { PipelineStatus } from "@/components/pipeline-status";
-import { useWorkItems, useRepos, useATCState, useProjects } from "@/lib/hooks";
+import { useWorkItems, useRepos, useATCState, useProjects, useEscalations } from "@/lib/hooks";
 import type { WorkItem, Project } from "@/lib/types";
 
 const ACTIVE_STATUSES: WorkItem["status"][] = [
@@ -47,6 +47,7 @@ export default function DashboardPage() {
   const { data: repos, isLoading: reposLoading } = useRepos();
   const { data: atcState, isLoading: atcLoading } = useATCState();
   const { data: projects, isLoading: projectsLoading } = useProjects();
+  const { data: escalations, isLoading: escalationsLoading } = useEscalations("pending");
 
   const totalItems = workItems?.length ?? 0;
   const readyItems = workItems?.filter((i) => i.status === "ready").length ?? 0;
@@ -120,6 +121,19 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
+              Blocked
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-3xl font-bold text-red-600">
+              {itemsLoading ? "\u2014" : (workItems?.filter((wi) => wi.status === "blocked").length ?? 0)}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
               ATC Status
             </CardTitle>
           </CardHeader>
@@ -166,6 +180,57 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Pending Escalations */}
+      {!escalationsLoading && escalations && escalations.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pending Escalations</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {escalations.map((esc) => {
+                const workItem = workItems?.find((wi) => wi.id === esc.workItemId);
+                const timeElapsed = Math.floor(
+                  (Date.now() - new Date(esc.createdAt).getTime()) / 1000 / 60
+                );
+                const timeString =
+                  timeElapsed < 60
+                    ? `${timeElapsed}m ago`
+                    : timeElapsed < 1440
+                      ? `${Math.floor(timeElapsed / 60)}h ago`
+                      : `${Math.floor(timeElapsed / 1440)}d ago`;
+
+                return (
+                  <div
+                    key={esc.id}
+                    className="border rounded-lg p-3 bg-red-50 border-red-200"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm">{workItem?.title ?? esc.workItemId}</p>
+                        <p className="text-xs text-gray-600 mt-1">{esc.reason}</p>
+                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                          <span>Confidence: {Math.round(esc.confidenceScore * 100)}%</span>
+                          <span>{"\u2022"}</span>
+                          <span>{timeString}</span>
+                        </div>
+                      </div>
+                      <a
+                        href={`/api/escalations/${esc.id}/resolve`}
+                        className="text-blue-600 hover:underline text-xs font-medium whitespace-nowrap ml-2"
+                        title="Manual resolution via API (Handoff 12: Gmail integration coming)"
+                      >
+                        Resolve
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <PipelineStatus />
 
