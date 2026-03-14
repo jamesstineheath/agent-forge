@@ -4,7 +4,8 @@ import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable } from 
 import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
-import type { ATCEvent, ATCState } from "./types";
+import type { ATCEvent, ATCState, Project } from "./types";
+import { getExecuteProjects, transitionToExecuting } from "./projects";
 
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
@@ -307,6 +308,24 @@ export async function runATCCycle(): Promise<ATCState> {
         `Parked after ${retryCount} retries. Requires human attention.`
       ));
     }
+  }
+
+  // 4.5: Detect Notion projects with Status = "Execute" and transition to "Executing"
+  const projectsTransitioned: Project[] = [];
+  try {
+    const executeProjects = await getExecuteProjects();
+    for (const project of executeProjects) {
+      const success = await transitionToExecuting(project);
+      if (success) {
+        projectsTransitioned.push(project);
+        events.push(makeEvent(
+          "status_change", project.projectId, "Execute", "Executing",
+          `Project "${project.title}" (${project.projectId}) transitioned to Executing`
+        ));
+      }
+    }
+  } catch (err) {
+    console.error("[atc] Project sweep failed:", err);
   }
 
   // 5. Count queued items

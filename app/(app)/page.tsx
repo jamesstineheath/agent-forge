@@ -4,8 +4,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { PipelineStatus } from "@/components/pipeline-status";
-import { useWorkItems, useRepos, useATCState } from "@/lib/hooks";
-import type { WorkItem } from "@/lib/types";
+import { useWorkItems, useRepos, useATCState, useProjects } from "@/lib/hooks";
+import type { WorkItem, Project } from "@/lib/types";
 
 const ACTIVE_STATUSES: WorkItem["status"][] = [
   "generating",
@@ -24,10 +24,29 @@ function formatRelativeTime(ts?: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  Draft: "bg-gray-100 text-gray-700",
+  Ready: "bg-blue-100 text-blue-700",
+  Execute: "bg-amber-100 text-amber-700",
+  Executing: "bg-yellow-100 text-yellow-700",
+  Complete: "bg-green-100 text-green-700",
+  Failed: "bg-red-100 text-red-700",
+};
+
+function ProjectStatusBadge({ status }: { status: string }) {
+  const color = STATUS_COLORS[status] ?? "bg-gray-100 text-gray-700";
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
+      {status}
+    </span>
+  );
+}
+
 export default function DashboardPage() {
   const { data: workItems, isLoading: itemsLoading } = useWorkItems();
   const { data: repos, isLoading: reposLoading } = useRepos();
   const { data: atcState, isLoading: atcLoading } = useATCState();
+  const { data: projects, isLoading: projectsLoading } = useProjects();
 
   const totalItems = workItems?.length ?? 0;
   const readyItems = workItems?.filter((i) => i.status === "ready").length ?? 0;
@@ -111,6 +130,42 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Projects from Notion */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Projects</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {projectsLoading ? (
+            <p className="text-muted-foreground text-sm">Loading projects...</p>
+          ) : !projects || projects.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No projects found. Projects are managed in Notion.</p>
+          ) : (
+            <div className="space-y-2">
+              {projects.map((project: Project) => (
+                <div
+                  key={project.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{project.title}</span>
+                      <span className="text-xs text-muted-foreground">{project.projectId}</span>
+                    </div>
+                    <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                      {project.targetRepo && <span>{project.targetRepo}</span>}
+                      {project.priority && <span>{project.priority}</span>}
+                      {project.complexity && <span>{project.complexity}</span>}
+                    </div>
+                  </div>
+                  <ProjectStatusBadge status={project.status} />
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <PipelineStatus />
 

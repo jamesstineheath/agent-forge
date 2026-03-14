@@ -174,6 +174,27 @@ export const updateRepoSchema = z.object({
 export type CreateRepoInput = z.infer<typeof createRepoSchema>;
 export type UpdateRepoInput = z.infer<typeof updateRepoSchema>;
 
+// --- Project (Notion) ---
+
+export type ProjectStatus = "Draft" | "Ready" | "Execute" | "Executing" | "Complete" | "Failed";
+export type ProjectPriority = "P0" | "P1" | "P2";
+export type ProjectComplexity = "Simple" | "Moderate" | "Complex";
+export type ProjectRiskLevel = "Low" | "Medium" | "High";
+export type ProjectTargetRepo = "personal-assistant" | "rez-sniper" | "agent-forge";
+
+export interface Project {
+  id: string;
+  projectId: string; // e.g. "PRJ-1"
+  title: string;
+  planUrl: string | null;
+  targetRepo: ProjectTargetRepo | null;
+  status: ProjectStatus;
+  priority: ProjectPriority | null;
+  complexity: ProjectComplexity | null;
+  riskLevel: ProjectRiskLevel | null;
+  createdAt: string;
+}
+
 // --- ATC ---
 
 export interface ATCEvent {
