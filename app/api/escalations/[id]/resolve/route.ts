@@ -6,6 +6,21 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Validate Bearer token
+  const authHeader = req.headers.get("Authorization");
+  const escalationSecret = process.env.ESCALATION_SECRET;
+
+  if (!escalationSecret) {
+    return NextResponse.json(
+      { error: "Server misconfiguration: escalation auth not set up" },
+      { status: 500 }
+    );
+  }
+
+  if (!authHeader || authHeader !== `Bearer ${escalationSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const { id: escalationId } = await params;
     const body = await req.json();
