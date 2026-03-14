@@ -6,6 +6,7 @@ import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch,
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, Project } from "./types";
 import { getExecuteProjects, transitionToExecuting } from "./projects";
+import { getPendingEscalations, expireEscalation } from "./escalation";
 
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
@@ -364,6 +365,40 @@ export async function runATCCycle(): Promise<ATCState> {
     }
   } catch (err) {
     console.error("[atc] Branch cleanup failed:", err);
+  }
+
+  // 10. Escalation timeout monitoring: flag escalations older than 24h
+  try {
+    const pending = await getPendingEscalations();
+    const ESCALATION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+    for (const esc of pending) {
+      const createdTime = new Date(esc.createdAt).getTime();
+      const age = now.getTime() - createdTime;
+
+      if (age > ESCALATION_TIMEOUT_MS) {
+        // Mark as expired but don't auto-resolve
+        await expireEscalation(esc.id);
+        const event = makeEvent(
+          "escalation_timeout",
+          esc.workItemId,
+          "pending",
+          "expired",
+          `Escalation ${esc.id} timed out after 24h without resolution. Reason: ${esc.reason}`
+        );
+        events.push(event);
+        console.log(`[atc] Escalation timeout: ${esc.id} for work item ${esc.workItemId}`);
+      }
+    }
+  } catch (err) {
+    console.error("[atc] Escalation monitoring failed:", err);
+  }
+
+  // Save events if escalation timeouts were detected
+  if (events.some(e => e.type === "escalation_timeout")) {
+    const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
+    const updated = [...existing, ...events.filter(e => e.type === "escalation_timeout")].slice(-MAX_EVENTS);
+    await saveJson(ATC_EVENTS_KEY, updated);
   }
 
   return state;

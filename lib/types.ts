@@ -24,7 +24,8 @@ export interface WorkItem {
     | "reviewing"
     | "merged"
     | "failed"
-    | "parked";
+    | "parked"
+    | "blocked";
   dependencies: string[];
   handoff: {
     content: string;
@@ -41,6 +42,11 @@ export interface WorkItem {
     outcome?: "merged" | "failed" | "parked" | "reverted";
     retryCount?: number;
   } | null;
+  escalation?: {
+    id: string;
+    reason: string;
+    blockedAt: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +100,7 @@ export const updateWorkItemSchema = z.object({
       "merged",
       "failed",
       "parked",
+      "blocked",
     ])
     .optional(),
   dependencies: z.array(z.string()).optional(),
@@ -117,6 +124,13 @@ export const updateWorkItemSchema = z.object({
       retryCount: z.number().optional(),
     })
     .nullable()
+    .optional(),
+  escalation: z
+    .object({
+      id: z.string(),
+      reason: z.string(),
+      blockedAt: z.string(),
+    })
     .optional(),
 });
 
@@ -200,7 +214,7 @@ export interface Project {
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "escalation" | "escalation_timeout" | "escalation_resolved";
   workItemId: string;
   details: string;
   previousStatus?: string;
