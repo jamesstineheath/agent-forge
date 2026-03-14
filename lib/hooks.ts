@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project } from "@/lib/types";
 
 const fetcher = (url: string) =>
   fetch(url).then((res) => {
@@ -59,6 +59,15 @@ export function useATCState() {
     "/api/atc",
     fetcher,
     { refreshInterval: 10000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useProjects() {
+  const { data, error, isLoading, mutate } = useSWR<Project[]>(
+    "/api/projects",
+    fetcher,
+    { refreshInterval: 30000 }
   );
   return { data, error, isLoading, mutate };
 }
