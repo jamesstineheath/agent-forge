@@ -1,4 +1,5 @@
 import { loadJson, saveJson, deleteJson } from "./storage";
+import { getWorkItem, updateWorkItem } from "./work-items";
 
 export interface Escalation {
   id: string;
@@ -11,6 +12,7 @@ export interface Escalation {
   resolvedAt?: string;
   resolution?: string; // Human-provided resolution or outcome
   threadId?: string; // For Gmail integration (Handoff 12)
+  reminderSentAt?: string; // When reminder email was sent
 }
 
 const ESCALATIONS_INDEX_KEY = "escalations/index";
@@ -51,9 +53,49 @@ export async function escalate(
     await saveJson(ESCALATIONS_INDEX_KEY, index);
   }
 
+  // Update work item status to "blocked"
+  const workItem = await getWorkItem(workItemId);
+  if (workItem) {
+    await updateWorkItem(workItemId, {
+      status: "blocked",
+      escalation: {
+        id,
+        reason,
+        blockedAt: now,
+      },
+    });
+
+    // Attempt to send escalation email via Gmail
+    const { sendEscalationEmail } = await import("./gmail");
+    const threadId = await sendEscalationEmail(escalation, workItem);
+    if (threadId) {
+      await updateEscalation(id, { threadId });
+    }
+  }
+
   console.log(`[escalation] Created escalation ${id} for work item ${workItemId}: ${reason}`);
 
   return escalation;
+}
+
+/**
+ * Update an escalation record with partial data
+ */
+export async function updateEscalation(
+  id: string,
+  patch: Partial<Escalation>
+): Promise<Escalation | null> {
+  try {
+    const escalation = await getEscalation(id);
+    if (!escalation) return null;
+
+    const updated = { ...escalation, ...patch };
+    await saveJson(getEscalationKey(id), updated);
+    return updated;
+  } catch (error) {
+    console.error(`[escalation] Failed to update escalation ${id}:`, error);
+    return null;
+  }
 }
 
 /**

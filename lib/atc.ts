@@ -6,7 +6,7 @@ import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch,
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, Project } from "./types";
 import { getExecuteProjects, transitionToExecuting } from "./projects";
-import { getPendingEscalations, expireEscalation } from "./escalation";
+import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
 
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
@@ -398,6 +398,80 @@ export async function runATCCycle(): Promise<ATCState> {
   if (events.some(e => e.type === "escalation_timeout")) {
     const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
     const updated = [...existing, ...events.filter(e => e.type === "escalation_timeout")].slice(-MAX_EVENTS);
+    await saveJson(ATC_EVENTS_KEY, updated);
+  }
+
+  // Section 11: Poll Gmail for escalation replies
+  try {
+    console.log('[atc] Section 11: Polling Gmail for escalation replies...');
+    const pendingForGmail = await getPendingEscalations();
+    const { checkForReply, parseReplyContent } = await import('./gmail');
+
+    for (const esc of pendingForGmail) {
+      if (!esc.threadId) {
+        // No thread ID means email was not sent (graceful degradation)
+        continue;
+      }
+
+      const replyMessage = await checkForReply(esc.threadId);
+      if (replyMessage) {
+        // Reply found! Parse content and resolve
+        const replyContent = await parseReplyContent(replyMessage.id);
+        console.log(`[atc] Found reply to escalation ${esc.id}:`, replyContent);
+
+        const resolved = await resolveEscalation(esc.id, replyContent);
+        if (resolved) {
+          events.push(makeEvent(
+            "escalation_resolved",
+            esc.workItemId,
+            "pending",
+            "resolved",
+            `Escalation ${esc.id} auto-resolved via Gmail reply: ${replyContent.slice(0, 100)}`
+          ));
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[atc] Gmail reply polling failed:", err);
+  }
+
+  // Section 12: Send reminder emails for old escalations
+  try {
+    console.log('[atc] Section 12: Checking for escalation reminders...');
+    const escalationsForReminder = await getPendingEscalations();
+    const REMINDER_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours
+
+    for (const esc of escalationsForReminder) {
+      const ageMs = Date.now() - new Date(esc.createdAt).getTime();
+      if (ageMs > REMINDER_THRESHOLD && !esc.reminderSentAt) {
+        const workItem = await getWorkItem(esc.workItemId);
+        if (workItem) {
+          const { sendEscalationEmail } = await import('./gmail');
+          const threadId = await sendEscalationEmail(esc, workItem, true);
+          if (threadId) {
+            await updateEscalation(esc.id, { reminderSentAt: new Date().toISOString() });
+            events.push(makeEvent(
+              "escalation_resolved", // reuse type for reminder events
+              esc.workItemId,
+              undefined,
+              undefined,
+              `Reminder email sent for escalation ${esc.id} (thread: ${threadId})`
+            ));
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[atc] Escalation reminder check failed:", err);
+  }
+
+  // Save events if Gmail sections produced any
+  const gmailEventTypes = events.filter(e =>
+    e.details.includes("auto-resolved via Gmail") || e.details.includes("Reminder email sent")
+  );
+  if (gmailEventTypes.length > 0) {
+    const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
+    const updated = [...existing, ...gmailEventTypes].slice(-MAX_EVENTS);
     await saveJson(ATC_EVENTS_KEY, updated);
   }
 
