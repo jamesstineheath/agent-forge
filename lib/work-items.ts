@@ -129,13 +129,47 @@ export async function getNextDispatchable(targetRepo: string): Promise<WorkItem 
   const items = await Promise.all(entries.map((e) => getWorkItem(e.id)));
   const valid = items.filter((i): i is WorkItem => i !== null);
 
-  valid.sort((a, b) => {
+  // Filter out items with unmet dependencies
+  const dispatchable: WorkItem[] = [];
+  for (const item of valid) {
+    if (item.dependencies.length === 0) {
+      dispatchable.push(item);
+      continue;
+    }
+    // Check all dependencies are merged
+    const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
+    const allMerged = depItems.every((dep) => dep !== null && dep.status === "merged");
+    if (allMerged) {
+      dispatchable.push(item);
+    }
+  }
+
+  if (dispatchable.length === 0) return null;
+
+  dispatchable.sort((a, b) => {
     const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
     if (pd !== 0) return pd;
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 
-  return valid[0] ?? null;
+  return dispatchable[0] ?? null;
+}
+
+export async function getBlockedByDependencies(targetRepo: string): Promise<WorkItem[]> {
+  const entries = await listWorkItems({ status: "ready", targetRepo });
+  const items = await Promise.all(entries.map((e) => getWorkItem(e.id)));
+  const valid = items.filter((i): i is WorkItem => i !== null);
+
+  const blocked: WorkItem[] = [];
+  for (const item of valid) {
+    if (item.dependencies.length === 0) continue;
+    const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
+    const allMerged = depItems.every((dep) => dep !== null && dep.status === "merged");
+    if (!allMerged) {
+      blocked.push(item);
+    }
+  }
+  return blocked;
 }
 
 export async function deleteWorkItem(id: string): Promise<boolean> {

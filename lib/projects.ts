@@ -14,3 +14,15 @@ export async function transitionToExecuting(
 ): Promise<boolean> {
   return updateProjectStatus(project.id, "Executing");
 }
+
+export async function transitionToComplete(
+  project: Project,
+): Promise<boolean> {
+  return updateProjectStatus(project.id, "Complete");
+}
+
+export async function transitionToFailed(
+  project: Project,
+): Promise<boolean> {
+  return updateProjectStatus(project.id, "Failed");
+}
