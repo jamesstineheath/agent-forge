@@ -12,8 +12,12 @@ export async function GET() {
   try {
     const repos = await listRepos();
     return NextResponse.json(repos);
-  } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  } catch (err) {
+    console.error("[GET /api/repos] Error:", err);
+    return NextResponse.json(
+      { error: "Internal server error", message: String(err) },
+      { status: 500 }
+    );
   }
 }
 
@@ -41,7 +45,11 @@ export async function POST(req: NextRequest) {
   try {
     const repo = await createRepo(parsed.data);
     return NextResponse.json(repo, { status: 201 });
-  } catch {
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  } catch (err) {
+    console.error("[POST /api/repos] Error:", err);
+    return NextResponse.json(
+      { error: "Internal server error", message: String(err) },
+      { status: 500 }
+    );
   }
 }
