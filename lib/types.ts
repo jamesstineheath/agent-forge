@@ -8,7 +8,7 @@ export interface WorkItem {
   description: string;
   targetRepo: string;
   source: {
-    type: "pa-improvement" | "github-issue" | "manual";
+    type: "pa-improvement" | "github-issue" | "manual" | "project";
     sourceId?: string;
     sourceUrl?: string;
   };
@@ -65,7 +65,7 @@ export const createWorkItemSchema = z.object({
   description: z.string().min(1),
   targetRepo: z.string().min(1),
   source: z.object({
-    type: z.enum(["pa-improvement", "github-issue", "manual"]),
+    type: z.enum(["pa-improvement", "github-issue", "manual", "project"]),
     sourceId: z.string().optional(),
     sourceUrl: z.string().url().optional(),
   }),
@@ -81,7 +81,7 @@ export const updateWorkItemSchema = z.object({
   targetRepo: z.string().min(1).optional(),
   source: z
     .object({
-      type: z.enum(["pa-improvement", "github-issue", "manual"]),
+      type: z.enum(["pa-improvement", "github-issue", "manual", "project"]),
       sourceId: z.string().optional(),
       sourceUrl: z.string().url().optional(),
     })
