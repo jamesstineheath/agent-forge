@@ -19,7 +19,7 @@ function getClient(): Client | null {
   return _client;
 }
 
-function getDataSourceId(): string | null {
+function getDatabaseId(): string | null {
   return process.env.NOTION_PROJECTS_DB_ID ?? null;
 }
 
@@ -70,16 +70,16 @@ function pageToProject(page: PageObjectResponse): Project {
 
 export async function queryProjects(statusFilter?: ProjectStatus): Promise<Project[]> {
   const client = getClient();
-  const dsId = getDataSourceId();
-  if (!client || !dsId) return [];
+  const dbId = getDatabaseId();
+  if (!client || !dbId) return [];
 
   try {
     const filter = statusFilter
       ? { property: "Status", select: { equals: statusFilter } }
       : undefined;
 
-    const response = await client.dataSources.query({
-      data_source_id: dsId,
+    const response = await client.databases.query({
+      database_id: dbId,
       filter,
       sorts: [{ property: "Created", direction: "descending" as const }],
     });
