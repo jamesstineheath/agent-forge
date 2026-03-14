@@ -4,8 +4,9 @@ import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable } from 
 import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
-import type { ATCEvent, ATCState, Project, WorkItem } from "./types";
-import { getExecuteProjects, transitionToExecuting } from "./projects";
+import type { ATCEvent, ATCState, WorkItem } from "./types";
+import { getExecuteProjects, transitionToExecuting, transitionToFailed } from "./projects";
+import { decomposeProject } from "./decomposer";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
 
 const ATC_STATE_KEY = "atc/state";
@@ -335,17 +336,39 @@ export async function runATCCycle(): Promise<ATCState> {
     }
   }
 
-  // 4.5: Detect Notion projects with Status = "Execute" and transition to "Executing"
-  const projectsTransitioned: Project[] = [];
+  // 4.5: Detect Notion projects with Status = "Execute", transition, and decompose
   try {
     const executeProjects = await getExecuteProjects();
     for (const project of executeProjects) {
       const success = await transitionToExecuting(project);
-      if (success) {
-        projectsTransitioned.push(project);
+      if (!success) continue;
+
+      events.push(makeEvent(
+        "status_change", project.projectId, "Execute", "Executing",
+        `Project "${project.title}" (${project.projectId}) transitioned to Executing`
+      ));
+
+      try {
+        const workItems = await decomposeProject(project);
         events.push(makeEvent(
-          "status_change", project.projectId, "Execute", "Executing",
-          `Project "${project.title}" (${project.projectId}) transitioned to Executing`
+          "project_trigger", project.projectId, undefined, undefined,
+          `Project "${project.title}" decomposed into ${workItems.length} work items`
+        ));
+
+        // Send decomposition summary email
+        try {
+          const { sendDecompositionSummary } = await import("./gmail");
+          await sendDecompositionSummary(project, workItems);
+        } catch (emailErr) {
+          console.error("[atc] Decomposition summary email failed:", emailErr);
+        }
+      } catch (decomposeErr) {
+        const msg = decomposeErr instanceof Error ? decomposeErr.message : String(decomposeErr);
+        console.error(`[atc] Decomposition failed for project ${project.projectId}:`, decomposeErr);
+        await transitionToFailed(project);
+        events.push(makeEvent(
+          "error", project.projectId, "Executing", "Failed",
+          `Decomposition failed for "${project.title}": ${msg}`
         ));
       }
     }
