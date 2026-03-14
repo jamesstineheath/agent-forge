@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import type { Escalation } from './escalation';
-import type { WorkItem } from './types';
+import type { Project, WorkItem } from './types';
 
 // Gmail client singleton with error handling
 let gmailClient: ReturnType<typeof google.gmail> | null = null;
@@ -164,6 +164,129 @@ export async function sendEscalationEmail(
     return threadId || null;
   } catch (error) {
     console.error('[Gmail] Failed to send escalation email:', error);
+    return null;
+  }
+}
+
+/**
+ * Send a decomposition summary email after a project is broken into work items.
+ * Returns the Gmail thread ID if sent, null if credentials missing or error.
+ */
+export async function sendDecompositionSummary(
+  project: Project,
+  workItems: WorkItem[],
+): Promise<string | null> {
+  const client = getGmailClient();
+  if (!client) {
+    console.log('[Gmail] Skipping decomposition summary (credentials not configured).');
+    return null;
+  }
+
+  try {
+    const totalBudget = workItems.reduce((sum, item) => sum + (item.handoff?.budget ?? 0), 0);
+
+    // Build dependency structure summary
+    const depLines = workItems.map((item, idx) => {
+      const deps = item.dependencies.length > 0
+        ? item.dependencies.map(depId => {
+            const dep = workItems.find(w => w.id === depId);
+            return dep ? dep.title : depId;
+          }).join(', ')
+        : 'none';
+      return `${idx + 1}. ${escapeHtml(item.title)} → depends on: ${escapeHtml(deps)}`;
+    });
+
+    const subject = `[Agent Forge] Decomposition Complete: ${project.title} (${workItems.length} work items)`;
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+    .header { background: #e8f5e9; padding: 15px; border-radius: 4px; margin-bottom: 15px; }
+    .header h1 { margin: 0 0 10px 0; font-size: 18px; color: #222; }
+    .meta { font-size: 14px; color: #666; }
+    .section { margin: 15px 0; }
+    .section-title { font-weight: 600; font-size: 14px; color: #222; margin-bottom: 8px; }
+    .section-content { background: #fafafa; padding: 12px; border-left: 3px solid #4caf50; border-radius: 4px; font-size: 14px; }
+    .dep-list { font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.8; }
+    .footer { margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>${escapeHtml(project.title)}</h1>
+      <div class="meta">
+        <strong>Project ID:</strong> ${escapeHtml(project.projectId)}<br>
+        <strong>Status:</strong> Decomposition complete
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Summary</div>
+      <div class="section-content">
+        <strong>${workItems.length}</strong> work items created<br>
+        <strong>Estimated total budget:</strong> $${totalBudget.toFixed(2)}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Dependency Structure</div>
+      <div class="section-content dep-list">
+        ${depLines.join('<br>')}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Dashboard</div>
+      <div class="section-content">
+        View project status on the <a href="https://agent-forge.vercel.app/pipeline">Agent Forge Dashboard</a>.
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>This is an automated notification from Agent Forge.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const message = [
+      `From: james.stine.heath@gmail.com`,
+      `To: james.stine.heath@gmail.com`,
+      `Subject: ${subject}`,
+      `Content-Type: text/html; charset="UTF-8"`,
+      `MIME-Version: 1.0`,
+      '',
+      htmlBody,
+    ].join('\r\n');
+
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+
+    const response = await client.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    const threadId = response.data.threadId;
+    console.log(
+      `[Gmail] Decomposition summary sent for project "${project.title}" (${project.projectId}). Thread ID: ${threadId}`
+    );
+
+    return threadId || null;
+  } catch (error) {
+    console.error('[Gmail] Failed to send decomposition summary:', error);
     return null;
   }
 }
