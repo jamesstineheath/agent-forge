@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { loadJson, saveJson } from "./storage";
 import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
-import { getWorkflowRuns, getPRByBranch } from "./github";
+import { getWorkflowRuns, getPRByBranch, getPRFiles } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState } from "./types";
 
@@ -10,6 +10,17 @@ const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
 const STALL_TIMEOUT_MINUTES = 30;
 const MAX_EVENTS = 200;
+
+function parseEstimatedFiles(handoffContent: string): string[] {
+  const match = handoffContent.match(/\*\*Estimated files:\*\*\s*(.+)/i);
+  if (!match) return [];
+  return match[1].split(",").map(f => f.trim()).filter(Boolean);
+}
+
+function hasFileOverlap(filesA: string[], filesB: string[]): boolean {
+  const setB = new Set(filesB);
+  return filesA.some(f => setB.has(f));
+}
 
 export async function runATCCycle(): Promise<ATCState> {
   const now = new Date();
@@ -38,16 +49,7 @@ export async function runATCCycle(): Promise<ATCState> {
       ? (now.getTime() - new Date(startedAt).getTime()) / 60_000
       : 0;
 
-    activeExecutions.push({
-      workItemId: item.id,
-      targetRepo: item.targetRepo,
-      branch,
-      status: item.status,
-      startedAt: startedAt ?? now.toISOString(),
-      elapsedMinutes: Math.round(elapsedMinutes),
-    });
-
-    // Check for stall timeout
+    // Check for stall timeout (before fetching PR files to skip extra API calls)
     if (elapsedMinutes >= STALL_TIMEOUT_MINUTES) {
       const event = makeEvent("timeout", item.id, item.status, "failed",
         `Execution stalled: no progress for ${Math.round(elapsedMinutes)} minutes (reason: timeout)`);
@@ -70,6 +72,24 @@ export async function runATCCycle(): Promise<ATCState> {
     ]);
 
     const latestRun = workflowRuns[0] ?? null;
+
+    // Populate filesBeingModified: use PR files if available, else parse handoff metadata
+    let filesBeingModified: string[] = [];
+    if (pr && item.execution?.prNumber) {
+      filesBeingModified = await getPRFiles(item.targetRepo, item.execution.prNumber);
+    } else if (item.handoff?.content) {
+      filesBeingModified = parseEstimatedFiles(item.handoff.content);
+    }
+
+    activeExecutions.push({
+      workItemId: item.id,
+      targetRepo: item.targetRepo,
+      branch,
+      status: item.status,
+      startedAt: startedAt ?? now.toISOString(),
+      elapsedMinutes: Math.round(elapsedMinutes),
+      filesBeingModified,
+    });
 
     if (item.status === "executing") {
       if (pr?.mergedAt) {
@@ -215,6 +235,20 @@ export async function runATCCycle(): Promise<ATCState> {
       const nextItem = await getNextDispatchable(repo.fullName);
       if (!nextItem) continue;
 
+      // Conflict check: skip if any active execution in this repo touches overlapping files
+      const nextItemFiles = nextItem.handoff?.content
+        ? parseEstimatedFiles(nextItem.handoff.content)
+        : [];
+      const repoActiveExecs = activeExecutions.filter(e => e.targetRepo === repo.fullName);
+      const conflicting = repoActiveExecs.find(e => hasFileOverlap(nextItemFiles, e.filesBeingModified));
+      if (conflicting) {
+        events.push(makeEvent(
+          "conflict", nextItem.id, undefined, undefined,
+          `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repo.fullName}`
+        ));
+        continue;
+      }
+
       try {
         const result = await dispatchWorkItem(nextItem.id);
         events.push(makeEvent(
@@ -228,6 +262,46 @@ export async function runATCCycle(): Promise<ATCState> {
           `Auto-dispatch failed: ${msg}`
         ));
       }
+    }
+  }
+
+  // 3.5: Retry failed items (max 2 retries, then park)
+  const MAX_RETRIES = 2;
+  const failedThisCycle = events
+    .filter(e => e.newStatus === "failed" && e.type !== "error")
+    .map(e => e.workItemId);
+
+  for (const failedId of failedThisCycle) {
+    const item = await getWorkItem(failedId);
+    if (!item) continue;
+    const retryCount = item.execution?.retryCount ?? 0;
+
+    if (retryCount < MAX_RETRIES) {
+      await updateWorkItem(failedId, {
+        status: "ready",
+        execution: {
+          ...item.execution,
+          retryCount: retryCount + 1,
+          completedAt: undefined,
+          outcome: undefined,
+        },
+      });
+      events.push(makeEvent(
+        "retry", failedId, "failed", "ready",
+        `Retry ${retryCount + 1}/${MAX_RETRIES}: resetting to ready for re-dispatch`
+      ));
+    } else {
+      await updateWorkItem(failedId, {
+        status: "parked",
+        execution: {
+          ...item.execution,
+          outcome: "parked",
+        },
+      });
+      events.push(makeEvent(
+        "parked", failedId, "failed", "parked",
+        `Parked after ${retryCount} retries. Requires human attention.`
+      ));
     }
   }
 
