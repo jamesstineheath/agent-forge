@@ -161,7 +161,7 @@ jobs:
           echo "Using budget: \$${{ steps.budget.outputs.amount }}"
           claude -p "$(cat /tmp/execute-prompt.txt)" \
             --dangerously-skip-permissions \
-            --model claude-sonnet-4-6 \
+            --model claude-opus-4-6 \
             --max-budget-usd ${{ steps.budget.outputs.amount }} \
             2>&1 | tee /tmp/claude-output.log
 
@@ -194,7 +194,7 @@ jobs:
           - **Budget:** \$${{ steps.budget.outputs.amount }}
           - **Actual cost:** ${COST:-unknown}
           - **Tokens:** ${TOKENS:-unknown}
-          - **Model:** claude-sonnet-4-6
+          - **Model:** claude-opus-4-6
           EOF
 
       - name: Comment cost on PR
