@@ -171,3 +171,29 @@ export const updateRepoSchema = z.object({
 
 export type CreateRepoInput = z.infer<typeof createRepoSchema>;
 export type UpdateRepoInput = z.infer<typeof updateRepoSchema>;
+
+// --- ATC ---
+
+export interface ATCEvent {
+  id: string;
+  timestamp: string;
+  type: "status_change" | "timeout" | "concurrency_block" | "error";
+  workItemId: string;
+  details: string;
+  previousStatus?: string;
+  newStatus?: string;
+}
+
+export interface ATCState {
+  lastRunAt: string;
+  activeExecutions: {
+    workItemId: string;
+    targetRepo: string;
+    branch: string;
+    status: string;
+    startedAt: string;
+    elapsedMinutes: number;
+  }[];
+  queuedItems: number;
+  recentEvents: ATCEvent[];
+}
