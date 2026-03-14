@@ -203,6 +203,31 @@ ${
     : "(none)"
 }
 
+## Escalation Protocol
+
+If the executing agent encounters a blocker it cannot resolve autonomously (ambiguous requirements,
+missing credentials, architectural decisions requiring human judgment, or repeated failures after
+3 attempts), it should escalate by calling the Agent Forge escalation API:
+
+\`\`\`bash
+curl -X POST "\${AGENT_FORGE_URL}/api/escalations" \\
+  -H "Authorization: Bearer \${ESCALATION_SECRET}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "workItemId": "<work-item-id>",
+    "reason": "<concise description of the blocker>",
+    "confidenceScore": 0.3,
+    "contextSnapshot": {
+      "step": "<current step number>",
+      "error": "<error message or blocker description>",
+      "filesChanged": ["<list of files modified so far>"]
+    }
+  }'
+\`\`\`
+
+The ESCALATION_SECRET and AGENT_FORGE_URL environment variables are provided in the execution
+environment. This will notify the project owner via email and block the work item until resolved.
+
 Generate a precise, actionable handoff file. Be specific about file paths, function signatures, and implementation details. The agent executing this handoff has no other context — the handoff must be self-contained.`;
 
   const userPrompt = `Generate a v3 handoff file for the following work item:
