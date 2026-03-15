@@ -56,13 +56,16 @@ export async function deleteJson(key: string): Promise<void> {
 // --- Vercel Blob ---
 
 async function loadFromBlob<T>(key: string): Promise<T | null> {
-  const { head } = await import("@vercel/blob");
+  const { head, getDownloadUrl } = await import("@vercel/blob");
   const pathname = `af-data/${key}.json`;
   try {
     const blob = await head(pathname);
-    const url = new URL(blob.url);
-    url.searchParams.set("t", Date.now().toString());
-    const response = await fetch(url.toString(), { cache: "no-store" });
+    // Private stores require a signed download URL; plain fetch on blob.url
+    // returns 401. Use getDownloadUrl() to obtain a time-limited signed URL.
+    const { url: downloadUrl } = await getDownloadUrl(blob.url);
+    const cacheBust = new URL(downloadUrl);
+    cacheBust.searchParams.set("t", Date.now().toString());
+    const response = await fetch(cacheBust.toString(), { cache: "no-store" });
     if (!response.ok) return null;
     return (await response.json()) as T;
   } catch {
