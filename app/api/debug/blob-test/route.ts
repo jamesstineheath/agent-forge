@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { loadJson, saveJson } from "@/lib/storage";
 
 /**
- * Temporary endpoint to test storage reads with explicit token.
+ * Temporary endpoint to test storage reads + dump pipeline state.
  * DELETE AFTER DEBUGGING.
  */
 export async function GET() {
@@ -25,7 +25,7 @@ export async function GET() {
     results["test1_roundtrip"] = { success: false, error: String(err) };
   }
 
-  // Test 2: Read repos/index via storage module (tests loadFromBlob with Auth header)
+  // Test 2: Read repos/index via storage module
   try {
     const reposIndex = await loadJson("repos/index");
     results["test2_repos_index"] = {
@@ -37,26 +37,29 @@ export async function GET() {
     results["test2_repos_index"] = { success: false, error: String(err) };
   }
 
-  // Test 3: Direct fetch with Authorization Bearer header
-  if (token) {
-    try {
-      const { head } = await import("@vercel/blob");
-      const blob = await head("af-data/repos/index.json", { token });
-      results["test3_head"] = { url: blob.url, size: blob.size };
+  // Test 3: ATC state
+  try {
+    const atcState = await loadJson("atc/state");
+    results["atc_state"] = atcState;
+  } catch (err) {
+    results["atc_state"] = { error: String(err) };
+  }
 
-      const response = await fetch(blob.url, {
-        cache: "no-store",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const text = await response.text();
-      results["test3_fetch"] = {
-        ok: response.ok,
-        status: response.status,
-        body: text.slice(0, 500),
-      };
-    } catch (err) {
-      results["test3_error"] = err instanceof Error ? err.message : String(err);
-    }
+  // Test 4: ATC events (last 20)
+  try {
+    const atcEvents = await loadJson<unknown[]>("atc/events");
+    results["atc_events_count"] = atcEvents ? atcEvents.length : 0;
+    results["atc_events_recent"] = atcEvents ? atcEvents.slice(-10) : [];
+  } catch (err) {
+    results["atc_events"] = { error: String(err) };
+  }
+
+  // Test 5: Work items index
+  try {
+    const wiIndex = await loadJson("work-items/index");
+    results["work_items_index"] = wiIndex;
+  } catch (err) {
+    results["work_items_index"] = { error: String(err) };
   }
 
   return NextResponse.json(results);
