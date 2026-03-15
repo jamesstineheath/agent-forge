@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory } from "@/lib/types";
 import type { Escalation } from "@/lib/escalation";
 
 const fetcher = (url: string) =>
@@ -79,6 +79,15 @@ export function useEscalations(statusFilter?: "pending" | "resolved" | "expired"
     `/api/escalations${queryString}`,
     fetcher,
     { refreshInterval: 15000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useTLMMemory() {
+  const { data, error, isLoading, mutate } = useSWR<TLMMemory>(
+    "/api/agents/tlm-memory",
+    fetcher,
+    { refreshInterval: 60000 }
   );
   return { data, error, isLoading, mutate };
 }

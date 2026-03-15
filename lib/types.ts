@@ -190,6 +190,42 @@ export const updateRepoSchema = z.object({
 export type CreateRepoInput = z.infer<typeof createRepoSchema>;
 export type UpdateRepoInput = z.infer<typeof updateRepoSchema>;
 
+// --- TLM Memory ---
+
+export interface TLMMemoryStats {
+  totalAssessed: number;
+  correct: number;
+  reversed: number;
+  causedIssues: number;
+  missed: number;
+  lastAssessment: string;
+}
+
+export interface TLMHotPattern {
+  date: string;
+  pattern: string;
+}
+
+export interface TLMOutcome {
+  date: string;
+  action: string;
+  entity: string;
+  outcome: string;
+  notes: string;
+}
+
+export interface TLMLesson {
+  date: string;
+  lesson: string;
+}
+
+export interface TLMMemory {
+  stats: TLMMemoryStats;
+  hotPatterns: TLMHotPattern[];
+  recentOutcomes: TLMOutcome[];
+  lessonsLearned: TLMLesson[];
+}
+
 // --- Project (Notion) ---
 
 export type ProjectStatus = "Draft" | "Ready" | "Execute" | "Executing" | "Complete" | "Failed";
