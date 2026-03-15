@@ -1,0 +1,39 @@
+name: TLM Code Review
+description: Reviews pull requests using Claude AI, assesses risk, and auto-merges low-risk changes
+
+inputs:
+  github_token:
+    description: GitHub token for PR interactions
+    required: true
+  anthropic_api_key:
+    description: Anthropic API key for Claude
+    required: true
+  pr_number:
+    description: Pull request number to review
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Claude Code
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+
+    - name: Review PR
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+      run: |
+        claude --dangerously-skip-permissions \
+          "You are TLM Code Review. Review PR #${PR_NUMBER} in this repository.
+          Assess the changes for correctness, risk level (low/medium/high), and adherence to project conventions.
+          Post a review comment summarizing your assessment.
+          If risk is low and all checks pass, approve the PR.
+          Read docs/tlm-memory.md for review patterns if it exists."

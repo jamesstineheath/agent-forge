@@ -1,0 +1,39 @@
+name: Execute Handoff
+
+on:
+  workflow_dispatch:
+    inputs:
+      handoff_file:
+        description: 'Path to handoff markdown file (e.g. handoffs/my-task.md)'
+        required: true
+        type: string
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Execute handoff
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AGENT_FORGE_URL: ${{ secrets.AGENT_FORGE_URL }}
+          AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
+        run: |
+          claude --dangerously-skip-permissions \
+            "Read and execute the handoff file at ${{ github.event.inputs.handoff_file }}. Follow all steps exactly as written."
