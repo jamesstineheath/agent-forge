@@ -1,21 +1,84 @@
 import * as core from "@actions/core";
 import * as github from "@actions/github";
+import AdmZip from "adm-zip";
 import {
   HandoffState,
   HandoffLifecycle,
   TriggerEvent,
-  applyTransition,
+  applyTransitionResilient,
   createLifecycle,
   isTerminal,
   getStateLabel,
 } from "./state";
 
 const LIFECYCLE_COMMENT_MARKER = "<!-- HANDOFF-LIFECYCLE-STATE -->";
+const STATE_JSON_MARKER_START = "<!-- LIFECYCLE-JSON:";
+const STATE_JSON_MARKER_END = ":LIFECYCLE-JSON -->";
 const ARTIFACT_PREFIX = "handoff-lifecycle-";
 
 type Octokit = ReturnType<typeof github.getOctokit>;
 
+/**
+ * Load state from PR comment (preferred) or artifact (fallback).
+ * PR comments are more reliable than artifacts since they don't require
+ * zip extraction and persist across workflow runs naturally.
+ */
 async function loadState(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  branch: string,
+  prNumber: number | null
+): Promise<HandoffLifecycle | null> {
+  // Try PR comment first (more reliable)
+  if (prNumber) {
+    const stateFromComment = await loadStateFromComment(octokit, owner, repo, prNumber);
+    if (stateFromComment) {
+      core.info(`Loaded state from PR #${prNumber} comment`);
+      return stateFromComment;
+    }
+  }
+
+  // Fall back to artifacts
+  return loadStateFromArtifact(octokit, owner, repo, branch);
+}
+
+async function loadStateFromComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<HandoffLifecycle | null> {
+  try {
+    const { data: comments } = await octokit.rest.issues.listComments({
+      owner,
+      repo,
+      issue_number: prNumber,
+      per_page: 100,
+    });
+
+    const lifecycleComment = comments.find(
+      (c) => c.body?.includes(LIFECYCLE_COMMENT_MARKER)
+    );
+
+    if (!lifecycleComment?.body) return null;
+
+    const jsonStart = lifecycleComment.body.indexOf(STATE_JSON_MARKER_START);
+    const jsonEnd = lifecycleComment.body.indexOf(STATE_JSON_MARKER_END);
+    if (jsonStart === -1 || jsonEnd === -1) return null;
+
+    const jsonStr = lifecycleComment.body.substring(
+      jsonStart + STATE_JSON_MARKER_START.length,
+      jsonEnd
+    );
+    return JSON.parse(jsonStr) as HandoffLifecycle;
+  } catch (error) {
+    core.info(`Could not load state from PR comment: ${error}`);
+    return null;
+  }
+}
+
+async function loadStateFromArtifact(
   octokit: Octokit,
   owner: string,
   repo: string,
@@ -24,7 +87,6 @@ async function loadState(
   const artifactName = `${ARTIFACT_PREFIX}${branch}`;
 
   try {
-    // List artifacts for this repo, filtered by name
     const { data } = await octokit.rest.actions.listArtifactsForRepo({
       owner,
       repo,
@@ -39,7 +101,6 @@ async function loadState(
 
     const artifact = data.artifacts[0];
 
-    // Download the artifact
     const { data: downloadData } = await octokit.rest.actions.downloadArtifact({
       owner,
       repo,
@@ -47,13 +108,7 @@ async function loadState(
       archive_format: "zip",
     });
 
-    // The download returns a zip - we need to extract it
-    // In GitHub Actions, we can use the @actions/artifact package instead
-    // For simplicity, parse from the redirect URL or use the artifact API
     const zipBuffer = Buffer.from(downloadData as ArrayBuffer);
-
-    // Use a simple approach: look for JSON content in the zip
-    // The zip format stores filenames and content - find the JSON
     const content = extractJsonFromZip(zipBuffer);
     if (content) {
       return JSON.parse(content) as HandoffLifecycle;
@@ -68,21 +123,31 @@ async function loadState(
 }
 
 function extractJsonFromZip(buffer: Buffer): string | null {
-  // Simple zip extraction - look for JSON content between local file headers
-  // ZIP local file header signature: 0x04034b50
-  const str = buffer.toString("utf-8");
-  const jsonStart = str.indexOf("{");
-  const jsonEnd = str.lastIndexOf("}");
-  if (jsonStart >= 0 && jsonEnd > jsonStart) {
-    const candidate = str.substring(jsonStart, jsonEnd + 1);
-    try {
-      JSON.parse(candidate);
-      return candidate;
-    } catch {
-      // Not valid JSON
+  try {
+    const zip = new AdmZip(buffer);
+    const entries = zip.getEntries();
+    for (const entry of entries) {
+      if (entry.entryName.endsWith(".json")) {
+        return entry.getData().toString("utf-8");
+      }
     }
+    // If no .json entry found, try the first text entry
+    for (const entry of entries) {
+      if (!entry.isDirectory) {
+        const text = entry.getData().toString("utf-8");
+        try {
+          JSON.parse(text);
+          return text;
+        } catch {
+          // Not JSON, skip
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    core.warning(`Failed to extract JSON from zip: ${error}`);
+    return null;
   }
-  return null;
 }
 
 async function saveState(
@@ -91,7 +156,6 @@ async function saveState(
   const fs = await import("fs");
   const path = await import("path");
 
-  // Write state to a file that will be uploaded as an artifact
   const stateDir = path.join(
     process.env.GITHUB_WORKSPACE || process.cwd(),
     ".handoff-state"
@@ -101,7 +165,6 @@ async function saveState(
   const stateFile = path.join(stateDir, "state.json");
   fs.writeFileSync(stateFile, JSON.stringify(lifecycle, null, 2));
 
-  // Use @actions/artifact to upload
   const { DefaultArtifactClient } = await import("@actions/artifact");
   const artifactClient = new DefaultArtifactClient();
   const artifactName = `${ARTIFACT_PREFIX}${lifecycle.branch}`;
@@ -130,10 +193,8 @@ function buildLifecycleComment(lifecycle: HandoffLifecycle): string {
     let details = "-";
 
     if (step.states.includes(lifecycle.state)) {
-      // Current step
       status = "In Progress";
     } else if (transition) {
-      // Completed step
       const prevTransition = lifecycle.transitions.find(
         (t) => step.states.includes(t.from) || step.states.includes(t.to)
       );
@@ -161,6 +222,9 @@ function buildLifecycleComment(lifecycle: HandoffLifecycle): string {
     rows.push(`| ${step.name} | ${status} | ${duration} | ${details} |`);
   }
 
+  // Embed state JSON as hidden HTML comment for reliable persistence
+  const stateJson = JSON.stringify(lifecycle);
+
   const lines = [
     LIFECYCLE_COMMENT_MARKER,
     "## Handoff Lifecycle",
@@ -178,6 +242,10 @@ function buildLifecycleComment(lifecycle: HandoffLifecycle): string {
     lines.push("---");
     lines.push(buildEndSummary(lifecycle));
   }
+
+  // Append hidden state JSON for persistence
+  lines.push("");
+  lines.push(`${STATE_JSON_MARKER_START}${stateJson}${STATE_JSON_MARKER_END}`);
 
   return lines.join("\n");
 }
@@ -198,7 +266,6 @@ function buildEndSummary(lifecycle: HandoffLifecycle): string {
     `- **Retries:** ${lifecycle.retryCount}`,
   ];
 
-  // Find failure reason if failed
   if (lifecycle.state === HandoffState.Failed) {
     const lastTransition = lifecycle.transitions[lifecycle.transitions.length - 1];
     if (lastTransition?.details) {
@@ -226,7 +293,6 @@ async function findOrCreateComment(
   prNumber: number,
   body: string
 ): Promise<void> {
-  // Look for existing lifecycle comment
   const { data: comments } = await octokit.rest.issues.listComments({
     owner,
     repo,
@@ -337,8 +403,6 @@ function determineEvent(context: typeof github.context): {
     }
 
     if (workflowName === "TLM Code Review") {
-      // Code review workflow completed - we need to determine the decision
-      // from the PR comments since the workflow_run event doesn't carry it
       return {
         event: {
           type: "code_review_completed",
@@ -399,7 +463,6 @@ async function parseCodeReviewDecision(
     per_page: 50,
   });
 
-  // Look for TLM-CODE-REVIEW-METADATA comment (most recent)
   for (let i = comments.length - 1; i >= 0; i--) {
     const body = comments[i].body || "";
     const match = body.match(
@@ -420,8 +483,6 @@ async function triggerRetry(
 ): Promise<void> {
   core.info(`Triggering retry for branch ${lifecycle.branch}...`);
 
-  // Fetch CI failure logs
-  let ciFailureContext = "";
   try {
     const { data: checkRuns } = await octokit.rest.checks.listForRef({
       owner,
@@ -436,16 +497,12 @@ async function triggerRetry(
     );
 
     for (const run of failedRuns.slice(0, 3)) {
-      ciFailureContext += `\n### Failed check: ${run.name}\n`;
-      ciFailureContext += run.output?.summary || "No summary available";
-      ciFailureContext += "\n";
+      core.info(`Failed check: ${run.name} - ${run.output?.summary || "No summary"}`);
     }
   } catch (error) {
     core.warning(`Could not fetch CI failure logs: ${error}`);
-    ciFailureContext = "Could not fetch CI failure details.";
   }
 
-  // Trigger execute-handoff workflow with the retry context
   await octokit.rest.actions.createWorkflowDispatch({
     owner,
     repo,
@@ -471,7 +528,6 @@ async function run(): Promise<void> {
     const eventInfo = determineEvent(context);
 
     if (!eventInfo) {
-      // Manual dispatch or unrecognized event - try to report current state
       core.info("No actionable event detected. Checking for manual dispatch state query.");
       return;
     }
@@ -485,11 +541,18 @@ async function run(): Promise<void> {
       return;
     }
 
+    // Find PR early - needed for state loading from comments
+    let prNumber: number | null = null;
+    try {
+      prNumber = await findPRForBranch(octokit, owner, repo, branch);
+    } catch (error) {
+      core.warning(`Could not find PR for branch: ${error}`);
+    }
+
     // Load existing state or create new
-    let lifecycle = await loadState(octokit, owner, repo, branch);
+    let lifecycle = await loadState(octokit, owner, repo, branch, prNumber);
 
     if (!lifecycle) {
-      // Determine handoff file from branch
       let handoffFile = "unknown";
       try {
         const { data: files } = await octokit.rest.repos.getContent({
@@ -520,9 +583,9 @@ async function run(): Promise<void> {
       return;
     }
 
-    // Apply the transition
+    // Apply the transition using resilient handler (handles out-of-order events)
     try {
-      lifecycle = applyTransition(lifecycle, event, details);
+      lifecycle = applyTransitionResilient(lifecycle, event, details);
       core.info(`Transitioned to: ${lifecycle.state}`);
     } catch (error) {
       core.warning(`State transition failed: ${error}`);
@@ -531,82 +594,100 @@ async function run(): Promise<void> {
     }
 
     // Handle retry logic for CI failures
-    if (lifecycle.state === HandoffState.CIFailed && lifecycle.retryCount < 1) {
-      lifecycle = applyTransition(
-        lifecycle,
-        { type: "retry_triggered" },
-        "Auto-retry after CI failure"
-      );
-      await triggerRetry(octokit, owner, repo, lifecycle);
-    } else if (lifecycle.state === HandoffState.CIFailed && lifecycle.retryCount >= 1) {
-      lifecycle = applyTransition(
-        lifecycle,
-        { type: "pr_closed" },
-        "CI failed after retry, max retries reached"
-      );
+    try {
+      if (lifecycle.state === HandoffState.CIFailed && lifecycle.retryCount < 1) {
+        lifecycle = applyTransitionResilient(
+          lifecycle,
+          { type: "retry_triggered" },
+          "Auto-retry after CI failure"
+        );
+        await triggerRetry(octokit, owner, repo, lifecycle);
+      } else if (lifecycle.state === HandoffState.CIFailed && lifecycle.retryCount >= 1) {
+        lifecycle = applyTransitionResilient(
+          lifecycle,
+          { type: "pr_closed" },
+          "CI failed after retry, max retries reached"
+        );
+      }
+    } catch (error) {
+      core.warning(`CI retry handling failed: ${error}`);
     }
 
     // Handle execution failure retry
-    if (lifecycle.state === HandoffState.ExecutionFailed && lifecycle.retryCount < 1) {
-      lifecycle = applyTransition(
-        lifecycle,
-        { type: "retry_triggered" },
-        "Auto-retry after execution failure"
-      );
-      await triggerRetry(octokit, owner, repo, lifecycle);
-    } else if (lifecycle.state === HandoffState.ExecutionFailed && lifecycle.retryCount >= 1) {
-      lifecycle = applyTransition(
-        lifecycle,
-        { type: "pr_closed" },
-        "Execution failed after retry, max retries reached"
-      );
+    try {
+      if (lifecycle.state === HandoffState.ExecutionFailed && lifecycle.retryCount < 1) {
+        lifecycle = applyTransitionResilient(
+          lifecycle,
+          { type: "retry_triggered" },
+          "Auto-retry after execution failure"
+        );
+        await triggerRetry(octokit, owner, repo, lifecycle);
+      } else if (lifecycle.state === HandoffState.ExecutionFailed && lifecycle.retryCount >= 1) {
+        lifecycle = applyTransitionResilient(
+          lifecycle,
+          { type: "pr_closed" },
+          "Execution failed after retry, max retries reached"
+        );
+      }
+    } catch (error) {
+      core.warning(`Execution retry handling failed: ${error}`);
     }
 
     // Parse execution cost from PR comments if available
-    const prNumber = await findPRForBranch(octokit, owner, repo, branch);
     if (prNumber) {
-      const { data: comments } = await octokit.rest.issues.listComments({
-        owner,
-        repo,
-        issue_number: prNumber,
-        per_page: 50,
-      });
-
-      const cost = parseExecutionCost(comments);
-      if (cost !== null) {
-        lifecycle.totalCost = cost;
-      }
-
-      // If code review completed, parse the actual decision from comments
-      if (event.type === "code_review_completed") {
-        const decision = await parseCodeReviewDecision(
-          octokit,
+      try {
+        const { data: comments } = await octokit.rest.issues.listComments({
           owner,
           repo,
-          prNumber
-        );
-        if (decision && decision !== "approve") {
-          // Re-apply with the correct decision if it differs
-          // The workflow_run event doesn't carry the review decision
-          // so we may need to correct the transition
-          core.info(`Code review decision from metadata: ${decision}`);
+          issue_number: prNumber,
+          per_page: 50,
+        });
+
+        const cost = parseExecutionCost(comments);
+        if (cost !== null) {
+          lifecycle.totalCost = cost;
         }
+
+        // If code review completed, parse the actual decision from comments
+        if (event.type === "code_review_completed") {
+          const decision = await parseCodeReviewDecision(
+            octokit,
+            owner,
+            repo,
+            prNumber
+          );
+          if (decision && decision !== "approve") {
+            core.info(`Code review decision from metadata: ${decision}`);
+          }
+        }
+      } catch (error) {
+        core.warning(`Could not parse PR comments: ${error}`);
       }
 
-      // Update PR comment
-      const commentBody = buildLifecycleComment(lifecycle);
-      await findOrCreateComment(octokit, owner, repo, prNumber, commentBody);
+      // Update PR comment with lifecycle status (also persists state)
+      try {
+        const commentBody = buildLifecycleComment(lifecycle);
+        await findOrCreateComment(octokit, owner, repo, prNumber, commentBody);
+      } catch (error) {
+        core.warning(`Could not update lifecycle comment: ${error}`);
+      }
     }
 
-    // Save state
-    await saveState(lifecycle);
+    // Save state to artifact (secondary persistence)
+    try {
+      await saveState(lifecycle);
+    } catch (error) {
+      core.warning(`Could not save state artifact: ${error}`);
+      // Non-fatal: state is also persisted in PR comment
+    }
 
     // Set outputs
     core.setOutput("state", lifecycle.state);
     core.setOutput("branch", branch);
     core.setOutput("retry-count", lifecycle.retryCount.toString());
   } catch (error) {
-    core.setFailed(`Handoff orchestrator failed: ${error}`);
+    // The orchestrator is observational - it should never fail the pipeline
+    core.warning(`Handoff orchestrator encountered an error: ${error}`);
   }
 }
 
