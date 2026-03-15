@@ -4,6 +4,7 @@ import { getWorkItem, updateWorkItem } from "./work-items";
 export interface Escalation {
   id: string;
   workItemId: string;
+  projectId?: string;
   reason: string;
   confidenceScore: number; // 0-1, how confident the system is that escalation is needed
   contextSnapshot: Record<string, unknown>; // Full state snapshot at time of escalation
@@ -28,7 +29,8 @@ export async function escalate(
   workItemId: string,
   reason: string,
   confidenceScore: number,
-  contextSnapshot: Record<string, unknown>
+  contextSnapshot: Record<string, unknown>,
+  projectId?: string
 ): Promise<Escalation> {
   const id = `esc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const now = new Date().toISOString();
@@ -36,6 +38,7 @@ export async function escalate(
   const escalation: Escalation = {
     id,
     workItemId,
+    ...(projectId && { projectId }),
     reason,
     confidenceScore: Math.max(0, Math.min(1, confidenceScore)),
     contextSnapshot,
@@ -71,6 +74,8 @@ export async function escalate(
     if (threadId) {
       await updateEscalation(id, { threadId });
     }
+  } else if (projectId) {
+    console.log(`[escalation] Project-level escalation for project ${projectId} (no work item to block)`);
   }
 
   console.log(`[escalation] Created escalation ${id} for work item ${workItemId}: ${reason}`);

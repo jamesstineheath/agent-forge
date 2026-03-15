@@ -1,6 +1,7 @@
 # Handoff: Fix escalate() project-level bug (passes projectId as workItemId)
 
 Max Budget: $3
+**Dispatched:** 2026-03-15T14:05Z
 
 ## Context
 
