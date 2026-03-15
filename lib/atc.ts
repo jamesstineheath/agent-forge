@@ -226,7 +226,7 @@ export async function runATCCycle(): Promise<ATCState> {
   }
 
   // 4. Auto-dispatch: for repos with available capacity, dispatch next ready item
-  const GLOBAL_CONCURRENCY_LIMIT = 3;
+  const GLOBAL_CONCURRENCY_LIMIT = 5;
   const totalActive = activeExecutions.filter(
     (e) => e.status === "executing" || e.status === "reviewing"
   ).length;
