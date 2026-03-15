@@ -1,0 +1,34 @@
+name: TLM Outcome Tracker
+description: Daily assessment of merged PR outcomes to improve future handoffs
+
+inputs:
+  github_token:
+    description: GitHub token for reading PRs
+    required: true
+  anthropic_api_key:
+    description: Anthropic API key for Claude
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Claude Code
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+
+    - name: Track outcomes
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        claude --dangerously-skip-permissions \
+          "You are TLM Outcome Tracker. Review PRs merged in the last 24 hours.
+          For each merged PR, assess: did it achieve its stated goal? Were there regressions? What patterns led to success or failure?
+          Update docs/tlm-memory.md with your findings, appending a dated entry.
+          Create the file if it doesn't exist. Commit with message 'tlm-outcome: daily assessment $(date +%Y-%m-%d)'."

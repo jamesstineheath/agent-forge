@@ -1,0 +1,35 @@
+name: TLM Spec Review
+description: Reviews and improves handoff spec files before execution
+
+inputs:
+  github_token:
+    description: GitHub token for commits
+    required: true
+  anthropic_api_key:
+    description: Anthropic API key for Claude
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install Claude Code
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+
+    - name: Review and improve handoff specs
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic_api_key }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        claude --dangerously-skip-permissions \
+          "You are TLM Spec Review. Find all new or modified handoff files in the handoffs/ directory from recent commits.
+          For each handoff file, review it for clarity, completeness, and executability.
+          Improve any ambiguous steps, missing context, or incomplete acceptance criteria.
+          Commit any improvements directly to the current branch with message 'tlm-spec: improve handoff clarity'.
+          Read docs/tlm-memory.md for spec review patterns if it exists."
