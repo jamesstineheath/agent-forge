@@ -61,13 +61,10 @@ async function loadFromBlob<T>(key: string): Promise<T | null> {
   if (!token) return null;
 
   try {
-    const { head, getDownloadUrl } = await import("@vercel/blob");
-    // head() accepts pathnames and uses the token from env automatically
+    const { head } = await import("@vercel/blob");
     const blob = await head(pathname, { token });
-    // Private stores require a signed download URL.
-    // Pass token explicitly to ensure proper auth.
-    const downloadUrl = await getDownloadUrl(blob.url, { token });
-    const response = await fetch(downloadUrl, { cache: "no-store" });
+    // blob.url is already a signed download URL for private stores
+    const response = await fetch(blob.url, { cache: "no-store" });
     if (!response.ok) return null;
     return (await response.json()) as T;
   } catch {
