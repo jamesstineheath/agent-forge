@@ -5,6 +5,7 @@
 **Mode:** Explore/Fix
 **Model:** Sonnet
 **Max Budget:** $5
+**Dispatched:** 2026-03-15T13:54Z
 
 ## Problem
 
