@@ -237,3 +237,30 @@ export interface ATCState {
   queuedItems: number;
   recentEvents: ATCEvent[];
 }
+
+// Repo Bootstrapper types
+
+export type PipelineLevel = 'execute-only' | 'full-tlm';
+
+export interface BootstrapOptions {
+  repoName: string;
+  description?: string;
+  pipelineLevel: PipelineLevel;
+  isPrivate?: boolean;
+  createVercelProject?: boolean;
+  vercelFramework?: string;
+}
+
+export interface BootstrapStep {
+  name: string;
+  status: 'success' | 'failed' | 'skipped';
+  detail?: string;
+}
+
+export interface BootstrapResult {
+  repoUrl: string;
+  repoId: number;
+  registrationId: string;
+  vercelProjectUrl?: string;
+  steps: BootstrapStep[];
+}
