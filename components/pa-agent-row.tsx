@@ -1,5 +1,6 @@
 "use client";
 
+import { TrendingUp } from "lucide-react";
 import { QualityRing } from "@/components/quality-ring";
 
 interface PAAgentRowProps {
@@ -11,31 +12,20 @@ interface PAAgentRowProps {
 
 export function PAAgentRow({ name, tier, assessmentTier, status }: PAAgentRowProps) {
   return (
-    <div className="flex items-center gap-4 rounded-lg border bg-card p-3">
-      <QualityRing rate={null} size={48} />
+    <div className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-zinc-800/30 transition-colors">
+      <QualityRing rate={null} size={36} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">{name}</span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-            {tier}
-          </span>
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-              status === "active"
-                ? "bg-green-500/10 text-green-500"
-                : "bg-muted text-muted-foreground"
-            }`}
-          >
-            {status === "active" ? "Active" : "Idle"}
-          </span>
+          <span className="text-sm text-zinc-200">{name}</span>
+          <span className="text-[10px] text-zinc-600">{tier}</span>
+          {status === "active" && (
+            <TrendingUp size={11} className="text-emerald-400" />
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
+        <div className="text-[11px] text-zinc-600">
           Assessment: {assessmentTier}
-        </p>
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground italic">
-        Metrics available when cross-repo evaluation API ships
-      </p>
     </div>
   );
 }

@@ -1,6 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import {
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  TrendingUp,
+} from "lucide-react";
 import { QualityRing } from "@/components/quality-ring";
 import type { TLMMemoryStats, TLMHotPattern, TLMOutcome } from "@/lib/types";
 
@@ -14,35 +23,15 @@ interface TLMAgentCardProps {
   status: "active" | "in-pipeline" | "idle";
 }
 
-function outcomeIcon(outcome: string) {
+function OutcomeIcon({ outcome }: { outcome: string }) {
   switch (outcome) {
     case "correct":
-      return <span className="text-green-500" title="Correct">&#10003;</span>;
+      return <CheckCircle2 size={12} className="text-emerald-400" />;
     case "caused_issues":
-      return <span className="text-red-500" title="Caused Issues">&#10007;</span>;
-    case "premature":
-      return <span className="text-muted-foreground" title="Premature">&#9711;</span>;
+      return <XCircle size={12} className="text-red-400" />;
     default:
-      return <span className="text-muted-foreground">&#8212;</span>;
+      return <Clock size={12} className="text-zinc-600" />;
   }
-}
-
-function statusBadge(status: TLMAgentCardProps["status"]) {
-  const styles = {
-    active: "bg-green-500/10 text-green-500",
-    "in-pipeline": "bg-amber-500/10 text-amber-500",
-    idle: "bg-muted text-muted-foreground",
-  };
-  const labels = {
-    active: "Active",
-    "in-pipeline": "In Pipeline",
-    idle: "Idle",
-  };
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${styles[status]}`}>
-      {labels[status]}
-    </span>
-  );
 }
 
 export function TLMAgentCard({
@@ -55,63 +44,95 @@ export function TLMAgentCard({
   status,
 }: TLMAgentCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const isDeployed = status !== "in-pipeline";
 
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div
+      className={`rounded-xl border ${!isDeployed ? "border-zinc-800/50 bg-zinc-900/30" : "border-zinc-800 bg-zinc-900"} overflow-hidden`}
+    >
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-4 text-left"
+        className="w-full text-left p-4 flex items-center gap-4 hover:bg-zinc-800/50 transition-colors"
       >
-        <QualityRing rate={successRate} size={64} />
+        <QualityRing rate={successRate} size={48} />
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold">{name}</h3>
-            {statusBadge(status)}
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="font-medium text-zinc-100 text-sm">{name}</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+                isDeployed
+                  ? "bg-emerald-400/10 text-emerald-400 border-emerald-400/20"
+                  : "bg-zinc-400/10 text-zinc-500 border-zinc-500/20"
+              }`}
+            >
+              {isDeployed ? "active" : "in pipeline"}
+            </span>
+            {status === "active" && (
+              <TrendingUp size={12} className="text-emerald-400" />
+            )}
           </div>
-          {stats && (
-            <p className="text-sm text-muted-foreground mt-1">
-              {stats.totalAssessed} assessed &middot; {stats.correct} correct &middot;{" "}
-              {stats.causedIssues} issues
-            </p>
-          )}
-          {lastRun && (
-            <p className="text-xs text-muted-foreground">Last: {lastRun}</p>
-          )}
+          <div className="text-xs text-zinc-500">
+            {isDeployed && stats ? (
+              <span>
+                {stats.totalAssessed} assessed &middot; {stats.correct} correct
+                &middot; {stats.causedIssues} issues
+                {lastRun && <> &middot; last run {lastRun}</>}
+              </span>
+            ) : (
+              <span>Handoff filed, awaiting deployment</span>
+            )}
+          </div>
         </div>
-        <span className="text-muted-foreground">{expanded ? "\u25B2" : "\u25BC"}</span>
+        {expanded ? (
+          <ChevronDown size={16} className="text-zinc-500" />
+        ) : (
+          <ChevronRight size={16} className="text-zinc-500" />
+        )}
       </button>
 
-      {expanded && (
-        <div className="mt-4 space-y-4 border-t pt-4">
+      {expanded && isDeployed && (
+        <div className="border-t border-zinc-800">
           {hotPatterns.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-2">Hot Patterns</h4>
-              <ul className="space-y-1">
-                {hotPatterns.map((p, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <span className="text-amber-500 mt-0.5">&#9888;</span>
-                    <span>
-                      <span className="text-muted-foreground">[{p.date}]</span>{" "}
-                      {p.pattern.length > 120 ? p.pattern.slice(0, 120) + "..." : p.pattern}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+            <div className="px-4 py-3 border-b border-zinc-800/50">
+              <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">
+                Hot patterns (influencing reviews)
+              </div>
+              {hotPatterns.map((p, i) => (
+                <div
+                  key={i}
+                  className="text-xs text-zinc-400 py-0.5 flex items-start gap-1.5"
+                >
+                  <AlertTriangle
+                    size={10}
+                    className="text-amber-400 mt-0.5 shrink-0"
+                  />
+                  <span>
+                    {typeof p === "string"
+                      ? p
+                      : p.pattern.length > 120
+                        ? p.pattern.slice(0, 120) + "..."
+                        : p.pattern}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 
           {recentOutcomes.length > 0 && (
-            <div>
-              <h4 className="text-sm font-medium mb-2">Recent Outcomes</h4>
-              <ul className="space-y-1">
-                {recentOutcomes.slice(0, 10).map((o, i) => (
-                  <li key={i} className="flex items-center gap-2 text-sm">
-                    {outcomeIcon(o.outcome)}
-                    <span className="text-muted-foreground">{o.date}</span>
-                    <span className="truncate">{o.entity}</span>
-                  </li>
-                ))}
-              </ul>
+            <div className="px-4 py-3">
+              <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-1.5">
+                Recent actions
+              </div>
+              {recentOutcomes.slice(0, 10).map((o, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 py-1 text-xs"
+                >
+                  <OutcomeIcon outcome={o.outcome} />
+                  <span className="text-zinc-400">{o.outcome}</span>
+                  <span className="text-zinc-500 truncate">{o.entity}</span>
+                </div>
+              ))}
             </div>
           )}
         </div>

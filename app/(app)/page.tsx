@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle2, ArrowRight } from "lucide-react";
 import { QuickStats } from "@/components/quick-stats";
 import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
@@ -35,13 +36,12 @@ function SystemHealth({
 }) {
   if (atcLoading) {
     return (
-      <p className="text-xs text-muted-foreground">Loading system status...</p>
+      <div className="text-xs text-zinc-500">Loading system status...</div>
     );
   }
 
   const queued = atcState?.queuedItems ?? 0;
 
-  // Find the repo with active executions for concurrency display
   const repoExecCounts: Record<string, number> = {};
   atcState?.activeExecutions?.forEach((exec) => {
     repoExecCounts[exec.targetRepo] = (repoExecCounts[exec.targetRepo] ?? 0) + 1;
@@ -56,11 +56,21 @@ function SystemHealth({
     : `Concurrency: 0 active`;
 
   return (
-    <p className="text-xs text-muted-foreground">
-      ATC: {atcState ? "healthy" : "unknown"}, last sweep{" "}
-      {formatRelativeTime(atcState?.lastRunAt)} | {concurrencyStr} |{" "}
-      {queued} queued across all repos
-    </p>
+    <div className="flex items-center gap-4 text-xs text-zinc-500 px-1 py-2">
+      <div className="flex items-center gap-1.5">
+        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        <span>ATC: {atcState ? "healthy" : "unknown"}</span>
+        <span className="text-zinc-700">
+          &middot; last sweep {formatRelativeTime(atcState?.lastRunAt)}
+        </span>
+      </div>
+      <div className="border-l border-zinc-800 pl-4 flex items-center gap-1.5">
+        <span>{concurrencyStr}</span>
+      </div>
+      <div className="border-l border-zinc-800 pl-4 flex items-center gap-1.5">
+        <span>{queued} queued across all repos</span>
+      </div>
+    </div>
   );
 }
 
@@ -91,7 +101,6 @@ export default function DashboardPage() {
     });
   };
 
-  // Filter work items by project
   const getProjectWorkItems = (projectId: string): WorkItem[] => {
     return (
       workItems?.filter(
@@ -101,7 +110,6 @@ export default function DashboardPage() {
     );
   };
 
-  // Merged today
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const mergedToday =
@@ -116,32 +124,28 @@ export default function DashboardPage() {
     <div className="space-y-6">
       {/* Title + System Health */}
       <div>
-        <h1 className="text-3xl font-bold">Agent Forge</h1>
-        <p className="text-muted-foreground mt-1">
-          Dev orchestration platform — coordinate autonomous agent teams across
-          repos.
-        </p>
-        <div className="mt-2">
-          <SystemHealth
-            atcState={atcState}
-            repos={repos}
-            atcLoading={atcLoading || reposLoading}
-          />
-        </div>
+        <h1 className="text-lg font-semibold text-zinc-100">Dashboard</h1>
+        <SystemHealth
+          atcState={atcState}
+          repos={repos}
+          atcLoading={atcLoading || reposLoading}
+        />
       </div>
 
       {/* Quick Stats */}
       {itemsLoading ? (
-        <p className="text-sm text-muted-foreground">Loading stats...</p>
+        <div className="text-sm text-zinc-500">Loading stats...</div>
       ) : (
         <QuickStats workItems={workItems ?? []} />
       )}
 
       {/* Needs Attention (Escalations) */}
       {!escalationsLoading && escalations && escalations.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Needs attention</h2>
-          <div className="space-y-3">
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            Needs attention
+          </div>
+          <div className="space-y-2">
             {escalations.map((esc) => {
               const workItem = workItems?.find(
                 (wi) => wi.id === esc.workItemId
@@ -161,16 +165,23 @@ export default function DashboardPage() {
       )}
 
       {/* Projects */}
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Projects</h2>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            Projects
+          </div>
+          <button className="text-xs text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1">
+            New work item <ArrowRight size={12} />
+          </button>
+        </div>
         {projectsLoading ? (
-          <p className="text-sm text-muted-foreground">Loading projects...</p>
+          <div className="text-sm text-zinc-500">Loading projects...</div>
         ) : !projects || projects.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
+          <div className="text-sm text-zinc-500">
             No projects found. Projects are managed in Notion.
-          </p>
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {projects.map((project) => (
               <ProjectCard
                 key={project.id}
@@ -186,25 +197,23 @@ export default function DashboardPage() {
 
       {/* Merged Today */}
       {mergedToday.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold mb-3">Merged today</h2>
-          <div className="space-y-1.5">
-            {mergedToday.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50"
-              >
-                <span className="text-emerald-500">&#10003;</span>
-                <span className="font-medium truncate">{item.title}</span>
-                <span className="text-xs text-muted-foreground">
-                  {item.targetRepo}
-                </span>
-                <span className="text-xs text-muted-foreground ml-auto">
-                  {formatRelativeTime(item.execution?.completedAt)}
-                </span>
-              </div>
-            ))}
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            Merged today
           </div>
+          {mergedToday.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-2 text-sm text-zinc-400 py-1"
+            >
+              <CheckCircle2 size={14} className="text-emerald-400" />
+              <span>{item.title}</span>
+              <span className="text-xs text-zinc-600 ml-auto">
+                {item.targetRepo} &middot;{" "}
+                {formatRelativeTime(item.execution?.completedAt)}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>

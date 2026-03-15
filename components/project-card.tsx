@@ -1,17 +1,18 @@
 "use client";
 
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  CheckCircle2,
+  Play,
+  BarChart3,
+  Pause,
+  XCircle,
+  Circle,
+  ChevronDown,
+  ChevronRight,
+  AlertTriangle,
+} from "lucide-react";
 import { ProgressBar } from "@/components/progress-bar";
 import type { Project, WorkItem } from "@/lib/types";
-
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-gray-100 text-gray-700",
-  Ready: "bg-blue-100 text-blue-700",
-  Execute: "bg-amber-100 text-amber-700",
-  Executing: "bg-yellow-100 text-yellow-700",
-  Complete: "bg-green-100 text-green-700",
-  Failed: "bg-red-100 text-red-700",
-};
 
 const ACTIVE_STATUSES: WorkItem["status"][] = [
   "generating",
@@ -19,20 +20,58 @@ const ACTIVE_STATUSES: WorkItem["status"][] = [
   "reviewing",
 ];
 
-function StatusIcon({ status }: { status: WorkItem["status"] }) {
+const statusColor = (s: string) =>
+  ({
+    merged: "text-emerald-400",
+    completed: "text-emerald-400",
+    reviewing: "text-blue-400",
+    executing: "text-amber-400",
+    generating: "text-amber-400",
+    queued: "text-zinc-500",
+    ready: "text-zinc-500",
+    blocked: "text-orange-400",
+    failed: "text-red-400",
+    draft: "text-zinc-600",
+  })[s] || "text-zinc-500";
+
+const statusBg = (s: string) =>
+  ({
+    merged: "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
+    completed: "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
+    Complete: "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
+    reviewing: "bg-blue-400/10 text-blue-400 border-blue-400/20",
+    executing: "bg-amber-400/10 text-amber-400 border-amber-400/20",
+    Execute: "bg-amber-400/10 text-amber-400 border-amber-400/20",
+    Executing: "bg-amber-400/10 text-amber-400 border-amber-400/20",
+    generating: "bg-amber-400/10 text-amber-400 border-amber-400/20",
+    queued: "bg-zinc-400/10 text-zinc-400 border-zinc-400/20",
+    ready: "bg-zinc-400/10 text-zinc-400 border-zinc-400/20",
+    Ready: "bg-zinc-400/10 text-zinc-400 border-zinc-400/20",
+    blocked: "bg-orange-400/10 text-orange-400 border-orange-400/20",
+    failed: "bg-red-400/10 text-red-400 border-red-400/20",
+    Failed: "bg-red-400/10 text-red-400 border-red-400/20",
+    Draft: "bg-zinc-400/10 text-zinc-500 border-zinc-500/20",
+    draft: "bg-zinc-400/10 text-zinc-500 border-zinc-500/20",
+  })[s] || "bg-zinc-400/10 text-zinc-500 border-zinc-500/20";
+
+function StatusIcon({ status }: { status: string }) {
+  const cls = statusColor(status);
+  const size = 14;
   switch (status) {
     case "merged":
-      return <span className="text-emerald-500">&#10003;</span>;
+    case "completed":
+      return <CheckCircle2 size={size} className={cls} />;
+    case "reviewing":
+      return <BarChart3 size={size} className={cls} />;
     case "executing":
     case "generating":
-    case "reviewing":
-      return <span className="text-amber-500">&#9654;</span>;
-    case "failed":
-      return <span className="text-red-500">&#10007;</span>;
+      return <Play size={size} className={cls} />;
     case "blocked":
-      return <span className="text-orange-500">&#9632;</span>;
+      return <Pause size={size} className={cls} />;
+    case "failed":
+      return <XCircle size={size} className={cls} />;
     default:
-      return <span className="text-gray-400">&#9679;</span>;
+      return <Circle size={size} className={cls} />;
   }
 }
 
@@ -40,50 +79,50 @@ function formatElapsed(startedAt?: string): string {
   if (!startedAt) return "";
   const ms = Date.now() - new Date(startedAt).getTime();
   const minutes = Math.floor(ms / 60000);
-  if (minutes < 60) return `${minutes}m elapsed`;
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}m elapsed`;
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 function formatMergeTime(completedAt?: string): string {
   if (!completedAt) return "";
   const ms = Date.now() - new Date(completedAt).getTime();
   const minutes = Math.floor(ms / 60000);
-  if (minutes < 60) return `merged ${minutes}m ago`;
+  if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `merged ${hours}h ago`;
-  return `merged ${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function WorkItemMeta({ item }: { item: WorkItem }) {
   if (ACTIVE_STATUSES.includes(item.status)) {
     return (
-      <span className="text-xs text-muted-foreground">
+      <span className="text-xs text-amber-400/70">
         {formatElapsed(item.execution?.startedAt)}
       </span>
     );
   }
   if (item.status === "reviewing" && item.execution?.prNumber) {
     return (
-      <span className="text-xs text-muted-foreground">
+      <span className="text-xs text-blue-400/70">
         PR #{item.execution.prNumber}
       </span>
     );
   }
   if (item.status === "blocked" && item.escalation?.reason) {
     return (
-      <span className="text-xs text-orange-600">{item.escalation.reason}</span>
+      <span className="text-xs text-zinc-600">{item.escalation.reason}</span>
     );
   }
   if (item.status === "failed") {
     return (
-      <span className="text-xs text-red-600">
+      <span className="text-xs text-red-400/70">
         {item.execution?.outcome === "reverted" ? "Reverted" : "Failed"}
       </span>
     );
   }
   if (item.status === "merged") {
     return (
-      <span className="text-xs text-muted-foreground">
+      <span className="text-xs text-emerald-400/70">
         {formatMergeTime(item.execution?.completedAt)}
       </span>
     );
@@ -114,7 +153,6 @@ export function ProjectCard({
   const blocked = workItems.filter((wi) => wi.status === "blocked").length;
   const hasFailed = failed > 0;
 
-  // Compute cost from work items with handoff data and execution data
   const spent = workItems
     .filter((wi) => wi.execution && wi.handoff)
     .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
@@ -123,46 +161,55 @@ export function ProjectCard({
     .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
 
   const spentRatio = totalBudget > 0 ? spent / totalBudget : 0;
-  const costColor =
-    spentRatio > 0.9
-      ? "text-red-600"
-      : spentRatio > 0.7
-        ? "text-amber-600"
-        : "text-muted-foreground";
-
-  const statusColor =
-    STATUS_COLORS[project.status] ?? "bg-gray-100 text-gray-700";
+  const costPct = Math.round(spentRatio * 100);
 
   return (
-    <Card
-      className={`transition-colors ${hasFailed ? "border-red-300 bg-red-50/30" : ""}`}
+    <div
+      className={`rounded-xl border ${hasFailed ? "border-red-500/30 bg-red-500/5" : "border-zinc-800 bg-zinc-900"} overflow-hidden`}
     >
-      <CardHeader
-        className="cursor-pointer pb-3"
+      <button
         onClick={onToggle}
+        className="w-full text-left p-4 flex items-start gap-3 hover:bg-zinc-800/50 transition-colors"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-medium">{expanded ? "▼" : "▶"}</span>
-            <span className="font-semibold truncate">{project.title}</span>
+        <div className="mt-0.5">
+          {expanded ? (
+            <ChevronDown size={16} className="text-zinc-500" />
+          ) : (
+            <ChevronRight size={16} className="text-zinc-500" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-medium text-zinc-100 text-sm">
+              {project.title}
+            </span>
             <span
-              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusColor}`}
+              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${statusBg(project.status)}`}
             >
               {project.status}
             </span>
-            {project.targetRepo && (
-              <span className="text-xs text-muted-foreground">
-                {project.targetRepo}
+            {hasFailed && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1">
+                <AlertTriangle size={10} /> has failures
+              </span>
+            )}
+            {totalBudget > 0 && (
+              <span
+                className={`text-[10px] ml-auto px-1.5 py-0.5 rounded-full border ${
+                  costPct > 90
+                    ? "bg-red-400/10 text-red-400 border-red-400/20"
+                    : costPct > 70
+                      ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
+                      : "bg-zinc-400/10 text-zinc-400 border-zinc-400/20"
+                }`}
+              >
+                ${spent.toFixed(2)} / ${totalBudget.toFixed(0)}
               </span>
             )}
           </div>
-          {totalBudget > 0 && (
-            <span className={`text-xs font-medium ${costColor}`}>
-              ${spent.toFixed(2)} / ${totalBudget.toFixed(2)}
-            </span>
-          )}
-        </div>
-        <div className="mt-2">
+          <div className="text-xs text-zinc-600 mb-2">
+            {project.targetRepo} &middot; {project.id}
+          </div>
           <ProgressBar
             total={workItems.length}
             completed={completed}
@@ -171,25 +218,30 @@ export function ProjectCard({
             blocked={blocked}
           />
         </div>
-      </CardHeader>
+      </button>
       {expanded && workItems.length > 0 && (
-        <CardContent className="pt-0">
-          <div className="space-y-1.5 border-t pt-3">
-            {workItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-muted/50"
+        <div className="border-t border-zinc-800 px-4 py-2">
+          {workItems.map((item) => (
+            <div
+              key={item.id}
+              className="flex items-center gap-2.5 py-1.5 text-sm"
+            >
+              <StatusIcon status={item.status} />
+              <span
+                className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  <StatusIcon status={item.status} />
-                  <span className="truncate">{item.title}</span>
-                </div>
-                <WorkItemMeta item={item} />
-              </div>
-            ))}
-          </div>
-        </CardContent>
+                {item.title}
+              </span>
+              {item.handoff?.budget != null && item.execution && (
+                <span className="text-[11px] text-zinc-600">
+                  ${item.handoff.budget.toFixed(2)}
+                </span>
+              )}
+              <WorkItemMeta item={item} />
+            </div>
+          ))}
+        </div>
       )}
-    </Card>
+    </div>
   );
 }
