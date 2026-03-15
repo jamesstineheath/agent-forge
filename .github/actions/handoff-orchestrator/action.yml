@@ -1,0 +1,19 @@
+name: "Handoff Lifecycle Orchestrator"
+description: "Tracks handoff lifecycle state, triggers retries on CI failures, and posts status comments"
+inputs:
+  github-token:
+    description: "GitHub token with PR write and actions write permissions"
+    required: true
+  anthropic-api-key:
+    description: "Anthropic API key (for retry prompt generation)"
+    required: false
+outputs:
+  state:
+    description: "Current handoff lifecycle state"
+  branch:
+    description: "Branch being tracked"
+  retry-count:
+    description: "Number of retries attempted"
+runs:
+  using: "node20"
+  main: "dist/index.js"
