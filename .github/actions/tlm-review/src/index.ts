@@ -320,6 +320,28 @@ async function run(): Promise<void> {
       }
     }
 
+    // Fallback: query for open PRs matching the check suite's HEAD SHA
+    if (!prNumber && context.eventName === "check_suite") {
+      const headSha = context.payload.check_suite?.head_sha;
+      if (headSha) {
+        const { data: pulls } = await octokit.rest.pulls.list({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          state: "open",
+          sort: "updated",
+          direction: "desc",
+          per_page: 10,
+        });
+        const matchingPr = pulls.find((p) => p.head.sha === headSha);
+        if (matchingPr) {
+          prNumber = matchingPr.number;
+          core.info(
+            `Found PR #${prNumber} by SHA match for check_suite event`
+          );
+        }
+      }
+    }
+
     if (!prNumber) {
       core.info("No PR associated with this event, skipping review.");
       return;
@@ -343,14 +365,8 @@ async function run(): Promise<void> {
       return;
     }
 
-    // Skip PRs opened by bots (avoid review loops)
-    if (
-      pr.user?.type === "Bot" ||
-      pr.user?.login?.includes("[bot]")
-    ) {
-      core.info("PR opened by a bot, skipping review.");
-      return;
-    }
+    // Pipeline PRs from github-actions[bot] must be reviewed by TLM.
+    // Bot-skip logic removed to allow TLM to review all non-draft PRs.
 
     // Fetch the diff
     const { data: diffData } = await octokit.rest.pulls.get({
@@ -376,7 +392,24 @@ async function run(): Promise<void> {
     );
 
     // Check CI status before reviewing — don't approve if CI is failing
-    const ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
+    let ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
+
+    // On pull_request events, poll briefly for CI to complete (handles fast CI runs)
+    if (context.eventName === "pull_request" && ciStatus === "pending") {
+      core.info("CI is pending, waiting up to 60s for completion...");
+      for (let i = 0; i < 4; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 15000));
+        ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
+        if (ciStatus !== "pending") break;
+      }
+      if (ciStatus === "pending") {
+        core.info("CI still pending after 60s, deferring to check_suite handler.");
+        core.setOutput("decision", "ci_pending");
+        core.setOutput("summary", "CI is pending, deferring review to check_suite event.");
+        return;
+      }
+    }
+
     if (ciStatus === "failing" || ciStatus === "pending") {
       core.setOutput("decision", `ci_${ciStatus}`);
       core.setOutput("summary", `CI is ${ciStatus}, deferring review.`);
