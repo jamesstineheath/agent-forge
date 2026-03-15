@@ -1,37 +1,90 @@
 import { NextResponse } from "next/server";
 
 /**
- * Temporary endpoint to test Vercel Blob operations directly.
+ * Temporary endpoint to test Vercel Blob read approaches.
  * DELETE AFTER DEBUGGING.
  *
- * GET /api/debug/blob-test — run put/head/list/get cycle
+ * GET /api/debug/blob-test
  */
 export async function GET() {
   const results: Record<string, unknown> = {};
 
-  // Step 0: Check env
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   results["env_BLOB_READ_WRITE_TOKEN"] = token
-    ? `set (${token.slice(0, 20)}...${token.slice(-4)})`
+    ? `set (${token.slice(0, 20)}...)`
     : "MISSING";
 
   if (!token) {
     return NextResponse.json(results, { status: 200 });
   }
 
-  // Step 1: Try put
+  // We know repos/index.json exists (544 bytes). Test every read approach.
+  const testPathname = "af-data/repos/index.json";
+
+  // Approach 1: head() — get metadata
+  let headUrl = "";
   try {
-    const { put } = await import("@vercel/blob");
-    const testData = JSON.stringify({ test: true, ts: Date.now() });
-    const blob = await put("af-data/_debug_test.json", testData, {
-      access: "public",
-      contentType: "application/json",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
-    results["step1_put_public"] = { success: true, url: blob.url, pathname: blob.pathname };
+    const { head } = await import("@vercel/blob");
+    const blob = await head(testPathname);
+    // Log ALL properties
+    headUrl = blob.url;
+    results["approach1_head"] = {
+      success: true,
+      url: blob.url,
+      downloadUrl: (blob as Record<string, unknown>).downloadUrl ?? "NOT_PRESENT",
+      pathname: blob.pathname,
+      size: blob.size,
+      allKeys: Object.keys(blob),
+    };
   } catch (err) {
-    results["step1_put_public"] = {
+    results["approach1_head"] = {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // Approach 2: fetch blob.url directly (expected to fail for private)
+  if (headUrl) {
+    try {
+      const response = await fetch(headUrl, { cache: "no-store" });
+      const text = await response.text();
+      results["approach2_fetch_url"] = {
+        success: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        bodyPreview: text.slice(0, 200),
+      };
+    } catch (err) {
+      results["approach2_fetch_url"] = {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  // Approach 3: getDownloadUrl then fetch
+  try {
+    const { getDownloadUrl } = await import("@vercel/blob");
+    const downloadResult = await getDownloadUrl(headUrl);
+    results["approach3_getDownloadUrl"] = {
+      success: true,
+      resultType: typeof downloadResult,
+      result: typeof downloadResult === "string"
+        ? downloadResult.slice(0, 100)
+        : JSON.stringify(downloadResult).slice(0, 200),
+    };
+    const fetchUrl = typeof downloadResult === "string" ? downloadResult : (downloadResult as Record<string, unknown>).url;
+    if (fetchUrl) {
+      const response = await fetch(String(fetchUrl), { cache: "no-store" });
+      const text = await response.text();
+      results["approach3_fetch_result"] = {
+        success: response.ok,
+        status: response.status,
+        bodyPreview: text.slice(0, 200),
+      };
+    }
+  } catch (err) {
+    results["approach3_getDownloadUrl"] = {
       success: false,
       error: err instanceof Error ? err.message : String(err),
       name: err instanceof Error ? err.name : undefined,
@@ -39,107 +92,51 @@ export async function GET() {
     };
   }
 
-  // Step 1b: Try put with private access (matching production config)
+  // Approach 4: get() function
   try {
-    const { put } = await import("@vercel/blob");
-    const testData = JSON.stringify({ test: true, ts: Date.now(), access: "private" });
-    const blob = await put("af-data/_debug_test_private.json", testData, {
-      access: "private",
-      contentType: "application/json",
-      addRandomSuffix: false,
-      allowOverwrite: true,
-    });
-    results["step1b_put_private"] = { success: true, url: blob.url, pathname: blob.pathname };
-  } catch (err) {
-    results["step1b_put_private"] = {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      name: err instanceof Error ? err.name : undefined,
-    };
-  }
-
-  // Step 2: Try head on what we just wrote
-  try {
-    const { head } = await import("@vercel/blob");
-    const blob = await head("af-data/_debug_test.json");
-    results["step2_head"] = { success: true, url: blob.url, size: blob.size };
-  } catch (err) {
-    results["step2_head"] = {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      name: err instanceof Error ? err.name : undefined,
-    };
-  }
-
-  // Step 3: Try list to see what's in the store
-  try {
-    const { list } = await import("@vercel/blob");
-    const { blobs } = await list({ prefix: "af-data/", limit: 20 });
-    results["step3_list"] = {
+    const { get } = await import("@vercel/blob");
+    const blob = await get(testPathname);
+    results["approach4_get"] = {
       success: true,
-      count: blobs.length,
-      blobs: blobs.map((b) => ({
-        pathname: b.pathname,
-        size: b.size,
-        uploadedAt: b.uploadedAt,
-      })),
+      resultType: typeof blob,
+      allKeys: blob ? Object.keys(blob) : [],
+      hasBody: !!(blob as Record<string, unknown>)?.body,
+      bodyType: typeof (blob as Record<string, unknown>)?.body,
     };
+    // Try to read body if it's a Response-like object
+    if (blob && typeof (blob as Record<string, unknown>).text === "function") {
+      const text = await (blob as Response).text();
+      results["approach4_get_body"] = text.slice(0, 200);
+    } else if (blob && typeof (blob as Record<string, unknown>).body === "string") {
+      results["approach4_get_body"] = String((blob as Record<string, unknown>).body).slice(0, 200);
+    }
   } catch (err) {
-    results["step3_list"] = {
+    results["approach4_get"] = {
       success: false,
       error: err instanceof Error ? err.message : String(err),
       name: err instanceof Error ? err.name : undefined,
     };
   }
 
-  // Step 4: Try fetching the blob content
-  try {
-    const { head } = await import("@vercel/blob");
-    const blob = await head("af-data/_debug_test.json");
-    const response = await fetch(blob.url, { cache: "no-store" });
-    const text = await response.text();
-    results["step4_fetch_content"] = {
-      success: response.ok,
-      status: response.status,
-      body: text.slice(0, 200),
-    };
-  } catch (err) {
-    results["step4_fetch_content"] = {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  // Step 5: Check what the storage module sees for repos/index
-  try {
-    const { loadJson } = await import("@/lib/storage");
-    const index = await loadJson("repos/index");
-    results["step5_storage_loadJson_repos_index"] = {
-      success: true,
-      value: index,
-    };
-  } catch (err) {
-    results["step5_storage_loadJson_repos_index"] = {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  // Step 6: Try direct Blob head for the repos index
-  try {
-    const { head } = await import("@vercel/blob");
-    const blob = await head("af-data/repos/index.json");
-    results["step6_direct_head_repos_index"] = {
-      success: true,
-      url: blob.url,
-      size: blob.size,
-    };
-  } catch (err) {
-    results["step6_direct_head_repos_index"] = {
-      success: false,
-      error: err instanceof Error ? err.message : String(err),
-      name: err instanceof Error ? err.name : undefined,
-    };
+  // Approach 5: fetch with Authorization header
+  if (headUrl) {
+    try {
+      const response = await fetch(headUrl, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const text = await response.text();
+      results["approach5_fetch_with_auth"] = {
+        success: response.ok,
+        status: response.status,
+        bodyPreview: text.slice(0, 200),
+      };
+    } catch (err) {
+      results["approach5_fetch_with_auth"] = {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   return NextResponse.json(results, { status: 200 });
