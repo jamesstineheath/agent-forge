@@ -16,6 +16,7 @@ const STATUS_COLORS: Record<WorkItem["status"], string> = {
   failed: "bg-red-100 text-red-700",
   parked: "bg-slate-100 text-slate-600",
   blocked: "bg-red-200 text-red-800",
+  cancelled: "bg-gray-200 text-gray-500",
 };
 
 const PRIORITY_COLORS: Record<WorkItem["priority"], string> = {

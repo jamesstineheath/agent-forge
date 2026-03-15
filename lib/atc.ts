@@ -343,6 +343,24 @@ export async function runATCCycle(): Promise<ATCState> {
       const success = await transitionToExecuting(project);
       if (!success) continue;
 
+      // Dedup guard: skip if project already has work items
+      const allItemEntries = await listWorkItems({});
+      let alreadyDecomposed = false;
+      for (const entry of allItemEntries) {
+        const existingItem = await getWorkItem(entry.id);
+        if (existingItem && existingItem.source?.type === "project" && existingItem.source?.sourceId === project.projectId) {
+          alreadyDecomposed = true;
+          break;
+        }
+      }
+      if (alreadyDecomposed) {
+        events.push(makeEvent(
+          "project_trigger", project.projectId, undefined, undefined,
+          `Dedup guard: project "${project.title}" already has work items, skipping decomposition`
+        ));
+        continue;
+      }
+
       events.push(makeEvent(
         "status_change", project.projectId, "Execute", "Executing",
         `Project "${project.title}" (${project.projectId}) transitioned to Executing`
@@ -350,6 +368,16 @@ export async function runATCCycle(): Promise<ATCState> {
 
       try {
         const workItems = await decomposeProject(project);
+
+        if (workItems.length === 0) {
+          await transitionToFailed(project);
+          events.push(makeEvent(
+            "error", project.projectId, "Executing", "Failed",
+            `Decomposition produced 0 work items for "${project.title}", transitioning to Failed`
+          ));
+          continue;
+        }
+
         events.push(makeEvent(
           "project_trigger", project.projectId, undefined, undefined,
           `Project "${project.title}" decomposed into ${workItems.length} work items`
@@ -531,7 +559,7 @@ export async function runATCCycle(): Promise<ATCState> {
       // Skip if no work items yet (decomposition pending)
       if (projectItems.length === 0) continue;
 
-      const terminalStatuses = ["merged", "parked", "failed"];
+      const terminalStatuses = ["merged", "parked", "failed", "cancelled"];
       const allTerminal = projectItems.every((item) => terminalStatuses.includes(item.status));
       if (!allTerminal) continue;
 
