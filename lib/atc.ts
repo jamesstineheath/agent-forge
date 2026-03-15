@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { loadJson, saveJson } from "./storage";
+import { loadJson, saveJson, deleteJson } from "./storage";
 import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
@@ -304,6 +304,30 @@ export async function runATCCycle(): Promise<ATCState> {
         `Waiting on dependencies: ${unmetDeps.join(", ")}`
       ));
     }
+
+    // Dead dependency auto-cancellation: cancel items whose deps are permanently unresolvable
+    const TERMINAL_FAILURE_STATUSES = ["failed", "parked", "cancelled"];
+    for (const item of blocked) {
+      const deadDeps: string[] = [];
+      for (const depId of item.dependencies) {
+        const dep = await getWorkItem(depId);
+        if (!dep) {
+          // Dependency was deleted - permanently unresolvable
+          deadDeps.push(depId);
+        } else if (TERMINAL_FAILURE_STATUSES.includes(dep.status)) {
+          // Dependency failed/parked/cancelled - will never reach "merged"
+          deadDeps.push(depId);
+        }
+      }
+
+      if (deadDeps.length > 0) {
+        await updateWorkItem(item.id, { status: "cancelled" as any });
+        events.push(makeEvent(
+          "auto_cancel", item.id, item.status, "cancelled",
+          `Auto-cancelled: ${deadDeps.length} dead dependency(ies) [${deadDeps.join(", ")}]`
+        ));
+      }
+    }
   }
 
   // 3.5: Retry failed items (max 2 retries, then park)
@@ -353,20 +377,13 @@ export async function runATCCycle(): Promise<ATCState> {
       const success = await transitionToExecuting(project);
       if (!success) continue;
 
-      // Dedup guard: skip if project already has work items
-      const allItemEntries = await listWorkItems({});
-      let alreadyDecomposed = false;
-      for (const entry of allItemEntries) {
-        const existingItem = await getWorkItem(entry.id);
-        if (existingItem && existingItem.source?.type === "project" && existingItem.source?.sourceId === project.projectId) {
-          alreadyDecomposed = true;
-          break;
-        }
-      }
+      // Dedup guard: O(1) check via dedicated dedup key per project
+      const dedupKey = `atc/project-decomposed/${project.projectId}`;
+      const alreadyDecomposed = await loadJson<{ decomposedAt: string }>(dedupKey);
       if (alreadyDecomposed) {
         events.push(makeEvent(
           "project_trigger", project.projectId, undefined, undefined,
-          `Dedup guard: project "${project.title}" already has work items, skipping decomposition`
+          `Dedup guard: project "${project.title}" already decomposed at ${alreadyDecomposed.decomposedAt}, skipping`
         ));
         continue;
       }
@@ -387,6 +404,9 @@ export async function runATCCycle(): Promise<ATCState> {
           ));
           continue;
         }
+
+        // Save dedup key after successful decomposition
+        await saveJson(dedupKey, { decomposedAt: now.toISOString(), workItemCount: workItems.length });
 
         events.push(makeEvent(
           "project_trigger", project.projectId, undefined, undefined,
@@ -450,6 +470,44 @@ export async function runATCCycle(): Promise<ATCState> {
     }
   } catch (err) {
     console.error("[atc] Branch cleanup failed:", err);
+  }
+
+  // 9.5: Work item blob-index reconciliation (hourly)
+  const RECONCILIATION_KEY = "atc/last-reconciliation";
+  try {
+    const reconLast = await loadJson<{ lastRunAt: string }>(RECONCILIATION_KEY);
+    const reconElapsed = reconLast
+      ? (now.getTime() - new Date(reconLast.lastRunAt).getTime()) / 60_000
+      : Infinity;
+
+    if (reconElapsed >= 60) {
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        const { list } = await import("@vercel/blob");
+        const { blobs } = await list({ prefix: "af-data/work-items/", mode: "folded" });
+        const blobIds = new Set(
+          blobs.map(b => b.pathname.replace("af-data/work-items/", "").replace(".json", ""))
+        );
+
+        const indexEntries = await listWorkItems({});
+        const indexIds = new Set(indexEntries.map(e => e.id));
+
+        // Find dangling blobs (in blob store but not in index)
+        const danglingIds = [...blobIds].filter(id => id && !indexIds.has(id));
+        if (danglingIds.length > 0) {
+          for (const id of danglingIds) {
+            await deleteJson(`work-items/${id}`);
+          }
+          events.push(makeEvent(
+            "cleanup", "system", undefined, undefined,
+            `Blob reconciliation: deleted ${danglingIds.length} dangling work-item blob(s)`
+          ));
+        }
+      }
+
+      await saveJson(RECONCILIATION_KEY, { lastRunAt: now.toISOString() });
+    }
+  } catch (err) {
+    console.error("[atc] Blob-index reconciliation failed:", err);
   }
 
   // 10. Escalation timeout monitoring: flag escalations older than 24h
