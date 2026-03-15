@@ -222,6 +222,80 @@ function loadCodebaseContext(): {
   return { systemMap, adrSummaries, reviewMemory };
 }
 
+async function checkCIStatus(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  ref: string,
+  prNumber: number
+): Promise<"passed" | "failing" | "pending"> {
+  // Get check runs (CI uses check runs, not commit statuses)
+  const { data: checkRuns } = await octokit.rest.checks.listForRef({
+    owner,
+    repo,
+    ref,
+  });
+
+  // Filter out TLM Code Review's own check run to avoid circular dependency
+  const ciChecks = checkRuns.check_runs.filter(
+    (cr) => !cr.name.toLowerCase().includes("tlm") && !cr.name.toLowerCase().includes("code review")
+  );
+
+  if (ciChecks.length === 0) {
+    core.info("No CI check runs found (excluding TLM), proceeding with review.");
+    return "passed";
+  }
+
+  const failedChecks = ciChecks.filter((cr) => cr.conclusion === "failure");
+  if (failedChecks.length > 0) {
+    core.info(`CI failing: ${failedChecks.map((c) => c.name).join(", ")}`);
+
+    await octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      body: [
+        "## TLM Review: CI Failing",
+        "",
+        "CI is failing. Deferring code review until CI passes.",
+        "",
+        "Failing checks:",
+        ...failedChecks.map((c) => `- \`${c.name}\`: ${c.conclusion}`),
+        "",
+        "*Will automatically re-review when CI completes (via check_suite trigger).*",
+      ].join("\n"),
+      event: "COMMENT",
+    });
+    return "failing";
+  }
+
+  const pendingChecks = ciChecks.filter(
+    (cr) => cr.status === "in_progress" || cr.status === "queued"
+  );
+  if (pendingChecks.length > 0) {
+    core.info(`CI still running: ${pendingChecks.map((c) => c.name).join(", ")}`);
+
+    await octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      body: [
+        "## TLM Review: CI Pending",
+        "",
+        "CI still running. Will review on check_suite completion.",
+        "",
+        "Pending checks:",
+        ...pendingChecks.map((c) => `- \`${c.name}\`: ${c.status}`),
+      ].join("\n"),
+      event: "COMMENT",
+    });
+    return "pending";
+  }
+
+  core.info("All CI checks passed, proceeding with review.");
+  return "passed";
+}
+
 async function run(): Promise<void> {
   try {
     const apiKey = core.getInput("anthropic-api-key", { required: true });
@@ -300,6 +374,14 @@ async function run(): Promise<void> {
     core.info(
       `PR has ${changedFiles.length} changed files, ${diffLineCount} diff lines`
     );
+
+    // Check CI status before reviewing — don't approve if CI is failing
+    const ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
+    if (ciStatus === "failing" || ciStatus === "pending") {
+      core.setOutput("decision", `ci_${ciStatus}`);
+      core.setOutput("summary", `CI is ${ciStatus}, deferring review.`);
+      return;
+    }
 
     // Risk escalation gate: flag sensitive paths for human review
     const SENSITIVE_PATH_PATTERNS = [

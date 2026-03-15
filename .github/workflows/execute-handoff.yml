@@ -166,6 +166,44 @@ jobs:
             --max-budget-usd ${{ steps.budget.outputs.amount }} \
             2>&1 | tee /tmp/claude-output.log
 
+      - name: Wait for CI and report failures
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.params.outputs.branch }}"
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            echo "No open PR found for branch $BRANCH, skipping CI wait."
+            exit 0
+          fi
+
+          echo "Found PR #$PR_NUMBER, waiting for CI checks (10 min timeout)..."
+
+          if timeout 600 gh pr checks "$PR_NUMBER" --watch --fail-on-failure; then
+            echo "All CI checks passed."
+          else
+            echo "CI checks failed for PR #$PR_NUMBER"
+
+            # Fetch failed check logs
+            FAILED_CHECKS=$(gh pr checks "$PR_NUMBER" --json name,state,description --jq '.[] | select(.state == "FAILURE") | "- **\(.name)**: \(.description // "No description")"')
+
+            COMMENT_BODY=$(cat <<CIEOF
+          ## CI Failure Detected
+
+          The code pushed by this handoff execution has failing CI checks:
+
+          ${FAILED_CHECKS}
+
+          The execute-handoff workflow is marking this run as failed. Please inspect the CI logs and fix the issues.
+          CIEOF
+          )
+
+            gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
+            exit 1
+          fi
+
       - name: Parse execution cost
         id: cost
         if: always()
