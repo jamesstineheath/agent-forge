@@ -211,7 +211,7 @@ missing credentials, architectural decisions requiring human judgment, or repeat
 
 \`\`\`bash
 curl -X POST "\${AGENT_FORGE_URL}/api/escalations" \\
-  -H "Authorization: Bearer \${ESCALATION_SECRET}" \\
+  -H "Authorization: Bearer \${AGENT_FORGE_API_SECRET}" \\
   -H "Content-Type: application/json" \\
   -d '{
     "workItemId": "<work-item-id>",
@@ -225,7 +225,7 @@ curl -X POST "\${AGENT_FORGE_URL}/api/escalations" \\
   }'
 \`\`\`
 
-The ESCALATION_SECRET and AGENT_FORGE_URL environment variables are provided in the execution
+The AGENT_FORGE_API_SECRET and AGENT_FORGE_URL environment variables are provided in the execution
 environment. This will notify the project owner via email and block the work item until resolved.
 
 Generate a precise, actionable handoff file. Be specific about file paths, function signatures, and implementation details. The agent executing this handoff has no other context — the handoff must be self-contained.`;

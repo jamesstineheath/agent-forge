@@ -18,7 +18,7 @@ This is a re-draft of handoff 14 (PR #16), which has merge conflicts after PRs #
 
 The PA's `file_work_item` bridge tool (PR #244) is already merged and deployed. It calls `POST /api/work-items` with `Authorization: Bearer <WORK_ITEMS_API_KEY>`. The Agent Forge endpoint currently only accepts Auth.js session cookies, so the bridge tool gets 401s. This handoff fixes that.
 
-The escalation endpoint (`app/api/escalations/route.ts`) already has inline Bearer token auth via `validateBearerToken()` using `ESCALATION_SECRET`. The pattern is proven.
+The escalation endpoint (`app/api/escalations/route.ts`) already has inline Bearer token auth via `validateBearerToken()` using `AGENT_FORGE_API_SECRET`. The pattern is proven.
 
 ## Pre-flight Self-Check
 
@@ -90,7 +90,7 @@ If `app/api/work-items/[id]/route.ts` exists and uses `auth()`, apply the same p
 
 ## Step 4: Migrate escalations route to shared helper
 
-Refactor `app/api/escalations/route.ts` to use `validateAuth(req, "ESCALATION_SECRET")` instead of its inline `validateBearerToken()`. Remove the local function. This consolidates auth.
+Refactor `app/api/escalations/route.ts` to use `validateAuth(req, "AGENT_FORGE_API_SECRET")` instead of its inline `validateBearerToken()`. Remove the local function. This consolidates auth.
 
 If `app/api/escalations/[id]/route.ts` exists with its own auth check, migrate that too.
 

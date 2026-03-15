@@ -1,13 +1,13 @@
 // scripts/test-escalation-e2e.ts
 // End-to-end test for the escalation flow: create escalation → verify work item blocked → list escalations.
 //
-// Usage: AGENT_FORGE_URL=http://localhost:3002 ESCALATION_SECRET=test-secret npx tsx scripts/test-escalation-e2e.ts
+// Usage: AGENT_FORGE_URL=http://localhost:3002 AGENT_FORGE_API_SECRET=test-secret npx tsx scripts/test-escalation-e2e.ts
 //
 // Prerequisites: A work item must exist. Set WORK_ITEM_ID env var, or the script
 // will attempt to find one from GET /api/work-items.
 
 const BASE_URL = process.env.AGENT_FORGE_URL || "http://localhost:3002";
-const SECRET = process.env.ESCALATION_SECRET || "test-secret";
+const SECRET = process.env.AGENT_FORGE_API_SECRET || "test-secret";
 const WORK_ITEM_ID = process.env.WORK_ITEM_ID;
 
 interface TestResult {

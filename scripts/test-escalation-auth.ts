@@ -1,7 +1,7 @@
 // scripts/test-escalation-auth.ts
 // Tests Bearer token authentication on the /api/escalations endpoint.
 //
-// Usage: AGENT_FORGE_URL=http://localhost:3002 ESCALATION_SECRET=test-secret npx tsx scripts/test-escalation-auth.ts
+// Usage: AGENT_FORGE_URL=http://localhost:3002 AGENT_FORGE_API_SECRET=test-secret npx tsx scripts/test-escalation-auth.ts
 //
 // This script verifies:
 // 1. Requests without a token return 401
@@ -9,7 +9,7 @@
 // 3. Requests with a valid token are accepted (returns 400 for missing body, not 401)
 
 const BASE_URL = process.env.AGENT_FORGE_URL || "http://localhost:3002";
-const SECRET = process.env.ESCALATION_SECRET || "test-secret";
+const SECRET = process.env.AGENT_FORGE_API_SECRET || "test-secret";
 const ENDPOINT = `${BASE_URL}/api/escalations`;
 
 interface TestResult {

@@ -88,7 +88,7 @@ handoffs/           # Handoff file directory
 - `GOOGLE_AUTH_CLIENT_SECRET` -- Google OAuth
 - `CRON_SECRET` -- Vercel cron authentication
 - `WORK_ITEMS_API_KEY` -- Bearer token auth for `/api/work-items` (server-to-server calls from PA)
-- `ESCALATION_SECRET` -- Bearer token auth for `/api/escalations` (pipeline agent calls)
+- `AGENT_FORGE_API_SECRET` -- Bearer token auth for `/api/escalations` (pipeline agent calls)
 
 ### GitHub Secrets
 - `ANTHROPIC_API_KEY` -- For TLM agents in GitHub Actions
