@@ -63,8 +63,11 @@ async function loadFromBlob<T>(key: string): Promise<T | null> {
   try {
     const { head } = await import("@vercel/blob");
     const blob = await head(pathname, { token });
-    // blob.url is already a signed download URL for private stores
-    const response = await fetch(blob.url, { cache: "no-store" });
+    // Private stores require Authorization header for direct URL access
+    const response = await fetch(blob.url, {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!response.ok) return null;
     return (await response.json()) as T;
   } catch {

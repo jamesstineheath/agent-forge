@@ -25,33 +25,34 @@ export async function GET() {
     results["test1_roundtrip"] = { success: false, error: String(err) };
   }
 
-  // Test 2: Read repos/index via storage module (tests loadFromBlob fix)
+  // Test 2: Read repos/index via storage module (tests loadFromBlob with Auth header)
   try {
     const reposIndex = await loadJson("repos/index");
     results["test2_repos_index"] = {
+      success: true,
       value: reposIndex,
       isNull: reposIndex === null,
     };
   } catch (err) {
-    results["test2_repos_index"] = { error: String(err) };
+    results["test2_repos_index"] = { success: false, error: String(err) };
   }
 
-  // Test 3: Direct head + getDownloadUrl with explicit token
+  // Test 3: Direct fetch with Authorization Bearer header
   if (token) {
     try {
-      const { head, getDownloadUrl } = await import("@vercel/blob");
+      const { head } = await import("@vercel/blob");
       const blob = await head("af-data/repos/index.json", { token });
       results["test3_head"] = { url: blob.url, size: blob.size };
 
-      const downloadUrl = await getDownloadUrl(blob.url, { token });
-      results["test3_downloadUrl"] = downloadUrl.slice(0, 80) + "...";
-
-      const response = await fetch(downloadUrl, { cache: "no-store" });
+      const response = await fetch(blob.url, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const text = await response.text();
       results["test3_fetch"] = {
         ok: response.ok,
         status: response.status,
-        body: text.slice(0, 300),
+        body: text.slice(0, 500),
       };
     } catch (err) {
       results["test3_error"] = err instanceof Error ? err.message : String(err);
