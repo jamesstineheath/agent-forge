@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = await validateAuth(req, "ESCALATION_SECRET");
+  const authError = await validateAuth(req, "AGENT_FORGE_API_SECRET");
   if (authError) return authError;
 
   try {

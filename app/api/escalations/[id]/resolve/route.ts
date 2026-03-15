@@ -8,7 +8,7 @@ export async function POST(
 ) {
   // Validate Bearer token
   const authHeader = req.headers.get("Authorization");
-  const escalationSecret = process.env.ESCALATION_SECRET;
+  const escalationSecret = process.env.AGENT_FORGE_API_SECRET;
 
   if (!escalationSecret) {
     return NextResponse.json(

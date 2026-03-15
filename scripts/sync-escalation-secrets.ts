@@ -1,13 +1,13 @@
 // scripts/sync-escalation-secrets.ts
-// Adds ESCALATION_SECRET and AGENT_FORGE_URL as repository secrets to target repos
+// Adds AGENT_FORGE_API_SECRET and AGENT_FORGE_URL as repository secrets to target repos
 // so their execute-handoff workflows can call back to the Agent Forge escalation API.
 //
 // Prerequisites:
 //   - GH_PAT env var with admin:org or repo scope for target repos
-//   - ESCALATION_SECRET env var (the shared secret to set)
+//   - AGENT_FORGE_API_SECRET env var (the shared secret to set)
 //   - AGENT_FORGE_URL env var (the Agent Forge base URL)
 //
-// Usage: GH_PAT=... ESCALATION_SECRET=... AGENT_FORGE_URL=... npx tsx scripts/sync-escalation-secrets.ts
+// Usage: GH_PAT=... AGENT_FORGE_API_SECRET=... AGENT_FORGE_URL=... npx tsx scripts/sync-escalation-secrets.ts
 //
 // This script uses the GitHub CLI (gh) to set secrets, which handles the
 // libsodium encryption required by the GitHub Secrets API.
@@ -20,7 +20,7 @@ const TARGET_REPOS = [
 ];
 
 const SECRETS_TO_SYNC: Record<string, string | undefined> = {
-  ESCALATION_SECRET: process.env.ESCALATION_SECRET,
+  AGENT_FORGE_API_SECRET: process.env.AGENT_FORGE_API_SECRET,
   AGENT_FORGE_URL: process.env.AGENT_FORGE_URL,
 };
 
