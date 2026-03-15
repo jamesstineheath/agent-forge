@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
 import type { WorkItem } from "@/lib/types";
 
 const ACTIVE_STATUSES: WorkItem["status"][] = [
@@ -14,7 +13,6 @@ interface QuickStatsProps {
 }
 
 export function QuickStats({ workItems }: QuickStatsProps) {
-  // TLM quality rate: merged / (merged + failed + reverted)
   const merged = workItems.filter(
     (wi) => wi.execution?.outcome === "merged"
   ).length;
@@ -26,7 +24,6 @@ export function QuickStats({ workItems }: QuickStatsProps) {
   const qualityDenom = merged + failedOrReverted;
   const qualityRate = qualityDenom > 0 ? Math.round((merged / qualityDenom) * 100) : 100;
 
-  // Today's spend: sum handoff.budget for items that started today
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const todaySpend = workItems
@@ -38,12 +35,10 @@ export function QuickStats({ workItems }: QuickStatsProps) {
     )
     .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
 
-  // Active executions
   const active = workItems.filter((wi) =>
     ACTIVE_STATUSES.includes(wi.status)
   ).length;
 
-  // Waste %: budget spent on failed items / total budget spent
   const totalSpent = workItems
     .filter((wi) => wi.execution && wi.handoff)
     .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
@@ -59,38 +54,37 @@ export function QuickStats({ workItems }: QuickStatsProps) {
 
   const stats = [
     {
-      label: "TLM Quality",
+      label: "TLM quality rate",
       value: `${qualityRate}%`,
-      color: qualityRate >= 80 ? "text-emerald-600" : qualityRate >= 60 ? "text-amber-600" : "text-red-600",
+      color: "text-zinc-100",
     },
     {
-      label: "Today's Spend",
-      value: `$${todaySpend.toFixed(2)}`,
-      color: "text-foreground",
+      label: "Spent today",
+      value: `$${todaySpend.toFixed(0)}`,
+      color: "text-zinc-100",
     },
     {
-      label: "Active",
+      label: "Active executions",
       value: String(active),
-      color: active > 0 ? "text-amber-600" : "text-muted-foreground",
+      color: active > 0 ? "text-amber-400" : "text-zinc-100",
     },
     {
-      label: "Waste",
+      label: "Wasted on failures",
       value: `${wastePct}%`,
-      color: wastePct > 20 ? "text-red-600" : wastePct > 10 ? "text-amber-600" : "text-emerald-600",
+      color: wastePct > 0 ? "text-red-400" : "text-zinc-100",
     },
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-4 gap-3">
       {stats.map((stat) => (
-        <Card key={stat.label}>
-          <CardContent className="py-3 px-4">
-            <p className="text-xs font-medium text-muted-foreground">
-              {stat.label}
-            </p>
-            <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-          </CardContent>
-        </Card>
+        <div
+          key={stat.label}
+          className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-center"
+        >
+          <div className={`text-lg font-bold ${stat.color}`}>{stat.value}</div>
+          <div className="text-[11px] text-zinc-500">{stat.label}</div>
+        </div>
       ))}
     </div>
   );

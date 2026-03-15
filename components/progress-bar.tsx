@@ -17,56 +17,54 @@ export function ProgressBar({
 }: ProgressBarProps) {
   if (total === 0) {
     return (
-      <p className="text-sm text-muted-foreground">No work items yet</p>
+      <div className="text-xs text-zinc-600">No work items yet</div>
     );
   }
 
-  const pct = (n: number) => (n / total) * 100;
+  const pct = (n: number) => `${(n / total) * 100}%`;
 
   return (
-    <div>
-      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
+    <div className="w-full">
+      <div className="flex h-2 rounded-full overflow-hidden bg-zinc-800">
         {completed > 0 && (
           <div
-            className="bg-emerald-500"
-            style={{ width: `${pct(completed)}%` }}
+            className="bg-emerald-500 transition-all"
+            style={{ width: pct(completed) }}
           />
         )}
         {executing > 0 && (
           <div
-            className="bg-amber-500"
-            style={{ width: `${pct(executing)}%` }}
+            className="bg-amber-500 transition-all"
+            style={{ width: pct(executing) }}
           />
         )}
         {failed > 0 && (
           <div
-            className="bg-red-500"
-            style={{ width: `${pct(failed)}%` }}
+            className="bg-red-500 transition-all"
+            style={{ width: pct(failed) }}
           />
         )}
         {blocked > 0 && (
           <div
-            className="bg-orange-500"
-            style={{ width: `${pct(blocked)}%` }}
+            className="bg-orange-500/40 transition-all"
+            style={{ width: pct(blocked) }}
           />
         )}
       </div>
-      <div className="mt-1 flex items-center justify-between text-xs">
-        <div className="flex gap-3">
-          {completed > 0 && (
-            <span className="text-emerald-600">{completed} done</span>
-          )}
-          {executing > 0 && (
-            <span className="text-amber-600">{executing} running</span>
-          )}
-          {failed > 0 && (
-            <span className="text-red-600">{failed} failed</span>
-          )}
-          {blocked > 0 && (
-            <span className="text-orange-600">{blocked} blocked</span>
-          )}
-        </div>
-        <span className="text-muted-foreground">
+      <div className="flex gap-3 mt-1.5 text-xs text-zinc-500">
+        {completed > 0 && (
+          <span className="text-emerald-400">{completed} done</span>
+        )}
+        {executing > 0 && (
+          <span className="text-amber-400">{executing} running</span>
+        )}
+        {failed > 0 && (
+          <span className="text-red-400">{failed} failed</span>
+        )}
+        {blocked > 0 && (
+          <span className="text-orange-400">{blocked} blocked</span>
+        )}
+        <span className="ml-auto">
           {completed}/{total}
         </span>
       </div>

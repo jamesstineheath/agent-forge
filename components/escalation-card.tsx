@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { AlertTriangle } from "lucide-react";
 import type { Escalation } from "@/lib/escalation";
 
 function formatRelativeTime(ts: string): string {
@@ -58,32 +58,33 @@ export function EscalationCard({
   };
 
   return (
-    <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm">
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-3">
+      <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-sm font-medium text-zinc-200">
             {workItemTitle ?? escalation.workItemId}
-          </p>
-          <p className="text-sm text-gray-700 mt-1">{escalation.reason}</p>
-          <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-            {escalation.projectId && <span>{escalation.projectId}</span>}
-            {escalation.projectId && <span>&middot;</span>}
-            <span>{formatRelativeTime(escalation.createdAt)}</span>
-            <span>&middot;</span>
-            <span>Confidence: {Math.round(escalation.confidenceScore * 100)}%</span>
-          </div>
+          </span>
+          <span className="text-[10px] text-zinc-500">
+            {escalation.projectId && <>{escalation.projectId} &middot; </>}
+            {formatRelativeTime(escalation.createdAt)}
+          </span>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            size="sm"
+        <div className="text-xs text-zinc-500 mb-2">{escalation.reason}</div>
+        <div className="flex gap-2">
+          <button
             onClick={handleResolve}
             disabled={resolving}
+            className="text-xs px-2.5 py-1 rounded-md transition-colors bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
           >
             {resolving ? "..." : getActionLabel(escalation.reason)}
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onDismiss}>
+          </button>
+          <button
+            onClick={onDismiss}
+            className="text-xs px-2.5 py-1 rounded-md transition-colors bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+          >
             Dismiss
-          </Button>
+          </button>
         </div>
       </div>
     </div>

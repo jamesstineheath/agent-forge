@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardContent } from "@/components/ui/card";
 import type { WorkItem } from "@/lib/types";
 
 interface BlockedSummaryProps {
@@ -23,7 +22,6 @@ export function BlockedSummary({ workItems }: BlockedSummaryProps) {
 
   const itemMap = new Map(workItems.map((i) => [i.id, i]));
 
-  // Count how often each dependency appears across blocked items
   const depFrequency = new Map<string, number>();
   for (const item of blockedItems) {
     for (const depId of item.dependencies) {
@@ -31,7 +29,6 @@ export function BlockedSummary({ workItems }: BlockedSummaryProps) {
     }
   }
 
-  // Sort by frequency descending
   const sortedDeps = [...depFrequency.entries()].sort((a, b) => b[1] - a[1]);
 
   const sentences: string[] = [];
@@ -46,7 +43,6 @@ export function BlockedSummary({ workItems }: BlockedSummaryProps) {
       : "";
 
     if (topCount === blockedItems.length && sortedDeps.length === 1) {
-      // All blocked items share the same single blocker
       sentences.push(
         `All ${blockedItems.length} blocked items are waiting on "${topTitle}" (currently ${topStatus}${elapsed}). Once it completes, all items will unblock.`
       );
@@ -55,7 +51,6 @@ export function BlockedSummary({ workItems }: BlockedSummaryProps) {
         `Most items are waiting on "${topTitle}" (currently ${topStatus}${elapsed}). Once that completes, ${topCount} item${topCount !== 1 ? "s" : ""} will unblock immediately.`
       );
 
-      // Find independent chains: deps that don't overlap with the top blocker's blocked items
       const topBlockedItemIds = new Set(
         blockedItems
           .filter((i) => i.dependencies.includes(topDepId))
@@ -63,7 +58,6 @@ export function BlockedSummary({ workItems }: BlockedSummaryProps) {
       );
 
       for (const [depId] of sortedDeps.slice(1)) {
-        // Check if any items blocked by this dep are NOT in the top blocker's set
         const independentBlockedItems = blockedItems.filter(
           (i) => i.dependencies.includes(depId) && !topBlockedItemIds.has(i.id)
         );
@@ -82,22 +76,15 @@ export function BlockedSummary({ workItems }: BlockedSummaryProps) {
   }
 
   return (
-    <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
-      <CardContent className="pt-6">
-        <div className="flex items-start gap-3">
-          <span className="text-amber-600 text-lg flex-shrink-0">&#9888;</span>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
-              {blockedItems.length} item{blockedItems.length !== 1 ? "s" : ""} blocked
-            </p>
-            {sentences.map((s, i) => (
-              <p key={i} className="text-sm text-amber-800 dark:text-amber-300">
-                {s}
-              </p>
-            ))}
-          </div>
+    <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-3">
+      <div className="text-xs font-medium text-orange-400 mb-1">
+        {blockedItems.length} item{blockedItems.length !== 1 ? "s" : ""} blocked
+      </div>
+      {sentences.map((s, i) => (
+        <div key={i} className="text-xs text-zinc-500">
+          {s}
         </div>
-      </CardContent>
-    </Card>
+      ))}
+    </div>
   );
 }

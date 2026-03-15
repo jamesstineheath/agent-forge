@@ -3,58 +3,48 @@
 interface QualityRingProps {
   rate: number | null;
   size?: number;
+  label?: string;
 }
 
-export function QualityRing({ rate, size = 80 }: QualityRingProps) {
-  const strokeWidth = size * 0.1;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const center = size / 2;
-
-  let color = "text-muted-foreground";
-  let strokeColor = "stroke-muted";
-  if (rate !== null) {
-    if (rate >= 80) {
-      color = "text-green-500";
-      strokeColor = "stroke-green-500";
-    } else if (rate >= 60) {
-      color = "text-amber-500";
-      strokeColor = "stroke-amber-500";
-    } else {
-      color = "text-red-500";
-      strokeColor = "stroke-red-500";
-    }
-  }
-
-  const progress = rate !== null ? circumference - (rate / 100) * circumference : circumference;
+export function QualityRing({ rate, size = 56, label }: QualityRingProps) {
+  const r = (size - 8) / 2;
+  const circ = 2 * Math.PI * r;
+  const fill = rate != null ? circ * (rate / 100) : 0;
+  const color =
+    rate == null
+      ? "#52525b"
+      : rate >= 80
+        ? "#34d399"
+        : rate >= 60
+          ? "#fbbf24"
+          : "#f87171";
 
   return (
     <div className="flex flex-col items-center gap-1">
       <svg width={size} height={size} className="-rotate-90">
         <circle
-          cx={center}
-          cy={center}
-          r={radius}
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
           fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-muted/30"
+          stroke="#27272a"
+          strokeWidth={4}
         />
         <circle
-          cx={center}
-          cy={center}
-          r={radius}
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
           fill="none"
-          strokeWidth={strokeWidth}
-          strokeDasharray={circumference}
-          strokeDashoffset={progress}
+          stroke={color}
+          strokeWidth={4}
+          strokeDasharray={`${fill} ${circ - fill}`}
           strokeLinecap="round"
-          className={strokeColor}
         />
       </svg>
-      <span className={`text-sm font-semibold ${color}`}>
-        {rate !== null ? `${Math.round(rate)}%` : "N/A"}
+      <span className="text-xs font-medium" style={{ color }}>
+        {rate != null ? `${Math.round(rate)}%` : "n/a"}
       </span>
+      {label && <span className="text-[10px] text-zinc-600">{label}</span>}
     </div>
   );
 }

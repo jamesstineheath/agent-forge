@@ -1,5 +1,6 @@
 "use client";
 
+import { RefreshCw } from "lucide-react";
 import { useWorkItems, useTLMMemory } from "@/lib/hooks";
 import { CostSummary } from "@/components/cost-summary";
 import { TLMAgentCard } from "@/components/tlm-agent-card";
@@ -25,7 +26,6 @@ export default function AgentsPage() {
       ? (tlmMemory.stats.correct / tlmMemory.stats.totalAssessed) * 100
       : null;
 
-  // Spec Reviewer: items where spec-reviewed handoffs didn't lead to caused_issues
   const specReviewerRate =
     tlmMemory && tlmMemory.stats.totalAssessed > 0
       ? ((tlmMemory.stats.totalAssessed - tlmMemory.stats.causedIssues) /
@@ -33,26 +33,25 @@ export default function AgentsPage() {
         100
       : null;
 
-  // Outcome Tracker: always 100% since it classifies, doesn't decide
   const outcomeTrackerRate = tlmMemory ? 100 : null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Agents</h1>
-        <p className="text-muted-foreground">
-          Performance, cost, and quality monitoring for all agents.
-        </p>
+        <h1 className="text-lg font-semibold text-zinc-100 mb-1">Agents</h1>
+        <div className="text-xs text-zinc-500">
+          Performance, quality, and cost across all agent types
+        </div>
       </div>
 
       {/* Cost Overview */}
       <section>
         {workItemsLoading ? (
-          <div className="rounded-lg border bg-card p-4 animate-pulse">
-            <div className="h-6 w-32 bg-muted rounded mb-4" />
-            <div className="grid grid-cols-4 gap-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-12 bg-muted rounded" />
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 animate-pulse">
+            <div className="h-6 w-32 bg-zinc-800 rounded mb-4" />
+            <div className="grid grid-cols-3 gap-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-12 bg-zinc-800 rounded" />
               ))}
             </div>
           </div>
@@ -62,75 +61,102 @@ export default function AgentsPage() {
       </section>
 
       {/* TLM Agents */}
-      <section>
-        <h2 className="text-lg font-semibold mb-4">TLM Agents</h2>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            TLM Agents
+          </div>
+          <div className="text-[10px] text-zinc-600">(agent-forge pipeline)</div>
+        </div>
         {tlmLoading ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="rounded-lg border bg-card p-4 animate-pulse">
+              <div
+                key={i}
+                className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 animate-pulse"
+              >
                 <div className="flex items-center gap-4">
-                  <div className="h-16 w-16 bg-muted rounded-full" />
+                  <div className="h-12 w-12 bg-zinc-800 rounded-full" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-4 w-32 bg-muted rounded" />
-                    <div className="h-3 w-48 bg-muted rounded" />
+                    <div className="h-4 w-32 bg-zinc-800 rounded" />
+                    <div className="h-3 w-48 bg-zinc-800 rounded" />
                   </div>
                 </div>
               </div>
             ))}
           </div>
         ) : tlmError ? (
-          <div className="rounded-lg border bg-card p-4">
-            <p className="text-sm text-muted-foreground">
-              Unable to load TLM memory data. The API may be unavailable or the memory file
-              may not exist yet.
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <p className="text-sm text-zinc-500">
+              Unable to load TLM memory data. The API may be unavailable or the
+              memory file may not exist yet.
             </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            <TLMAgentCard
-              name="Code Reviewer"
-              stats={tlmMemory?.stats ?? null}
-              hotPatterns={tlmMemory?.hotPatterns ?? []}
-              recentOutcomes={tlmMemory?.recentOutcomes ?? []}
-              successRate={codeReviewerRate}
-              lastRun={tlmMemory?.stats.lastAssessment ?? null}
-              status="active"
-            />
-            <TLMAgentCard
-              name="Spec Reviewer"
-              stats={tlmMemory?.stats ?? null}
-              hotPatterns={[]}
-              recentOutcomes={[]}
-              successRate={specReviewerRate}
-              lastRun={tlmMemory?.stats.lastAssessment ?? null}
-              status="active"
-            />
-            <TLMAgentCard
-              name="Outcome Tracker"
-              stats={tlmMemory?.stats ?? null}
-              hotPatterns={[]}
-              recentOutcomes={[]}
-              successRate={outcomeTrackerRate}
-              lastRun={tlmMemory?.stats.lastAssessment ?? null}
-              status="active"
-            />
-            <TLMAgentCard
-              name="Feedback Compiler"
-              stats={null}
-              hotPatterns={[]}
-              recentOutcomes={[]}
-              successRate={null}
-              lastRun={null}
-              status="in-pipeline"
-            />
-          </div>
+          <>
+            <div className="text-xs text-zinc-500 mb-1">
+              Overall quality:{" "}
+              {codeReviewerRate != null
+                ? `${Math.round(codeReviewerRate)}% correct rate`
+                : "no data yet"}
+              {tlmMemory &&
+                `. ${tlmMemory.stats.causedIssues} caused downstream issues.`}
+            </div>
+            <div className="space-y-2">
+              <TLMAgentCard
+                name="Code Reviewer"
+                stats={tlmMemory?.stats ?? null}
+                hotPatterns={tlmMemory?.hotPatterns ?? []}
+                recentOutcomes={tlmMemory?.recentOutcomes ?? []}
+                successRate={codeReviewerRate}
+                lastRun={tlmMemory?.stats.lastAssessment ?? null}
+                status="active"
+              />
+              <TLMAgentCard
+                name="Spec Reviewer"
+                stats={tlmMemory?.stats ?? null}
+                hotPatterns={[]}
+                recentOutcomes={[]}
+                successRate={specReviewerRate}
+                lastRun={tlmMemory?.stats.lastAssessment ?? null}
+                status="active"
+              />
+              <TLMAgentCard
+                name="Outcome Tracker"
+                stats={tlmMemory?.stats ?? null}
+                hotPatterns={[]}
+                recentOutcomes={[]}
+                successRate={outcomeTrackerRate}
+                lastRun={tlmMemory?.stats.lastAssessment ?? null}
+                status="active"
+              />
+              <TLMAgentCard
+                name="Feedback Compiler"
+                stats={null}
+                hotPatterns={[]}
+                recentOutcomes={[]}
+                successRate={null}
+                lastRun={null}
+                status="in-pipeline"
+              />
+            </div>
+          </>
         )}
-      </section>
+      </div>
 
       {/* PA Agents */}
-      <section>
-        <h2 className="text-lg font-semibold mb-4">PA Agents</h2>
-        <div className="space-y-2">
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            PA Agents
+          </div>
+          <div className="text-[10px] text-zinc-600">(personal-assistant)</div>
+        </div>
+        <div className="text-xs text-zinc-500 mb-1">
+          Evaluation framework (ADR-007) active for Tier 1 agents. Tier 2/3
+          agents collect actions but lack assessment signal.
+        </div>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900 divide-y divide-zinc-800/50">
           {PA_AGENTS.map((agent) => (
             <PAAgentRow
               key={agent.name}
@@ -141,29 +167,24 @@ export default function AgentsPage() {
             />
           ))}
         </div>
-      </section>
+      </div>
 
       {/* Self-improvement loop */}
-      <section>
-        <div className="rounded-lg border bg-card p-4">
-          <h2 className="text-lg font-semibold mb-2">Self-Improvement Loop</h2>
-          <p className="text-sm text-muted-foreground mb-3">
-            Agent Forge uses a three-layer evaluation framework: Action Ledger for logging
-            consequential actions, Outcome Assessment for classifying results, and Agent Memory
-            for per-agent learning.
-          </p>
-          <div className="rounded-md bg-amber-500/10 p-3">
-            <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
-              Feedback Compiler (ADR-009) &mdash; In Pipeline
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              The Feedback Compiler will analyze outcome patterns from the Outcome Tracker and
-              propose prompt changes via PR, closing the observation-to-adaptation loop. Currently
-              in design phase.
-            </p>
-          </div>
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
+        <div className="flex items-center gap-2 mb-1.5">
+          <RefreshCw size={12} className="text-zinc-500" />
+          <span className="text-xs font-medium text-zinc-400">
+            Self-improvement loop
+          </span>
         </div>
-      </section>
+        <div className="text-xs text-zinc-500">
+          The Feedback Compiler (ADR-009) will analyze outcome patterns weekly
+          and propose prompt changes via PR. Currently in pipeline. Once
+          deployed, it will close the loop between observation (Outcome Tracker)
+          and adaptation (prompt/config changes), with human approval as the
+          gate.
+        </div>
+      </div>
     </div>
   );
 }
