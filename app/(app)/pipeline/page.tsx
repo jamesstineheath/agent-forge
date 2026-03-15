@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConcurrencyGauge } from "@/components/concurrency-gauge";
 import { ATCEventLog } from "@/components/atc-event-log";
+import { PipelineStages } from "@/components/pipeline-stages";
+import { BlockedSummary } from "@/components/blocked-summary";
 import { useATCState, useATCEvents, useWorkItems, useRepos } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
@@ -84,6 +86,8 @@ export default function PipelinePage() {
   // Also count active work items not tracked in ATC state yet
   const activeWorkItems = (workItems ?? []).filter((i) => ACTIVE_STATUSES.includes(i.status));
 
+  const [eventLogOpen, setEventLogOpen] = useState(false);
+
   const isLoading = atcLoading || itemsLoading;
 
   return (
@@ -97,7 +101,17 @@ export default function PipelinePage() {
         </p>
       </div>
 
-      {/* Section 1: Active Executions + Concurrency */}
+      {/* Section 1: Pipeline Stages */}
+      {!itemsLoading && workItems && (
+        <PipelineStages workItems={workItems} />
+      )}
+
+      {/* Section 2: Blocked Summary */}
+      {!itemsLoading && workItems && (
+        <BlockedSummary workItems={workItems} />
+      )}
+
+      {/* Section 3: Active Executions + Concurrency */}
       <div className="space-y-4">
         <h2 className="text-lg font-semibold">Active Executions</h2>
 
@@ -246,13 +260,21 @@ export default function PipelinePage() {
         )}
       </div>
 
-      {/* Section 3: Event Timeline */}
+      {/* Section 5: Event Log (collapsed by default) */}
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Event Timeline</h2>
-        {eventsLoading ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
-        ) : (
-          <ATCEventLog events={events ?? []} />
+        <button
+          onClick={() => setEventLogOpen(!eventLogOpen)}
+          className="flex items-center gap-2 text-lg font-semibold hover:text-foreground/80 transition-colors"
+        >
+          <span>{eventLogOpen ? "▾" : "▸"}</span>
+          Event Log ({events?.length ?? 0} events)
+        </button>
+        {eventLogOpen && (
+          eventsLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : (
+            <ATCEventLog events={events ?? []} />
+          )
         )}
       </div>
     </div>
