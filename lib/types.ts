@@ -264,3 +264,115 @@ export interface BootstrapResult {
   vercelProjectUrl?: string;
   steps: BootstrapStep[];
 }
+
+// ---------------------------------------------------------------------------
+// PM Agent Types
+// ---------------------------------------------------------------------------
+
+/** An individual work item entry within a backlog review, with a triage recommendation. */
+export interface BacklogReviewItem {
+  /** The ID of the work item being reviewed. */
+  workItemId: string;
+  /** The target repository for this work item (e.g., "owner/repo"). */
+  repo: string;
+  /** Human-readable title of the work item. */
+  title: string;
+  /** Priority level of the work item. */
+  priority: string;
+  /** Triage recommendation: dispatch now, defer, or remove from backlog. */
+  recommendation: 'dispatch' | 'defer' | 'kill';
+  /** Rationale explaining the recommendation. */
+  rationale: string;
+}
+
+/** Result of a full backlog review operation across queued work items. */
+export interface BacklogReview {
+  /** Unique identifier for this review run. */
+  id: string;
+  /** ISO 8601 timestamp of when the review was performed. */
+  timestamp: string;
+  /** Individual item assessments produced during the review. */
+  items: BacklogReviewItem[];
+  /** Human-readable summary of the overall review findings. */
+  summary: string;
+  /** Notion page ID if the review was written to a Notion page. */
+  notionPageId?: string;
+}
+
+/** Health assessment for a single project at a point in time. */
+export interface ProjectHealth {
+  /** The ID of the project being assessed. */
+  projectId: string;
+  /** Human-readable name of the project. */
+  projectName: string;
+  /** Overall health status of the project. */
+  status: 'healthy' | 'at-risk' | 'stalled' | 'blocked';
+  /** Fraction of work items completed, from 0 (none) to 1 (all). */
+  completionRate: number;
+  /** Number of active or recent escalations for this project. */
+  escalationCount: number;
+  /** Average time work items spend in the queue, in hours. */
+  avgTimeInQueue: number;
+  /** IDs of work items currently in a blocked state. */
+  blockedItems: string[];
+  /** Specific issues or anomalies detected during the assessment. */
+  flags: string[];
+  /** ISO 8601 timestamp of when this assessment was performed. */
+  assessedAt: string;
+}
+
+/** Aggregated health report covering all assessed projects. */
+export interface ProjectHealthReport {
+  /** Individual health assessments keyed by project ID. */
+  projects: ProjectHealth[];
+  /** ISO 8601 timestamp of when the report was generated. */
+  generatedAt: string;
+  /** Human-readable overall summary across all projects. */
+  overallSummary: string;
+}
+
+/** An individual issue found during plan validation. */
+export interface PlanValidationIssue {
+  /** The section or field of the plan where the issue was found. */
+  section: string;
+  /** Severity of the issue: errors block dispatch, warnings are advisory. */
+  severity: 'error' | 'warning';
+  /** Human-readable description of the issue. */
+  message: string;
+}
+
+/** Result of validating a project plan against PM Agent rules. */
+export interface PlanValidation {
+  /** The ID of the project whose plan was validated. */
+  projectId: string;
+  /** Whether the plan passed validation (no errors; warnings are allowed). */
+  valid: boolean;
+  /** List of issues found during validation. */
+  issues: PlanValidationIssue[];
+  /** ISO 8601 timestamp of when validation was performed. */
+  checkedAt: string;
+}
+
+/** Configuration controlling PM Agent behaviour and scheduling. */
+export interface PMAgentConfig {
+  /** Whether PM Agent operations are active. */
+  enabled: boolean;
+  /** Cron expression defining how often the PM Agent sweep runs (e.g., "0 9 * * *" for daily at 9am). */
+  sweepSchedule: string;
+  /** Email address that receives digest and alert emails from the PM Agent. */
+  digestRecipient: string;
+  /** Whether the PM Agent automatically reviews and re-prioritises the backlog each sweep. */
+  autoReview: boolean;
+}
+
+/** Options controlling the content and scope of a progress digest. */
+export interface DigestOptions {
+  /** Time period the digest covers. */
+  period: 'daily' | 'weekly';
+  /** Whether to include project health assessments in the digest. */
+  includeHealth: boolean;
+  /** Whether to include backlog review results in the digest. */
+  includeBacklog: boolean;
+  /** Whether to include triage recommendations in the digest. */
+  includeRecommendations: boolean;
+}
