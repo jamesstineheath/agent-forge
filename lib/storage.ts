@@ -56,20 +56,29 @@ export async function deleteJson(key: string): Promise<void> {
 // --- Vercel Blob ---
 
 async function loadFromBlob<T>(key: string): Promise<T | null> {
-  const { head, getDownloadUrl } = await import("@vercel/blob");
   const pathname = `af-data/${key}.json`;
+  const token = process.env.BLOB_READ_WRITE_TOKEN!;
+
   try {
-    const blob = await head(pathname);
-    // Private stores require a signed download URL; plain fetch on blob.url
-    // returns 401. getDownloadUrl() returns a time-limited signed URL string.
-    const downloadUrl = await getDownloadUrl(blob.url);
-    const url = new URL(downloadUrl);
-    url.searchParams.set("t", Date.now().toString());
-    const response = await fetch(url.toString(), { cache: "no-store" });
-    if (!response.ok) return null;
-    return (await response.json()) as T;
+    // Use the @vercel/blob `get` function which handles private store
+    // authentication internally, similar to head() and list().
+    const blob = await import("@vercel/blob");
+    const result = await blob.get(pathname, { token });
+
+    if (!result || !result.ok) return null;
+    return (await result.json()) as T;
   } catch {
-    return null;
+    // Fallback: try head + getDownloadUrl with explicit token
+    try {
+      const { head, getDownloadUrl } = await import("@vercel/blob");
+      const blobMeta = await head(pathname, { token });
+      const downloadUrl = await getDownloadUrl(blobMeta.url, { token });
+      const response = await fetch(downloadUrl, { cache: "no-store" });
+      if (!response.ok) return null;
+      return (await response.json()) as T;
+    } catch {
+      return null;
+    }
   }
 }
 
