@@ -1,0 +1,79 @@
+name: CI Stuck PR Monitor
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  check-stuck-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find stuck PRs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+          MARKER="<!-- CI-STUCK-PR-MONITOR -->"
+          NOW=$(date +%s)
+          TWO_HOURS=7200
+
+          echo "Checking for stuck PRs in $REPO..."
+
+          # Get all open PRs
+          PRS=$(gh pr list --repo "$REPO" --state open --json number,createdAt,headRefName --jq '.[] | @base64')
+
+          for PR_B64 in $PRS; do
+            PR_JSON=$(echo "$PR_B64" | base64 --decode)
+            PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+            CREATED_AT=$(echo "$PR_JSON" | jq -r '.createdAt')
+
+            # Check if PR has been open for more than 2 hours
+            CREATED_TS=$(date -d "$CREATED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$CREATED_AT" +%s 2>/dev/null || echo "0")
+            AGE=$((NOW - CREATED_TS))
+
+            if [ "$AGE" -lt "$TWO_HOURS" ]; then
+              echo "PR #$PR_NUMBER is less than 2 hours old, skipping."
+              continue
+            fi
+
+            # Check if PR has at least one approval
+            APPROVALS=$(gh pr reviews "$PR_NUMBER" --repo "$REPO" --json state --jq '[.[] | select(.state == "APPROVED")] | length')
+            if [ "$APPROVALS" -lt 1 ]; then
+              echo "PR #$PR_NUMBER has no approvals, skipping."
+              continue
+            fi
+
+            # Check if CI is failing
+            CI_STATUS=$(gh pr checks "$PR_NUMBER" --repo "$REPO" --json state --jq '[.[] | select(.state == "FAILURE")] | length' 2>/dev/null || echo "0")
+            if [ "$CI_STATUS" -lt 1 ]; then
+              echo "PR #$PR_NUMBER has no failing CI checks, skipping."
+              continue
+            fi
+
+            # Check if we already posted the stuck comment (dedup)
+            EXISTING=$(gh pr view "$PR_NUMBER" --repo "$REPO" --comments --json comments --jq ".comments[].body" 2>/dev/null | grep -c "$MARKER" || echo "0")
+            if [ "$EXISTING" -gt 0 ]; then
+              echo "PR #$PR_NUMBER already has a stuck-PR comment, skipping."
+              continue
+            fi
+
+            echo "PR #$PR_NUMBER is stuck: approved but CI failing for over 2 hours."
+
+            COMMENT_BODY="${MARKER}
+          ## Stuck PR Detected
+
+          This PR has been approved but CI is failing for over 2 hours. Needs attention.
+
+          cc @jamesstineheath"
+
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$COMMENT_BODY"
+            echo "Posted stuck-PR comment on PR #$PR_NUMBER."
+          done
+
+          echo "Stuck PR check complete."
