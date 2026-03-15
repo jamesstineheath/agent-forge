@@ -1,3 +1,4 @@
+<!-- dispatch: feat/pipeline-redesign -->
 # Agent Forge — Pipeline Page Redesign (Stage Summary)
 
 ## Metadata
@@ -23,14 +24,14 @@ For a PM user, the event log is noise. What matters is: how many items are in ea
    - Executing: count with status `generating` or `executing`
    - Reviewing: count with status `reviewing`
    - Blocked: count with status `blocked`
-   - Merged today: count of items whose status is `merged` and whose completion timestamp falls within the current UTC day. **Check `lib/types.ts` for the actual field names** — the spec assumes `execution.outcome` and `execution.completedAt` but adapt to whatever the `WorkItem` type actually uses.
+   - Merged today: count of items whose status is `merged` and whose completion timestamp falls within the current UTC day. **Check `lib/types.ts` for the actual field names** -- the spec assumes `execution.outcome` and `execution.completedAt` but adapt to whatever the `WorkItem` type actually uses.
    - Failed: count with status `failed`
    - Each column shows: large number, label, colored bar segment (use Tailwind bg colors consistent with existing status colors in the codebase)
    - Below the columns, render a detail panel for each non-empty stage listing the item titles (not UUIDs)
 
 2. **Add a BlockedSummary component** (`components/blocked-summary.tsx`) that provides a plain-language explanation of the bottleneck:
    - Analyze blocked items and their `dependencies` array
-   - Identify the root blocker(s): items that are blocking the most downstream items
+   - Identify the root blocker(s): items that appear most frequently in dependency arrays of blocked items
    - Generate a sentence like: "Most items are waiting on '{title}' (currently {status}, {elapsed} elapsed). Once that completes, {n} items will unblock immediately."
    - If there are independent dependency chains, mention them: "The {project} chain is independently blocked on '{title}' which is {status}."
    - Data source: work items with `status === 'blocked'` and their `dependencies` array, cross-referenced with other work items to resolve dependency titles and statuses
@@ -52,10 +53,10 @@ For a PM user, the event log is noise. What matters is: how many items are in ea
 - Create branch `feat/pipeline-redesign` from main
 - Run `npm run build` to verify clean baseline
 - **Read these files to understand current patterns before writing any code:**
-  - `app/(app)/pipeline/page.tsx` — understand how work items are fetched and passed to child components
-  - `components/atc-event-log.tsx` — understand the event log component interface
-  - `lib/types.ts` — confirm `WorkItem` type shape, especially status enum values, dependency fields, and execution/completion fields
-  - `lib/hooks.ts` — identify existing data-fetching hooks (e.g., `useWorkItems`, `useATCState`)
+  - `app/(app)/pipeline/page.tsx` -- understand how work items are fetched and passed to child components
+  - `components/atc-event-log.tsx` -- understand the event log component interface
+  - `lib/types.ts` -- confirm `WorkItem` type shape, especially status enum values, dependency fields, and execution/completion fields
+  - `lib/hooks.ts` -- identify existing data-fetching hooks (e.g., `useWorkItems`, `useATCState`)
   - Look at 1-2 other existing components in `components/` to match styling conventions (Tailwind patterns, card structure, etc.)
 
 ### Step 1: Create PipelineStages component
@@ -80,12 +81,12 @@ For a PM user, the event log is noise. What matters is: how many items are in ea
 - Import and add PipelineStages at top, passing work items from whatever data source the page already uses
 - Import and add BlockedSummary below it, passing the same work items
 - Wrap the existing ATCEventLog in a collapsible section using `useState` (closed by default). Include event count in the header label.
-- Keep Active Executions and Queue sections unchanged — do not modify their code
+- Keep Active Executions and Queue sections unchanged -- do not modify their code
 - Reorder sections per Requirement 5
 
 ### Step 4: Verify
-- Run `npm run build` — must pass with zero errors
-- Run `npm run lint` — must pass
+- Run `npm run build` -- must pass with zero errors
+- Run `npm run lint` -- must pass
 - Manually review the rendered output mentally or via build output:
   - PipelineStages shows correct stage groupings
   - BlockedSummary handles both "items blocked" and "no items blocked" cases
