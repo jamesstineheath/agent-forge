@@ -106,6 +106,89 @@ export function applyTransition(
   return updated;
 }
 
+/**
+ * Try to apply a transition, advancing through intermediate states if needed.
+ * This handles out-of-order events (e.g., receiving execution_completed when
+ * state is SpecReview because the spec_review_completed event was missed).
+ */
+export function applyTransitionResilient(
+  lifecycle: HandoffLifecycle,
+  event: TriggerEvent,
+  details?: string
+): HandoffLifecycle {
+  // First try direct transition
+  const directNext = getNextState(lifecycle.state, event);
+  if (directNext) {
+    return applyTransition(lifecycle, event, details);
+  }
+
+  // Try advancing through intermediate states to reach a state that accepts this event
+  const advancePath = findAdvancePath(lifecycle.state, event);
+  if (advancePath) {
+    let current = lifecycle;
+    // Apply intermediate transitions to advance state
+    for (const intermediateState of advancePath) {
+      const now = new Date().toISOString();
+      current = {
+        ...current,
+        state: intermediateState,
+        transitions: [
+          ...current.transitions,
+          {
+            from: current.state,
+            to: intermediateState,
+            trigger: "state_advanced",
+            timestamp: now,
+            details: `Auto-advanced to handle ${event.type}`,
+          },
+        ],
+      };
+    }
+    // Now apply the actual event
+    return applyTransition(current, event, details);
+  }
+
+  throw new Error(
+    `Invalid transition: cannot apply ${event.type} in state ${lifecycle.state}`
+  );
+}
+
+/**
+ * Find a sequence of intermediate states to advance through so that
+ * the given event can be applied. Returns the intermediate states
+ * (not including the final event-driven transition), or null if no path exists.
+ */
+function findAdvancePath(
+  current: HandoffState,
+  event: TriggerEvent
+): HandoffState[] | null {
+  // Define the natural progression of states
+  const STATE_ORDER: HandoffState[] = [
+    HandoffState.SpecReview,
+    HandoffState.SpecReviewComplete,
+    HandoffState.Executing,
+    HandoffState.ExecutionComplete,
+    HandoffState.CIRunning,
+    HandoffState.CIPassed,
+    HandoffState.CodeReview,
+    HandoffState.CodeReviewComplete,
+  ];
+
+  const currentIdx = STATE_ORDER.indexOf(current);
+  if (currentIdx === -1) return null;
+
+  // Try each subsequent state as a potential target where the event is valid
+  for (let i = currentIdx + 1; i < STATE_ORDER.length; i++) {
+    const candidateState = STATE_ORDER[i];
+    if (getNextState(candidateState, event) !== null) {
+      // Found a state that accepts this event - return the path to get there
+      return STATE_ORDER.slice(currentIdx + 1, i + 1);
+    }
+  }
+
+  return null;
+}
+
 function getNextState(
   current: HandoffState,
   event: TriggerEvent
