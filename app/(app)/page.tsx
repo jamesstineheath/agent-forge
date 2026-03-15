@@ -110,6 +110,17 @@ export default function DashboardPage() {
     );
   };
 
+  const handleDismiss = async (escalationId: string) => {
+    try {
+      await fetch(`/api/escalations/${escalationId}/dismiss`, {
+        method: "POST",
+      });
+      mutateEscalations();
+    } catch {
+      // Silently fail; user can retry
+    }
+  };
+
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const mergedToday =
@@ -156,7 +167,7 @@ export default function DashboardPage() {
                   escalation={esc}
                   workItemTitle={workItem?.title}
                   onResolve={() => mutateEscalations()}
-                  onDismiss={() => mutateEscalations()}
+                  onDismiss={() => handleDismiss(esc.id)}
                 />
               );
             })}
@@ -186,7 +197,7 @@ export default function DashboardPage() {
               <ProjectCard
                 key={project.id}
                 project={project}
-                workItems={getProjectWorkItems(project.id)}
+                workItems={getProjectWorkItems(project.projectId)}
                 expanded={expandedProjects.has(project.id)}
                 onToggle={() => toggleProject(project.id)}
               />
