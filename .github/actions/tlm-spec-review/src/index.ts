@@ -201,6 +201,27 @@ async function findPRForBranch(
   }
 }
 
+interface HandoffMetadata {
+  risk: string | null;
+  budget: number | null;
+}
+
+function parseHandoffMetadata(content: string): HandoffMetadata {
+  // Parse risk level: "Risk: low" or "Risk: low" in metadata line
+  const riskMatch = content.match(/Risk:\s*(low|medium|high)/i);
+  const risk = riskMatch ? riskMatch[1].toLowerCase() : null;
+
+  // Parse budget: "Max Budget: $3" or "Budget: $5"
+  const budgetMatch = content.match(/(?:Max\s+)?Budget:\s*\$([\d.]+)/i);
+  const budget = budgetMatch ? parseFloat(budgetMatch[1]) : null;
+
+  return { risk, budget };
+}
+
+function isLowRiskFastPath(metadata: HandoffMetadata): boolean {
+  return metadata.risk === "low" && metadata.budget !== null && metadata.budget <= 3;
+}
+
 async function run(): Promise<void> {
   try {
     const apiKey = core.getInput("anthropic-api-key", { required: true });
@@ -285,6 +306,41 @@ async function run(): Promise<void> {
       if (!handoffContent) {
         core.warning(`Could not read handoff file: ${handoffPath}`);
         continue;
+      }
+
+      // Fast-path: skip full spec review for low-risk, low-budget handoffs
+      const metadata = parseHandoffMetadata(handoffContent);
+      if (isLowRiskFastPath(metadata)) {
+        core.info(`Fast-path: skipping spec review for low-risk handoff (risk=${metadata.risk}, budget=$${metadata.budget}): ${handoffPath}`);
+
+        // Post a brief comment on the PR if one exists
+        if (prNumber) {
+          try {
+            await octokit.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: [
+                `## TLM Spec Review: FAST-PATH ⚡`,
+                "",
+                `**${handoffPath}**`,
+                "",
+                `Skipped full review (risk: ${metadata.risk}, budget: $${metadata.budget}). Proceeding directly to execution.`,
+                "",
+                "<!--",
+                "TLM-SPEC-REVIEW",
+                "decision: FAST_PATH",
+                "improved: false",
+                `changes_summary: Skipped - low risk ($${metadata.budget} budget)`,
+                "flagged_risks: none",
+                "-->",
+              ].join("\n"),
+            });
+          } catch (commentErr) {
+            core.warning(`Failed to post fast-path comment: ${commentErr}`);
+          }
+        }
+        continue; // Skip to next handoff file
       }
 
       const userPrompt = buildUserPrompt(handoffContent, handoffPath);
