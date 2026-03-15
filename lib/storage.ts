@@ -61,11 +61,11 @@ async function loadFromBlob<T>(key: string): Promise<T | null> {
   try {
     const blob = await head(pathname);
     // Private stores require a signed download URL; plain fetch on blob.url
-    // returns 401. Use getDownloadUrl() to obtain a time-limited signed URL.
-    const { url: downloadUrl } = await getDownloadUrl(blob.url);
-    const cacheBust = new URL(downloadUrl);
-    cacheBust.searchParams.set("t", Date.now().toString());
-    const response = await fetch(cacheBust.toString(), { cache: "no-store" });
+    // returns 401. getDownloadUrl() returns a time-limited signed URL string.
+    const downloadUrl = await getDownloadUrl(blob.url);
+    const url = new URL(downloadUrl);
+    url.searchParams.set("t", Date.now().toString());
+    const response = await fetch(url.toString(), { cache: "no-store" });
     if (!response.ok) return null;
     return (await response.json()) as T;
   } catch {
