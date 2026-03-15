@@ -1,0 +1,49 @@
+name: Handoff Lifecycle Orchestrator
+
+on:
+  workflow_run:
+    workflows:
+      - "TLM Spec Review"
+      - "Execute Handoff"
+      - "TLM Code Review"
+      - "CI"
+    types: [completed]
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to inspect state for"
+        required: false
+
+# Per-branch concurrency to avoid race conditions on the same handoff
+concurrency:
+  group: handoff-orchestrator-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref || github.event.inputs.branch || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip main/master branches for workflow_run events
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.head_branch != 'main' &&
+       github.event.workflow_run.head_branch != 'master')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Handoff Orchestrator
+        uses: ./.github/actions/handoff-orchestrator
+        with:
+          github-token: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
