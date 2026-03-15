@@ -1,17 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buttonVariants } from "@/components/ui/button";
-import { PipelineStatus } from "@/components/pipeline-status";
-import { useWorkItems, useRepos, useATCState, useProjects, useEscalations } from "@/lib/hooks";
-import type { WorkItem, Project } from "@/lib/types";
-
-const ACTIVE_STATUSES: WorkItem["status"][] = [
-  "generating",
-  "executing",
-  "reviewing",
-];
+import { useState } from "react";
+import { QuickStats } from "@/components/quick-stats";
+import { ProjectCard } from "@/components/project-card";
+import { EscalationCard } from "@/components/escalation-card";
+import {
+  useWorkItems,
+  useRepos,
+  useATCState,
+  useProjects,
+  useEscalations,
+} from "@/lib/hooks";
+import type { WorkItem } from "@/lib/types";
 
 function formatRelativeTime(ts?: string): string {
   if (!ts) return "—";
@@ -24,21 +24,43 @@ function formatRelativeTime(ts?: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  Draft: "bg-gray-100 text-gray-700",
-  Ready: "bg-blue-100 text-blue-700",
-  Execute: "bg-amber-100 text-amber-700",
-  Executing: "bg-yellow-100 text-yellow-700",
-  Complete: "bg-green-100 text-green-700",
-  Failed: "bg-red-100 text-red-700",
-};
+function SystemHealth({
+  atcState,
+  repos,
+  atcLoading,
+}: {
+  atcState: ReturnType<typeof useATCState>["data"];
+  repos: ReturnType<typeof useRepos>["data"];
+  atcLoading: boolean;
+}) {
+  if (atcLoading) {
+    return (
+      <p className="text-xs text-muted-foreground">Loading system status...</p>
+    );
+  }
 
-function ProjectStatusBadge({ status }: { status: string }) {
-  const color = STATUS_COLORS[status] ?? "bg-gray-100 text-gray-700";
+  const queued = atcState?.queuedItems ?? 0;
+
+  // Find the repo with active executions for concurrency display
+  const repoExecCounts: Record<string, number> = {};
+  atcState?.activeExecutions?.forEach((exec) => {
+    repoExecCounts[exec.targetRepo] = (repoExecCounts[exec.targetRepo] ?? 0) + 1;
+  });
+  const topRepo = Object.entries(repoExecCounts).sort((a, b) => b[1] - a[1])[0];
+  const topRepoConfig = topRepo
+    ? repos?.find((r) => r.fullName === topRepo[0] || r.shortName === topRepo[0])
+    : undefined;
+
+  const concurrencyStr = topRepo
+    ? `Concurrency: ${topRepo[1]}/${topRepoConfig?.concurrencyLimit ?? "?"} on ${topRepo[0]}`
+    : `Concurrency: 0 active`;
+
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
-      {status}
-    </span>
+    <p className="text-xs text-muted-foreground">
+      ATC: {atcState ? "healthy" : "unknown"}, last sweep{" "}
+      {formatRelativeTime(atcState?.lastRunAt)} | {concurrencyStr} |{" "}
+      {queued} queued across all repos
+    </p>
   );
 }
 
@@ -47,204 +69,144 @@ export default function DashboardPage() {
   const { data: repos, isLoading: reposLoading } = useRepos();
   const { data: atcState, isLoading: atcLoading } = useATCState();
   const { data: projects, isLoading: projectsLoading } = useProjects();
-  const { data: escalations, isLoading: escalationsLoading } = useEscalations("pending");
+  const {
+    data: escalations,
+    isLoading: escalationsLoading,
+    mutate: mutateEscalations,
+  } = useEscalations("pending");
 
-  const totalItems = workItems?.length ?? 0;
-  const readyItems = workItems?.filter((i) => i.status === "ready").length ?? 0;
-  const activeItems =
-    workItems?.filter((i) => ACTIVE_STATUSES.includes(i.status)).length ?? 0;
-  const totalRepos = repos?.length ?? 0;
+  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
+    new Set()
+  );
+
+  const toggleProject = (id: string) => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  // Filter work items by project
+  const getProjectWorkItems = (projectId: string): WorkItem[] => {
+    return (
+      workItems?.filter(
+        (wi) =>
+          wi.source.type === "project" && wi.source.sourceId === projectId
+      ) ?? []
+    );
+  };
+
+  // Merged today
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const mergedToday =
+    workItems?.filter(
+      (wi) =>
+        wi.execution?.outcome === "merged" &&
+        wi.execution?.completedAt &&
+        new Date(wi.execution.completedAt) >= todayStart
+    ) ?? [];
 
   return (
     <div className="space-y-6">
+      {/* Title + System Health */}
       <div>
         <h1 className="text-3xl font-bold">Agent Forge</h1>
         <p className="text-muted-foreground mt-1">
           Dev orchestration platform — coordinate autonomous agent teams across
           repos.
         </p>
+        <div className="mt-2">
+          <SystemHealth
+            atcState={atcState}
+            repos={repos}
+            atcLoading={atcLoading || reposLoading}
+          />
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Work Items
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {itemsLoading ? "—" : totalItems}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Ready to Dispatch
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-blue-600">
-              {itemsLoading ? "—" : readyItems}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Active Executions
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-amber-600">
-              {itemsLoading ? "—" : activeItems}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Registered Repos
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {reposLoading ? "—" : totalRepos}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Blocked
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold text-red-600">
-              {itemsLoading ? "\u2014" : (workItems?.filter((wi) => wi.status === "blocked").length ?? 0)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              ATC Status
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm font-medium">
-              {atcLoading ? "—" : `Last run: ${formatRelativeTime(atcState?.lastRunAt)}`}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Projects from Notion */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Projects</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {projectsLoading ? (
-            <p className="text-muted-foreground text-sm">Loading projects...</p>
-          ) : !projects || projects.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No projects found. Projects are managed in Notion.</p>
-          ) : (
-            <div className="space-y-2">
-              {projects.map((project: Project) => (
-                <div
-                  key={project.id}
-                  className="flex items-center justify-between rounded-md border p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">{project.title}</span>
-                      <span className="text-xs text-muted-foreground">{project.projectId}</span>
-                    </div>
-                    <div className="flex gap-3 text-xs text-muted-foreground mt-1">
-                      {project.targetRepo && <span>{project.targetRepo}</span>}
-                      {project.priority && <span>{project.priority}</span>}
-                      {project.complexity && <span>{project.complexity}</span>}
-                    </div>
-                  </div>
-                  <ProjectStatusBadge status={project.status} />
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Pending Escalations */}
-      {!escalationsLoading && escalations && escalations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending Escalations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {escalations.map((esc) => {
-                const workItem = workItems?.find((wi) => wi.id === esc.workItemId);
-                const timeElapsed = Math.floor(
-                  (Date.now() - new Date(esc.createdAt).getTime()) / 1000 / 60
-                );
-                const timeString =
-                  timeElapsed < 60
-                    ? `${timeElapsed}m ago`
-                    : timeElapsed < 1440
-                      ? `${Math.floor(timeElapsed / 60)}h ago`
-                      : `${Math.floor(timeElapsed / 1440)}d ago`;
-
-                return (
-                  <div
-                    key={esc.id}
-                    className="border rounded-lg p-3 bg-red-50 border-red-200"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="font-semibold text-sm">{workItem?.title ?? esc.workItemId}</p>
-                        <p className="text-xs text-gray-600 mt-1">{esc.reason}</p>
-                        <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
-                          <span>Confidence: {Math.round(esc.confidenceScore * 100)}%</span>
-                          <span>{"\u2022"}</span>
-                          <span>{timeString}</span>
-                        </div>
-                      </div>
-                      <a
-                        href={`/api/escalations/${esc.id}/resolve`}
-                        className="text-blue-600 hover:underline text-xs font-medium whitespace-nowrap ml-2"
-                        title="Manual resolution via API (Handoff 12: Gmail integration coming)"
-                      >
-                        Resolve
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Quick Stats */}
+      {itemsLoading ? (
+        <p className="text-sm text-muted-foreground">Loading stats...</p>
+      ) : (
+        <QuickStats workItems={workItems ?? []} />
       )}
 
-      <PipelineStatus />
+      {/* Needs Attention (Escalations) */}
+      {!escalationsLoading && escalations && escalations.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold mb-3">Needs attention</h2>
+          <div className="space-y-3">
+            {escalations.map((esc) => {
+              const workItem = workItems?.find(
+                (wi) => wi.id === esc.workItemId
+              );
+              return (
+                <EscalationCard
+                  key={esc.id}
+                  escalation={esc}
+                  workItemTitle={workItem?.title}
+                  onResolve={() => mutateEscalations()}
+                  onDismiss={() => mutateEscalations()}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-      <div className="flex gap-3">
-        <Link href="/work-items/new" className={buttonVariants()}>
-          New Work Item
-        </Link>
-        <Link href="/pipeline" className={buttonVariants({ variant: "outline" })}>
-          View Pipeline
-        </Link>
-        <Link href="/repos" className={buttonVariants({ variant: "outline" })}>
-          Manage Repos
-        </Link>
+      {/* Projects */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Projects</h2>
+        {projectsLoading ? (
+          <p className="text-sm text-muted-foreground">Loading projects...</p>
+        ) : !projects || projects.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No projects found. Projects are managed in Notion.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {projects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                workItems={getProjectWorkItems(project.id)}
+                expanded={expandedProjects.has(project.id)}
+                onToggle={() => toggleProject(project.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* Merged Today */}
+      {mergedToday.length > 0 && (
+        <div>
+          <h2 className="text-lg font-semibold mb-3">Merged today</h2>
+          <div className="space-y-1.5">
+            {mergedToday.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50"
+              >
+                <span className="text-emerald-500">&#10003;</span>
+                <span className="font-medium truncate">{item.title}</span>
+                <span className="text-xs text-muted-foreground">
+                  {item.targetRepo}
+                </span>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  {formatRelativeTime(item.execution?.completedAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
