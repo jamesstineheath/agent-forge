@@ -8,6 +8,9 @@ on:
       - "TLM Code Review"
       - "CI"
     types: [completed]
+    branches-ignore:
+      - main
+      - master
   pull_request:
     types: [closed]
   workflow_dispatch:
@@ -31,14 +34,6 @@ jobs:
   orchestrate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Skip main/master branches and null head_branch for workflow_run events
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.head_branch != null &&
-       github.event.workflow_run.head_branch != 'main' &&
-       github.event.workflow_run.head_branch != 'master')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
