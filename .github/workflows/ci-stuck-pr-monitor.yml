@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Find stuck PRs
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           REPO="${{ github.repository }}"
           MARKER="<!-- CI-STUCK-PR-MONITOR -->"
@@ -43,21 +43,22 @@ jobs:
             fi
 
             # Check if PR has at least one approval
-            APPROVALS=$(gh pr reviews "$PR_NUMBER" --repo "$REPO" --json state --jq '[.[] | select(.state == "APPROVED")] | length')
+            APPROVALS=$(gh api repos/$REPO/pulls/$PR_NUMBER/reviews --jq '[.[] | select(.state == "APPROVED")] | length')
             if [ "$APPROVALS" -lt 1 ]; then
               echo "PR #$PR_NUMBER has no approvals, skipping."
               continue
             fi
 
             # Check if CI is failing
-            CI_STATUS=$(gh pr checks "$PR_NUMBER" --repo "$REPO" --json state --jq '[.[] | select(.state == "FAILURE")] | length' 2>/dev/null || echo "0")
+            CI_STATUS=$(gh pr checks "$PR_NUMBER" --repo "$REPO" --json conclusion --jq '[.[] | select(.conclusion == "FAILURE")] | length' 2>/dev/null || echo "0")
             if [ "$CI_STATUS" -lt 1 ]; then
               echo "PR #$PR_NUMBER has no failing CI checks, skipping."
               continue
             fi
 
             # Check if we already posted the stuck comment (dedup)
-            EXISTING=$(gh pr view "$PR_NUMBER" --repo "$REPO" --comments --json comments --jq ".comments[].body" 2>/dev/null | grep -c "$MARKER" || echo "0")
+            EXISTING=$(gh pr view "$PR_NUMBER" --repo "$REPO" --comments --json comments --jq ".comments[].body" 2>/dev/null | grep -c "$MARKER" || true)
+            EXISTING=${EXISTING:-0}
             if [ "$EXISTING" -gt 0 ]; then
               echo "PR #$PR_NUMBER already has a stuck-PR comment, skipping."
               continue
