@@ -123,7 +123,7 @@ jobs:
       - name: Write execution prompt
         run: |
           cat > /tmp/execute-prompt.txt <<'ENDPROMPT'
-          You are executing a handoff file for the personal-assistant project.
+          You are executing a handoff file for the agent-forge project.
 
           Read and execute the handoff file at `${{ steps.handoff.outputs.file }}`.
 
@@ -165,6 +165,49 @@ jobs:
             --model claude-opus-4-6 \
             --max-budget-usd ${{ steps.budget.outputs.amount }} \
             2>&1 | tee /tmp/claude-output.log
+
+      - name: Ensure PR exists (fallback)
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.params.outputs.branch }}"
+
+          # Check if Claude Code already created a PR
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+            echo "PR #$PR_NUMBER already exists for branch $BRANCH"
+            exit 0
+          fi
+
+          # Check if there are actually implementation commits ahead of main
+          # (more than just the handoff commit)
+          COMMITS_AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
+          if [ "$COMMITS_AHEAD" -le 1 ]; then
+            echo "::warning::No implementation commits found (only handoff commit). Claude Code may have failed to produce changes."
+            exit 0
+          fi
+
+          echo "No PR found for branch $BRANCH ($COMMITS_AHEAD commits ahead). Creating fallback PR..."
+
+          # Use the last commit message as PR title
+          LAST_COMMIT=$(git log -1 --format="%s" 2>/dev/null || echo "Handoff execution on $BRANCH")
+
+          gh pr create \
+            --head "$BRANCH" \
+            --base main \
+            --title "$LAST_COMMIT" \
+            --body "## Summary
+
+          Automated PR created by execute-handoff workflow fallback.
+
+          **Handoff:** \`${{ steps.handoff.outputs.file }}\`
+          **Branch:** \`$BRANCH\`
+          **Commits ahead of main:** $COMMITS_AHEAD
+
+          > This PR was created because the Claude Code executor did not create one during handoff execution. The code changes were committed successfully but PR creation was skipped (likely due to budget exhaustion or execution error)." \
+            || echo "::warning::Failed to create fallback PR for branch $BRANCH"
 
       - name: Wait for CI and report failures
         if: success()
