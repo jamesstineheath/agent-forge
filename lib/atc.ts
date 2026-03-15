@@ -312,8 +312,9 @@ export async function runATCCycle(): Promise<ATCState> {
       for (const depId of item.dependencies) {
         const dep = await getWorkItem(depId);
         if (!dep) {
-          // Dependency was deleted - permanently unresolvable
-          deadDeps.push(depId);
+          // Dep blob missing — could be transient. Do NOT auto-cancel.
+          console.warn(`[atc] Dead-dep check: dependency ${depId} for item ${item.id} returned null. Skipping (possible transient failure).`);
+          continue; // Skip, don't treat as dead
         } else if (TERMINAL_FAILURE_STATUSES.includes(dep.status)) {
           // Dependency failed/parked/cancelled - will never reach "merged"
           deadDeps.push(depId);
@@ -491,16 +492,38 @@ export async function runATCCycle(): Promise<ATCState> {
         const indexEntries = await listWorkItems({});
         const indexIds = new Set(indexEntries.map(e => e.id));
 
-        // Find dangling blobs (in blob store but not in index)
-        const danglingIds = [...blobIds].filter(id => id && !indexIds.has(id));
-        if (danglingIds.length > 0) {
-          for (const id of danglingIds) {
-            await deleteJson(`work-items/${id}`);
+        // Safety guard: if index is empty but blobs exist, skip to prevent data loss
+        if (indexEntries.length === 0 && blobs.length > 0) {
+          console.warn(`[atc] Reconciliation safety: index is empty but ${blobs.length} blob(s) exist. Skipping to prevent data loss.`);
+          await saveJson(RECONCILIATION_KEY, { lastRunAt: now.toISOString() });
+          // DO NOT proceed to delete any blobs
+        } else {
+          // Find dangling blobs (in blob store but not in index)
+          const danglingIds = [...blobIds].filter(id => id && !indexIds.has(id));
+          if (danglingIds.length > 0 && danglingIds.length > blobIds.size * 0.5) {
+            console.error(`[atc] Reconciliation safety: ${danglingIds.length}/${blobIds.size} blobs flagged as dangling (>50%). Refusing to delete. Likely index corruption.`);
+          } else if (danglingIds.length > 0) {
+            for (const id of danglingIds) {
+              await deleteJson(`work-items/${id}`);
+            }
+            events.push(makeEvent(
+              "cleanup", "system", undefined, undefined,
+              `Blob reconciliation: deleted ${danglingIds.length} dangling work-item blob(s)`
+            ));
           }
-          events.push(makeEvent(
-            "cleanup", "system", undefined, undefined,
-            `Blob reconciliation: deleted ${danglingIds.length} dangling work-item blob(s)`
-          ));
+
+          // Reverse reconciliation: remove stale index entries pointing to missing blobs
+          const staleIndexEntries = indexEntries.filter(e => !blobIds.has(e.id));
+          if (staleIndexEntries.length > 0 && staleIndexEntries.length < indexEntries.length) {
+            const cleanedIndex = indexEntries.filter(e => blobIds.has(e.id));
+            await saveJson("work-items/index", cleanedIndex);
+            events.push(makeEvent(
+              "cleanup", "system", undefined, undefined,
+              `Index reconciliation: removed ${staleIndexEntries.length} stale index entries`
+            ));
+          } else if (staleIndexEntries.length === indexEntries.length && indexEntries.length > 0) {
+            console.error(`[atc] Reconciliation safety: ALL ${indexEntries.length} index entries are stale. Refusing to wipe index.`);
+          }
         }
       }
 
