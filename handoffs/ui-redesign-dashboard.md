@@ -1,3 +1,4 @@
+<!-- dispatch: feat/dashboard-redesign -->
 # Agent Forge — Dashboard Redesign (Project-First Layout)
 
 ## Metadata
