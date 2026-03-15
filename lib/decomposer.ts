@@ -146,7 +146,7 @@ function detectCircularDependencies(items: DecomposedItem[]): string | null {
 // --- Decomposition Prompt ---
 
 const SYSTEM_PROMPT = `You are a Plan Decomposer for an autonomous dev pipeline. Your job is to read an architecture
-specification and break it into a sequence of small, independently executable work items.
+specification and break it into a DAG of small, independently executable work items that maximizes parallel execution.
 
 Each work item will be expanded into a handoff file and executed by an AI coding agent (Claude Code)
 in a GitHub Actions environment. The agent has no context beyond the handoff file and the target
@@ -156,7 +156,8 @@ CONSTRAINTS:
 - Each work item should touch 1-3 files maximum
 - Each work item must compile and pass tests independently after execution
 - Each work item must have 3-5 specific, testable acceptance criteria
-- Dependencies must form a DAG (no cycles)
+- Dependencies must form a DAG (no cycles). MAXIMIZE PARALLELISM: only add a dependency if item B truly cannot start until item A is merged. If two items touch different files or subsystems, they should have NO dependency between them even if one is "logically first". The pipeline can execute independent items concurrently.
+- Prefer wide, shallow DAGs over deep linear chains. A 10-item plan with 3 parallel tracks of 3-4 items each is far better than a single 10-item sequence.
 - Prefer more, smaller items over fewer, larger ones
 - The first item in the sequence should be the lowest-risk foundational change
 - Include a final integration/E2E test item that depends on all others
