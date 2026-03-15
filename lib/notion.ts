@@ -19,7 +19,7 @@ function getClient(): Client | null {
   return _client;
 }
 
-function getDataSourceId(): string | null {
+function getDatabaseId(): string | null {
   return process.env.NOTION_PROJECTS_DB_ID ?? null;
 }
 
@@ -69,22 +69,30 @@ function pageToProject(page: PageObjectResponse): Project {
 }
 
 export async function queryProjects(statusFilter?: ProjectStatus): Promise<Project[]> {
-  const client = getClient();
-  const dsId = getDataSourceId();
-  if (!client || !dsId) return [];
+  const dsId = getDatabaseId();
+  if (!dsId || !process.env.NOTION_API_KEY) return [];
 
   try {
     const filter = statusFilter
       ? { property: "Status", select: { equals: statusFilter } }
       : undefined;
 
-    const response = await client.dataSources.query({
-      data_source_id: dsId,
-      filter,
-      sorts: [{ property: "Created", direction: "descending" as const }],
+    const response = await fetch(`https://api.notion.com/v1/databases/${dsId}/query`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.NOTION_API_KEY}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...(filter ? { filter } : {}),
+        sorts: [{ property: "Created", direction: "descending" }],
+      }),
     });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message ?? `Notion query failed: ${response.status}`);
 
-    return response.results
+    return (data.results as PageObjectResponse[])
       .filter((p): p is PageObjectResponse => "properties" in p)
       .map(pageToProject);
   } catch (err) {
