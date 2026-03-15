@@ -225,10 +225,11 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
   // 1. Extract page ID and fetch plan content
   if (!project.planUrl) {
     await escalate(
-      project.projectId,
+      `project:${project.projectId}`,
       "Project has no plan URL",
       0.9,
       { projectId: project.projectId, title: project.title },
+      project.projectId,
     );
     return [];
   }
@@ -238,10 +239,11 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
 
   if (!planContent || planContent.trim().length < 50) {
     await escalate(
-      project.projectId,
+      `project:${project.projectId}`,
       "Plan page is empty or lacks an identifiable problem statement",
       0.8,
       { projectId: project.projectId, pageId, contentLength: planContent.length },
+      project.projectId,
     );
     return [];
   }
@@ -253,10 +255,11 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
 
   if (!primaryRepo) {
     await escalate(
-      project.projectId,
+      `project:${project.projectId}`,
       "Project has no target repo configured",
       0.9,
       { projectId: project.projectId },
+      project.projectId,
     );
     return [];
   }
@@ -265,10 +268,11 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
 
   if (referencedRepos.length === 0) {
     await escalate(
-      project.projectId,
+      `project:${project.projectId}`,
       `Plan references repos not registered in Agent Forge. Primary repo "${primaryRepo}" not found.`,
       0.7,
       { projectId: project.projectId, primaryRepo },
+      project.projectId,
     );
     return [];
   }
@@ -319,10 +323,11 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
 
   if (!decomposedItems) {
     await escalate(
-      project.projectId,
+      `project:${project.projectId}`,
       `Decomposition failed after 2 attempts: ${lastError}`,
       0.6,
       { projectId: project.projectId, lastError },
+      project.projectId,
     );
     return [];
   }
@@ -330,10 +335,11 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
   // 5. Check item count limit
   if (decomposedItems.length > 15) {
     await escalate(
-      project.projectId,
+      `project:${project.projectId}`,
       `Decomposition produced ${decomposedItems.length} items (max 15). The plan should be split into smaller phases.`,
       0.7,
       { projectId: project.projectId, itemCount: decomposedItems.length },
+      project.projectId,
     );
     return [];
   }
