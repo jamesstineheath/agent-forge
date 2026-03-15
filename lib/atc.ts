@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { loadJson, saveJson } from "./storage";
-import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable } from "./work-items";
+import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
@@ -232,42 +232,52 @@ export async function runATCCycle(): Promise<ATCState> {
   ).length;
 
   if (totalActive < GLOBAL_CONCURRENCY_LIMIT) {
+    let slotsRemaining = GLOBAL_CONCURRENCY_LIMIT - totalActive;
+
     for (const repoEntry of repoIndex) {
-      if (activeExecutions.filter(e => e.status === "executing" || e.status === "reviewing").length >= GLOBAL_CONCURRENCY_LIMIT) break;
+      if (slotsRemaining <= 0) break;
       const repo = await getRepo(repoEntry.id);
       if (!repo) continue;
       const activeCount = concurrencyMap.get(repo.fullName) ?? 0;
-      if (activeCount >= repo.concurrencyLimit) continue;
+      const repoSlotsAvailable = repo.concurrencyLimit - activeCount;
+      if (repoSlotsAvailable <= 0) continue;
 
-      const nextItem = await getNextDispatchable(repo.fullName);
-      if (!nextItem) continue;
+      const candidates = await getAllDispatchable(repo.fullName);
+      if (candidates.length === 0) continue;
 
-      // Conflict check: skip if any active execution in this repo touches overlapping files
-      const nextItemFiles = nextItem.handoff?.content
-        ? parseEstimatedFiles(nextItem.handoff.content)
-        : [];
-      const repoActiveExecs = activeExecutions.filter(e => e.targetRepo === repo.fullName);
-      const conflicting = repoActiveExecs.find(e => hasFileOverlap(nextItemFiles, e.filesBeingModified));
-      if (conflicting) {
-        events.push(makeEvent(
-          "conflict", nextItem.id, undefined, undefined,
-          `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repo.fullName}`
-        ));
-        continue;
-      }
+      const toDispatch = candidates.slice(0, Math.min(slotsRemaining, repoSlotsAvailable));
 
-      try {
-        const result = await dispatchWorkItem(nextItem.id);
-        events.push(makeEvent(
-          "auto_dispatch", nextItem.id, "ready", "executing",
-          `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`
-        ));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        events.push(makeEvent(
-          "error", nextItem.id, undefined, undefined,
-          `Auto-dispatch failed: ${msg}`
-        ));
+      for (const item of toDispatch) {
+        // Conflict check: skip if any active execution in this repo touches overlapping files
+        const itemFiles = item.handoff?.content
+          ? parseEstimatedFiles(item.handoff.content)
+          : [];
+        const repoActiveExecs = activeExecutions.filter(e => e.targetRepo === repo.fullName);
+        const conflicting = repoActiveExecs.find(e => hasFileOverlap(itemFiles, e.filesBeingModified));
+        if (conflicting) {
+          events.push(makeEvent(
+            "conflict", item.id, undefined, undefined,
+            `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repo.fullName}`
+          ));
+          continue;
+        }
+
+        try {
+          const result = await dispatchWorkItem(item.id);
+          events.push(makeEvent(
+            "auto_dispatch", item.id, "ready", "executing",
+            `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`
+          ));
+          slotsRemaining--;
+          // Update concurrency map for subsequent iterations this cycle
+          concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Unknown error";
+          events.push(makeEvent(
+            "error", item.id, undefined, undefined,
+            `Auto-dispatch failed: ${msg}`
+          ));
+        }
       }
     }
   }
