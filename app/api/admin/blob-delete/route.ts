@@ -11,18 +11,18 @@ function isAuthorized(request: NextRequest): boolean {
   );
 }
 
-/**
- * DELETE /api/admin/blob-delete?key=atc/project-decomposed/PRJ-6
- *
- * Deletes a blob key from the store. Useful for clearing dedup guards,
- * stale keys, and other operational cleanup.
- *
- * Query params:
- *   key: The storage key (without .json extension)
- *   dry_run: If "true", checks if key exists without deleting
- */
-export async function DELETE(request: NextRequest) {
-  if (!isAuthorized(request)) {
+function getSecretFromQuery(request: NextRequest): boolean {
+  const secret = request.nextUrl.searchParams.get("secret");
+  if (!secret) return false;
+  return (
+    secret === process.env.AGENT_FORGE_API_SECRET ||
+    secret === process.env.ESCALATION_SECRET
+  );
+}
+
+async function handleBlobDelete(request: NextRequest) {
+  // Support both Bearer token and query param auth
+  if (!isAuthorized(request) && !getSecretFromQuery(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -43,7 +43,8 @@ export async function DELETE(request: NextRequest) {
     );
   }
 
-  const dryRun = request.nextUrl.searchParams.get("dry_run") === "true";
+  const action = request.nextUrl.searchParams.get("action");
+  const dryRun = action !== "delete";
 
   // Check if key exists
   const existing = await loadJson(key);
@@ -54,6 +55,7 @@ export async function DELETE(request: NextRequest) {
       exists: existing !== null,
       dry_run: true,
       value: existing,
+      hint: "Add action=delete to actually delete the key",
     });
   }
 
@@ -72,4 +74,12 @@ export async function DELETE(request: NextRequest) {
     deleted: true,
     previous_value: existing,
   });
+}
+
+export async function GET(request: NextRequest) {
+  return handleBlobDelete(request);
+}
+
+export async function DELETE(request: NextRequest) {
+  return handleBlobDelete(request);
 }
