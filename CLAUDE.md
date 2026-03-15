@@ -106,10 +106,14 @@ handoffs/           # Handoff file directory
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | CI | Push/PR to main | Build + test |
-| TLM Spec Review | Push to `handoffs/**` | Review/improve handoff files |
-| Execute Handoff | Spec Review completion | Execute handoff via Claude Code |
+| TLM Spec Review | Push to `handoffs/**`, workflow_dispatch | Review/improve handoff files |
+| Execute Handoff | Spec Review completion, workflow_dispatch | Execute handoff via Claude Code |
 | TLM Code Review | PR events, check_suite | Review PR diffs with context |
 | TLM Outcome Tracker | Daily cron | Assess merged PR outcomes |
+
+### Dispatch from Cowork/Chat (no local checkout)
+
+When dispatching handoffs from Cowork via GitHub MCP (`create_or_update_file`), pushes via the GitHub Contents API may intermittently fail to fire `on: push` workflow events. This is a known GitHub behavior. After pushing a handoff to a branch, verify the TLM Spec Review workflow fires within a few minutes on the Actions tab. If it does not, manually trigger the workflow via `workflow_dispatch`, selecting the correct branch. Local `git push` always fires events reliably.
 
 ## Relationship to PA
 
