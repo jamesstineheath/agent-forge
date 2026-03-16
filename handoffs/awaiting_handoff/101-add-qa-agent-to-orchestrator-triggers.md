@@ -26,29 +26,22 @@ Fix: add "TLM QA Agent" to the `workflows` list in the `workflow_run` trigger of
 
 If ANY of these fail, **abort immediately** and report via Session Abort Protocol.
 
-- [ ] Confirm the `on.workflow_run.workflows` list currently contains exactly: TLM Spec Review, Execute Handoff, TLM Code Review, CI
-- [ ] Confirm `branches-ignore: [main, master]` is still present — do not change it
-- [ ] The only edit is adding one line: `- "TLM QA Agent"` to the workflows list
+- [ ] Open `.github/workflows/handoff-orchestrator.yml` and confirm the `on.workflow_run.workflows` list currently contains exactly these four entries: `TLM Spec Review`, `Execute Handoff`, `TLM Code Review`, `CI`
+- [ ] Confirm `branches-ignore: [main, master]` is still present in that trigger — do not change it
+- [ ] Confirm "TLM QA Agent" is NOT already in the workflows list
 
 ## Step 0: Branch, commit handoff, push
 
 Create branch `fix/orchestrator-add-qa-agent-trigger` from `main`. Commit this handoff file. Push.
 
-## Step 1: Edit `.github/workflows/handoff-orchestrator.yml`: in the `on.workflow_run.workflows` list, add `- "TLM QA Agent"` after the existing `- "CI"` entry. No other changes needed.
+## Step 1: Add QA Agent trigger
 
-## Session Abort Protocol
+Edit `.github/workflows/handoff-orchestrator.yml`: in the `on.workflow_run.workflows` list, add `- "TLM QA Agent"` after the existing `- "CI"` entry. No other changes to the file.
 
-If you cannot complete execution:
-1. Commit current work as WIP: `git add -A && git commit -m "wip: add-qa-agent-to-orchestrator-triggers (incomplete)"`
-2. Push the branch and open a draft PR
-3. Output structured JSON to stdout:
-```json
-{
-  "status": "aborted",
-  "reason": "<why>",
-  "branch": "fix/orchestrator-add-qa-agent-trigger",
-  "completed_steps": [],
-  "remaining_steps": [],
-  "pr_url": "<if opened>"
-}
-```
+## Step 2: Verify
+
+Run `grep -A 10 'workflow_run' .github/workflows/handoff-orchestrator.yml` and confirm the workflows list now contains exactly five entries: TLM Spec Review, Execute Handoff, TLM Code Review, CI, TLM QA Agent. Confirm no other lines in the file were modified (`git diff` should show exactly one added line).
+
+## Step Final
+
+Open a PR with title `fix: add QA Agent to orchestrator workflow_run triggers` and output:
