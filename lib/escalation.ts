@@ -1,6 +1,16 @@
 import { loadJson, saveJson, deleteJson } from "./storage";
 import { getWorkItem, updateWorkItem } from "./work-items";
 
+// --- Fast-lane escalation types ---
+
+export type EscalationReason = 'spec_review_flag' | 'budget_exceeded' | 'complexity_flag';
+
+const ESCALATION_REASON_LABELS: Record<EscalationReason, string> = {
+  spec_review_flag: 'Spec Review Flag — handoff was flagged during TLM spec review',
+  budget_exceeded: 'Budget Exceeded — estimated cost exceeds fast-lane budget threshold',
+  complexity_flag: 'Complexity Flag — item is too complex for fast-lane execution',
+};
+
 export interface Escalation {
   id: string;
   workItemId: string;
@@ -197,4 +207,52 @@ export async function deleteEscalation(id: string): Promise<boolean> {
     console.error(`[escalation] Failed to delete escalation ${id}:`, err);
     return false;
   }
+}
+
+/**
+ * Escalate a fast-lane work item: transition status to 'escalated' and send email notification.
+ */
+export async function escalateFastLaneItem(
+  workItemId: string,
+  reason: EscalationReason,
+  details: string
+): Promise<void> {
+  const workItem = await getWorkItem(workItemId);
+  if (!workItem) {
+    throw new Error(`Work item ${workItemId} not found`);
+  }
+
+  // Transition status to 'escalated'
+  await updateWorkItem(workItemId, { status: 'escalated' });
+
+  // Send escalation email
+  const truncatedDescription = workItem.description.slice(0, 60);
+  const subject = `[Agent Forge] Fast Lane Item Escalated: ${truncatedDescription}`;
+  const reasonLabel = ESCALATION_REASON_LABELS[reason];
+
+  const body = `
+A fast-lane work item has been escalated and requires your attention.
+
+Work Item ID: ${workItemId}
+Target Repo: ${workItem.targetRepo}
+Description: ${workItem.description}
+
+Escalation Reason: ${reasonLabel}
+
+Details:
+${details}
+
+---
+Options:
+- Retry as fast-lane: Update the item status back to 'ready' in the Agent Forge dashboard.
+- Promote to full project: Create a new project in Notion and file a full work item with expanded scope.
+- Dismiss: Mark as 'parked' if this item is no longer relevant.
+
+View item: https://agent-forge.vercel.app/work-items/${workItemId}
+`.trim();
+
+  const { sendEmail } = await import('./gmail');
+  await sendEmail({ subject, body });
+
+  console.log(`[escalation] Fast-lane item ${workItemId} escalated: ${reason}`);
 }

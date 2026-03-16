@@ -154,6 +154,7 @@ const PRIORITY_ORDER: Record<WorkItem["priority"], number> = {
 };
 
 export async function getNextDispatchable(targetRepo: string): Promise<WorkItem | null> {
+  // Only 'ready' items are considered — escalated, blocked, parked, etc. are implicitly excluded
   const entries = await listWorkItems({ status: "ready", targetRepo });
   if (entries.length === 0) return null;
 
