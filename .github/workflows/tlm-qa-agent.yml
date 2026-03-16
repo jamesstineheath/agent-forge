@@ -1,0 +1,144 @@
+name: TLM QA Agent
+
+on:
+  deployment_status:
+  check_suite:
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      preview-url:
+        description: 'Preview URL to test against'
+        required: false
+        type: string
+      pr-number:
+        description: 'Pull request number'
+        required: false
+        type: string
+
+permissions:
+  pull-requests: write
+  deployments: read
+  contents: read
+
+concurrency:
+  group: qa-agent-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  qa-agent:
+    name: QA Agent
+    runs-on: ubuntu-latest
+    # For deployment_status: only run on successful preview deployments
+    # For check_suite: always run (graceful skip handled in steps)
+    # For workflow_dispatch: always run
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'check_suite' ||
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.state == 'success')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract preview URL and PR number
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PREVIEW_URL=""
+          PR_NUMBER=""
+
+          if [[ "${{ github.event_name }}" == "deployment_status" ]]; then
+            PREVIEW_URL="${{ github.event.deployment_status.environment_url }}"
+            DEPLOY_SHA="${{ github.event.deployment.sha }}"
+            echo "Deployment SHA: $DEPLOY_SHA"
+            echo "Preview URL from deployment: $PREVIEW_URL"
+
+            # Find associated PR number from the deployment SHA
+            if [[ -n "$DEPLOY_SHA" ]]; then
+              PR_NUMBER=$(gh pr list \
+                --search "$DEPLOY_SHA" \
+                --state open \
+                --json number \
+                --jq '.[0].number // ""' 2>/dev/null || true)
+              echo "Found PR number: $PR_NUMBER"
+            fi
+
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            PREVIEW_URL="${{ github.event.inputs.preview-url }}"
+            PR_NUMBER="${{ github.event.inputs.pr-number }}"
+            echo "Manual trigger — Preview URL: $PREVIEW_URL, PR: $PR_NUMBER"
+
+          elif [[ "${{ github.event_name }}" == "check_suite" ]]; then
+            # For check_suite fallback: attempt to find a recent deployment for the HEAD SHA
+            HEAD_SHA="${{ github.event.check_suite.head_sha }}"
+            echo "check_suite trigger — HEAD SHA: $HEAD_SHA"
+
+            # Try to get PR number from check_suite pull_requests
+            PR_NUMBER=$(echo '${{ toJson(github.event.check_suite.pull_requests) }}' \
+              | jq -r '.[0].number // ""' 2>/dev/null || true)
+            echo "PR number from check_suite: $PR_NUMBER"
+
+            # No preview URL available for check_suite fallback
+            PREVIEW_URL=""
+          fi
+
+          echo "preview-url=$PREVIEW_URL" >> $GITHUB_OUTPUT
+          echo "pr-number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "has-preview=$([ -n "$PREVIEW_URL" ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
+
+      - name: Skip — no preview deployment available
+        if: steps.context.outputs.has-preview == 'false' && github.event_name == 'check_suite'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ steps.context.outputs.pr-number }}"
+          if [[ -n "$PR_NUMBER" ]]; then
+            gh pr comment "$PR_NUMBER" \
+              --body "🤖 **TLM QA Agent**: No preview deployment available, QA checks skipped." \
+              --repo ${{ github.repository }}
+          else
+            echo "No PR number found and no preview URL — skipping QA agent with no comment."
+          fi
+          echo "Skipping QA agent — no preview URL for check_suite trigger."
+
+      - name: Warmup — wait for preview URL to be ready
+        if: steps.context.outputs.has-preview == 'true'
+        run: |
+          PREVIEW_URL="${{ steps.context.outputs.preview-url }}"
+          echo "Warming up preview URL: $PREVIEW_URL"
+
+          MAX_RETRIES=3
+          RETRY_INTERVAL=10
+          SUCCESS=false
+
+          for i in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $i of $MAX_RETRIES..."
+            if curl --silent --fail --max-time 15 "$PREVIEW_URL" > /dev/null 2>&1; then
+              echo "Preview URL is ready."
+              SUCCESS=true
+              break
+            else
+              echo "Preview URL not ready yet."
+              if [[ $i -lt $MAX_RETRIES ]]; then
+                echo "Waiting ${RETRY_INTERVAL}s before retry..."
+                sleep $RETRY_INTERVAL
+              fi
+            fi
+          done
+
+          if [[ "$SUCCESS" != "true" ]]; then
+            echo "Warning: Preview URL did not respond after $MAX_RETRIES attempts. Proceeding anyway."
+          fi
+
+      - name: Run QA Agent
+        if: steps.context.outputs.has-preview == 'true'
+        uses: ./.github/actions/tlm-qa-agent
+        with:
+          preview-url: ${{ steps.context.outputs.preview-url }}
+          pr-number: ${{ steps.context.outputs.pr-number }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          QA_BYPASS_SECRET: ${{ secrets.QA_BYPASS_SECRET }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
