@@ -12,11 +12,39 @@ import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscal
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
 const ATC_BRANCH_CLEANUP_KEY = "atc/last-branch-cleanup";
+const ATC_LOCK_KEY = "atc/cycle-lock";
+const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const STALL_TIMEOUT_MINUTES = 30;
 const MAX_EVENTS = 200;
 const CLEANUP_THROTTLE_MINUTES = 60;
 const STALE_BRANCH_HOURS = 48;
 const MAX_BRANCHES_PER_REPO = 20;
+
+/**
+ * Optimistic distributed lock using Vercel Blob.
+ * Not a true atomic CAS (Blob doesn't support it), but sufficient given
+ * the ATC cron interval is measured in minutes. The write-then-reread
+ * pattern catches most races.
+ */
+export async function acquireATCLock(): Promise<boolean> {
+  const existing = await loadJson<{ acquiredAt: string; id: string }>(ATC_LOCK_KEY);
+  if (existing) {
+    const age = Date.now() - new Date(existing.acquiredAt).getTime();
+    if (age < LOCK_TTL_MS) {
+      console.log(`[atc] Cycle lock held (age: ${Math.round(age / 1000)}s). Skipping.`);
+      return false;
+    }
+  }
+  const lockId = randomUUID();
+  await saveJson(ATC_LOCK_KEY, { acquiredAt: new Date().toISOString(), id: lockId });
+  // Re-read to check for race (optimistic lock)
+  const reread = await loadJson<{ id: string }>(ATC_LOCK_KEY);
+  return reread?.id === lockId;
+}
+
+export async function releaseATCLock(): Promise<void> {
+  await deleteJson(ATC_LOCK_KEY);
+}
 
 function parseEstimatedFiles(handoffContent: string): string[] {
   const match = handoffContent.match(/\*\*Estimated files:\*\*\s*(.+)/i);
@@ -30,6 +58,18 @@ function hasFileOverlap(filesA: string[], filesB: string[]): boolean {
 }
 
 export async function runATCCycle(): Promise<ATCState> {
+  const locked = await acquireATCLock();
+  if (!locked) {
+    return await getATCState(); // Return last known state
+  }
+  try {
+    return await _runATCCycleInner();
+  } finally {
+    await releaseATCLock();
+  }
+}
+
+async function _runATCCycleInner(): Promise<ATCState> {
   const now = new Date();
   const events: ATCEvent[] = [];
 
@@ -201,6 +241,29 @@ export async function runATCCycle(): Promise<ATCState> {
     }
   }
 
+  // 2.5: Generating timeout detection — catch items stuck in "generating" (handoff gen failed silently)
+  const GENERATING_TIMEOUT_MINUTES = 15;
+  const generatingEntries = await listWorkItems({ status: "generating" as any });
+  for (const entry of generatingEntries) {
+    const item = await getWorkItem(entry.id);
+    if (!item) continue;
+    const elapsed = (now.getTime() - new Date(item.updatedAt).getTime()) / 60_000;
+    if (elapsed >= GENERATING_TIMEOUT_MINUTES) {
+      await updateWorkItem(item.id, {
+        status: "failed",
+        execution: {
+          ...item.execution,
+          completedAt: now.toISOString(),
+          outcome: "failed",
+        },
+      });
+      events.push(makeEvent(
+        "timeout", item.id, "generating", "failed",
+        `Handoff generation stalled for ${Math.round(elapsed)} minutes (reason: generating_timeout)`
+      ));
+    }
+  }
+
   // 3. Check concurrency per repo (log concurrency_block events for awareness)
   const repoIndex = await listRepos();
   const concurrencyMap = new Map<string, number>();
@@ -273,8 +336,17 @@ export async function runATCCycle(): Promise<ATCState> {
           concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Unknown error";
+          // Transition to failed so retry logic (section 3.5) handles it
+          await updateWorkItem(item.id, {
+            status: "failed",
+            execution: {
+              ...item.execution,
+              completedAt: now.toISOString(),
+              outcome: "failed",
+            },
+          });
           events.push(makeEvent(
-            "error", item.id, undefined, undefined,
+            "error", item.id, "ready", "failed",
             `Auto-dispatch failed: ${msg}`
           ));
         }
@@ -381,12 +453,29 @@ export async function runATCCycle(): Promise<ATCState> {
       // Dedup guard: O(1) check via dedicated dedup key per project
       const dedupKey = `atc/project-decomposed/${project.projectId}`;
       const alreadyDecomposed = await loadJson<{ decomposedAt: string }>(dedupKey);
+
+      // Partial-failure recovery: project has dedup guard but zero work items
       if (alreadyDecomposed) {
-        events.push(makeEvent(
-          "project_trigger", project.projectId, undefined, undefined,
-          `Dedup guard: project "${project.title}" already decomposed at ${alreadyDecomposed.decomposedAt}, skipping`
-        ));
-        continue;
+        const existingItems = await listWorkItems({});
+        const projectWorkItems: WorkItem[] = [];
+        for (const entry of existingItems) {
+          const wi = await getWorkItem(entry.id);
+          if (wi && wi.source.type === "project" && wi.source.sourceId === project.projectId) {
+            projectWorkItems.push(wi);
+          }
+        }
+
+        if (projectWorkItems.length === 0) {
+          console.warn(`[atc] Partial-failure recovery: project ${project.projectId} has dedup guard but 0 work items. Clearing guard.`);
+          await deleteJson(dedupKey);
+          // Fall through to re-decompose
+        } else {
+          events.push(makeEvent(
+            "project_trigger", project.projectId, undefined, undefined,
+            `Dedup guard: project "${project.title}" already decomposed at ${alreadyDecomposed.decomposedAt}, skipping`
+          ));
+          continue;
+        }
       }
 
       events.push(makeEvent(

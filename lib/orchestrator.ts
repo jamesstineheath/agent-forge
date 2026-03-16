@@ -7,6 +7,8 @@ import {
   listRecentMergedPRs,
   createBranch,
   pushFile,
+  getWorkflowRuns,
+  triggerWorkflow,
 } from "./github";
 import type { WorkItem, RepoConfig } from "./types";
 
@@ -310,8 +312,22 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
       },
     });
 
-    // 10. Note: pushing to handoffs/ triggers Spec Review -> Execute Handoff pipeline.
-    //     No explicit workflow_dispatch needed.
+    // 10. Verify Spec Review workflow triggered (GitHub Contents API push may not fire on:push)
+    await new Promise(resolve => setTimeout(resolve, 10_000));
+    const runs = await getWorkflowRuns(repoConfig.fullName, branchName, "tlm-spec-review.yml");
+    const recentRun = runs.find(r => {
+      const age = (Date.now() - new Date(r.createdAt).getTime()) / 1000;
+      return age < 60;
+    });
+    if (!recentRun) {
+      console.warn(`[orchestrator] Spec Review not triggered by push. Dispatching manually.`);
+      await triggerWorkflow(
+        repoConfig.fullName,
+        "tlm-spec-review.yml",
+        branchName,
+        { handoff_file: handoffPath }
+      );
+    }
 
     // 11. Update work item status to "executing", set execution.startedAt
     await updateWorkItem(workItemId, {

@@ -15,17 +15,25 @@ const WRITE_CACHE_TTL_MS = 120_000;
  * Load a JSON value by key.
  * Uses Vercel Blob in production, local files in development.
  */
-export async function loadJson<T>(key: string): Promise<T | null> {
+export async function loadJson<T>(key: string, options?: { required?: boolean }): Promise<T | null> {
   const cached = writeCache.get(key);
   if (cached && Date.now() - cached.ts < WRITE_CACHE_TTL_MS) {
     return JSON.parse(cached.data) as T;
   }
   writeCache.delete(key);
 
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    return loadFromBlob<T>(key);
+  try {
+    if (process.env.BLOB_READ_WRITE_TOKEN) {
+      return await loadFromBlob<T>(key);
+    }
+    return await loadFromFile<T>(key);
+  } catch (err) {
+    console.error(`[storage] loadJson failed for key "${key}":`, err);
+    if (options?.required) {
+      throw new Error(`Required blob "${key}" failed to load: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return null;
   }
-  return loadFromFile<T>(key);
 }
 
 /**
@@ -60,19 +68,21 @@ async function loadFromBlob<T>(key: string): Promise<T | null> {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
   if (!token) return null;
 
+  const { head } = await import("@vercel/blob");
+  let blob;
   try {
-    const { head } = await import("@vercel/blob");
-    const blob = await head(pathname, { token });
-    // Private stores require Authorization header for direct URL access
-    const response = await fetch(blob.url, {
-      cache: "no-store",
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!response.ok) return null;
-    return (await response.json()) as T;
+    blob = await head(pathname, { token });
   } catch {
+    // Blob not found (404) — this is expected for missing keys
     return null;
   }
+  // Private stores require Authorization header for direct URL access
+  const response = await fetch(blob.url, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) return null;
+  return (await response.json()) as T;
 }
 
 async function saveToBlob(key: string, json: string): Promise<void> {

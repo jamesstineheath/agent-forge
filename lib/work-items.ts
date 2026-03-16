@@ -14,7 +14,12 @@ function itemKey(id: string): string {
 }
 
 async function loadIndex(): Promise<WorkItemIndexEntry[]> {
-  return (await loadJson<WorkItemIndexEntry[]>(INDEX_KEY)) ?? [];
+  const index = await loadJson<WorkItemIndexEntry[]>(INDEX_KEY);
+  if (!index) {
+    console.log(`[work-items] Index returned null for key "${INDEX_KEY}" — treating as empty (valid for new deploys).`);
+    return [];
+  }
+  return index;
 }
 
 async function saveIndex(index: WorkItemIndexEntry[]): Promise<void> {
