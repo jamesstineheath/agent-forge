@@ -5,7 +5,7 @@ import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, WorkItem } from "./types";
-import { getExecuteProjects, transitionToExecuting, transitionToFailed } from "./projects";
+import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject } from "./projects";
 import { decomposeProject } from "./decomposer";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
 import { summarizeDailyCacheMetrics } from "./cache-metrics";
@@ -875,7 +875,7 @@ async function _runATCCycleInner(): Promise<ATCState> {
   //      (e.g., ATC cycle timed out before reaching Section 4.5). Reset to "Execute" so next cycle retries.
   // 13b: Project completion detection — when all work items reach terminal state, update Notion accordingly.
   try {
-    const { listProjects, transitionToComplete, transitionToFailed } = await import("./projects");
+    const { listProjects } = await import("./projects");
     const { updateProjectStatus } = await import("./notion");
     const executingProjects = await listProjects("Executing");
 
@@ -910,31 +910,20 @@ async function _runATCCycleInner(): Promise<ATCState> {
       }
 
       // 13b: Project completion detection
-      const terminalStatuses = ["merged", "parked", "failed", "cancelled"];
-      const allTerminal = projectItems.every((item) => terminalStatuses.includes(item.status));
-      if (!allTerminal) continue;
+      const result = await checkProjectCompletion(project.projectId, [...allItemsById.values()]);
 
-      const failedItems = projectItems.filter((i) => i.status === "failed");
-      const mergedItems = projectItems.filter((i) => i.status === "merged");
-      const parkedItems = projectItems.filter((i) => i.status === "parked");
-      const cancelledItems = projectItems.filter((i) => i.status === "cancelled");
+      if (result.isTerminal && result.status) {
+        await transitionProject(project.id, result.status, result.summary);
 
-      // A project is "complete" if it has at least one merged item and no failed items
-      // (parked/cancelled items are acceptable — they were intentionally set aside)
-      if (failedItems.length > 0) {
-        await transitionToFailed(project);
         events.push(makeEvent(
-          "project_completion", project.projectId, "Executing", "Failed",
-          `Project "${project.title}" failed: ${failedItems.length} failed, ${mergedItems.length} merged, ${parkedItems.length} parked, ${cancelledItems.length} cancelled`
+          "project_completion", project.projectId, "Executing", result.status,
+          `Project "${project.title}" → ${result.status}: ${result.summary}`
         ));
-      } else if (mergedItems.length > 0) {
-        await transitionToComplete(project);
-        events.push(makeEvent(
-          "project_completion", project.projectId, "Executing", "Complete",
-          `Project "${project.title}" complete: ${mergedItems.length} merged, ${parkedItems.length} parked, ${cancelledItems.length} cancelled`
-        ));
+
+        console.log(
+          `[ATC §13b] Project ${project.projectId} transitioned to ${result.status}: ${result.summary}`
+        );
       }
-      // Edge case: all items parked/cancelled, none merged — leave as Executing for human review
     }
   } catch (err) {
     console.error("[atc] Project lifecycle management failed:", err);
