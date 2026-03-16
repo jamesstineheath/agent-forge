@@ -1,7 +1,7 @@
 # Agent Forge -- A3: Core PM Agent Module
 
 ## Metadata
-- **Branch:** `feat/a3-pm-agent-core`
+- **Branch:** `feat/a3-core-pm-agent-module`
 - **Priority:** high
 - **Model:** sonnet
 - **Type:** feature
@@ -11,452 +11,512 @@
 
 ## Context
 
-This is the third task in the PM Agent series. A1 added types to `lib/types.ts` (BacklogReview, ProjectHealth, ProjectHealthReport, PMAgentConfig, DigestOptions) and A2 created the prompts library in `lib/pm-prompts.ts`. This task wires those together into the core PM Agent module.
+This is the third task in the PM Agent series for Agent Forge. The previous tasks (A1 and A2) have already been merged:
 
-The pattern to follow is `lib/decomposer.ts`, which uses `@ai-sdk/anthropic` and `generateText` from the `ai` package to call Claude. Look at that file before writing anything — match its import style, model string, error handling, and API call pattern exactly.
+- **A1** added PM Agent types to `lib/types.ts`: `BacklogReview`, `ProjectHealth`, `PMAgentConfig`, `DigestOptions`, `WorkItemRecommendation`, `ProjectHealthMetrics`
+- **A2** added `lib/pm-prompts.ts` with `buildBacklogReviewPrompt`, `buildHealthAssessmentPrompt`, `buildNextBatchPrompt`, and `buildDigestPrompt` functions
 
-Key dependencies already in the repo:
-- `lib/types.ts` — all PM Agent types (BacklogReview, ProjectHealth, ProjectHealthReport, PMAgentConfig, DigestOptions, WorkItem, Project, etc.)
-- `lib/pm-prompts.ts` — buildBacklogReviewPrompt, buildHealthAssessmentPrompt, buildNextBatchPrompt, buildDigestPrompt
-- `lib/work-items.ts` — work item CRUD (getAllWorkItems or equivalent)
-- `lib/projects.ts` — project state reads
-- `lib/notion.ts` — Notion API client
-- `lib/gmail.ts` — send email summaries
-- `lib/storage.ts` — Vercel Blob read/write (saveData, loadData or equivalent)
-- `@ai-sdk/anthropic` + `ai` — already installed
+This task creates the core `lib/pm-agent.ts` module that wires together: work items, Notion projects, ATC pipeline state, Claude AI, Vercel Blob storage, and Gmail.
 
-Storage paths:
-- `af-data/pm-agent/latest-review.json`
-- `af-data/pm-agent/latest-health.json`
-- `af-data/pm-agent/latest-digest.json`
+### Key existing patterns to follow
 
-ATC state lives in Vercel Blob at `af-data/atc/` — look at `lib/atc.ts` to understand the exact keys used for active executions and queue state before reading them in pm-agent.ts.
+**Claude API pattern** (from `lib/decomposer.ts`):
+```typescript
+import { generateText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+
+const { text } = await generateText({
+  model: anthropic('claude-opus-4-5'),
+  messages: [{ role: 'user', content: prompt }],
+  maxTokens: 4096,
+});
+const parsed = JSON.parse(text);
+```
+
+**Vercel Blob storage pattern** (from `lib/storage.ts`):
+```typescript
+import { readBlob, writeBlob, listBlobs } from './storage';
+
+await writeBlob('af-data/pm-agent/reviews/123.json', JSON.stringify(data));
+const raw = await readBlob('af-data/atc/state.json');
+```
+
+**ATC state shape** (from `lib/atc.ts`): The ATC state is stored in Vercel Blob at `af-data/atc/state.json`. It contains active executions and concurrency info. Read it to determine in-flight count and available pipeline slots.
+
+**Notion projects** (from `lib/notion.ts`): Use `fetchNotionProjects()` or similar to get active projects. Check the actual export from `lib/notion.ts` for the correct function name.
+
+**Work items** (from `lib/work-items.ts`): Use `listWorkItems()` to get all work items. Work items have status fields: `filed`, `ready`, `queued`, `generating`, `executing`, `reviewing`, `merged`, `blocked`, `parked`, `failed`, `cancelled`.
+
+**Gmail** (from `lib/gmail.ts`): Check the actual export for sending email — look for `sendEmail` or a similar function.
+
+**Escalations**: Escalation records are in Vercel Blob at `escalations/*`. Use `listBlobs('escalations/')` and `readBlob()` to fetch them.
 
 ## Requirements
 
-1. `lib/pm-agent.ts` exists and exports `reviewBacklog`, `assessProjectHealth`, `suggestNextBatch`, and `composeDigest`
-2. `reviewBacklog()` fetches work items and projects, builds prompt via `buildBacklogReviewPrompt()`, calls Claude API (model: `claude-sonnet-4-5`), parses response into `BacklogReview`, persists to `af-data/pm-agent/latest-review.json`, sends Gmail summary, and returns the result
-3. `assessProjectHealth()` computes per-project metrics (completion rate, escalation count, avg time in queue, blocked items), builds prompt via `buildHealthAssessmentPrompt()`, calls Claude API, parses response into `ProjectHealthReport`, persists to `af-data/pm-agent/latest-health.json`, and returns the result
-4. `suggestNextBatch()` reads pipeline state and available items, builds prompt via `buildNextBatchPrompt()`, calls Claude API, and returns `{items: string[], rationale: string}`
-5. `composeDigest(options: DigestOptions)` aggregates stats from recent reviews/health assessments, builds prompt via `buildDigestPrompt()`, calls Claude API, persists to `af-data/pm-agent/latest-digest.json`, and returns a formatted string
-6. All functions use prompts from `lib/pm-prompts.ts` — no inline prompt strings
-7. File compiles without TypeScript errors
-8. Claude API call pattern matches `lib/decomposer.ts` exactly (same import, same model string format, same generateText usage)
+1. `lib/pm-agent.ts` must exist and export `reviewBacklog`, `assessProjectHealth`, `suggestNextBatch`, and `composeDigest` functions with the exact signatures described below
+2. `reviewBacklog()` must fetch all work items via `listWorkItems()`, fetch active Notion projects, read ATC pipeline state from Vercel Blob, call Claude via `generateText` using `buildBacklogReviewPrompt()`, parse the JSON response into a `BacklogReview` object, persist the result to `af-data/pm-agent/reviews/{timestamp}.json` via Vercel Blob, send a Gmail summary, and return the `BacklogReview`
+3. `assessProjectHealth()` must accept an optional `projectId`, fetch relevant work items and escalations, compute metrics (`completionRate`, `avgTimeInQueue`, `blockedItems`, `escalationCount`), call Claude via `buildHealthAssessmentPrompt()`, and return `ProjectHealth[]`
+4. `suggestNextBatch()` must read pipeline available slots, get ready work items, get active projects, call Claude via `buildNextBatchPrompt()`, and return `{ workItemIds: string[]; rationale: string }`
+5. `composeDigest()` must optionally invoke `reviewBacklog` and `assessProjectHealth`, compute pipeline deltas, call Claude via `buildDigestPrompt()`, send via Gmail if `recipientEmail` is provided, and return the formatted digest string
+6. All Claude responses that are expected to be JSON must be parsed defensively (try/catch with fallback)
+7. The project must build successfully with `npm run build` and `npx tsc --noEmit`
+8. No new dependencies may be added — use only existing packages already in `package.json`
 
 ## Execution Steps
 
 ### Step 0: Branch setup
 ```bash
 git checkout main && git pull
-git checkout -b feat/a3-pm-agent-core
+git checkout -b feat/a3-core-pm-agent-module
 ```
 
-### Step 1: Read existing code for patterns
+### Step 1: Inspect existing code to understand exact APIs
 
-Read these files carefully before writing anything:
+Before writing any code, read the following files to understand exact function signatures and exports:
 
 ```bash
-cat lib/decomposer.ts       # Claude API call pattern — must match this exactly
-cat lib/types.ts            # All PM Agent types
-cat lib/pm-prompts.ts       # All prompt builder functions and their signatures
-cat lib/work-items.ts       # How to fetch work items (find getAllWorkItems or equivalent)
-cat lib/projects.ts         # How to fetch projects
-cat lib/gmail.ts            # How to send email summaries (find the send function)
-cat lib/storage.ts          # saveData / loadData signatures
-cat lib/atc.ts              # ATC state keys in Vercel Blob (look for af-data/atc/ reads)
+cat lib/types.ts        # BacklogReview, ProjectHealth, PMAgentConfig, DigestOptions shapes
+cat lib/pm-prompts.ts   # buildBacklogReviewPrompt, buildHealthAssessmentPrompt, etc. signatures
+cat lib/work-items.ts   # listWorkItems() signature and return type
+cat lib/storage.ts      # readBlob, writeBlob, listBlobs function signatures
+cat lib/notion.ts       # project-fetching functions available
+cat lib/gmail.ts        # email sending functions available
+cat lib/atc.ts          # ATCState shape and how pipeline state is structured
+cat lib/decomposer.ts   # Claude API call pattern to replicate exactly
+cat lib/escalation.ts   # escalation shape / storage keys
 ```
 
-Note the exact:
-- Import path for `anthropic` from `@ai-sdk/anthropic`
-- Import for `generateText` from `ai`
-- Model string used (e.g., `claude-sonnet-4-5` or whatever decomposer.ts uses)
-- How `generateText` is called (prompt vs messages, temperature, etc.)
-- How storage save/load is called
-- How Gmail send is called
-- Exact ATC blob keys for active executions and queue depth
+Take note of:
+- Exact type shapes for `BacklogReview`, `ProjectHealth`, `PMAgentConfig`, `DigestOptions`
+- What `buildBacklogReviewPrompt`, `buildHealthAssessmentPrompt`, `buildNextBatchPrompt`, `buildDigestPrompt` accept as parameters
+- Exact function name for sending email in `lib/gmail.ts`
+- Exact function name for fetching Notion projects in `lib/notion.ts`
+- The ATC state JSON shape (active executions array, concurrency limit)
+- The escalation record shape
 
-### Step 2: Implement lib/pm-agent.ts
+### Step 2: Implement `lib/pm-agent.ts`
 
-Create `lib/pm-agent.ts`. The structure below is a guide — adapt function signatures and imports to match what actually exists in the dependency files.
+Create `lib/pm-agent.ts`. Use the patterns discovered in Step 1. The implementation below is a template — **adjust imports and API calls to match actual function signatures** discovered in Step 1.
 
 ```typescript
 import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
-import { getAllWorkItems } from './work-items';         // adjust to actual export name
-import { getProjects } from './projects';               // adjust to actual export name
-import { sendEmailSummary } from './gmail';             // adjust to actual export name
-import { saveData, loadData } from './storage';         // adjust to actual export names
+import {
+  BacklogReview,
+  ProjectHealth,
+  PMAgentConfig,
+  DigestOptions,
+  WorkItem,
+} from './types';
 import {
   buildBacklogReviewPrompt,
   buildHealthAssessmentPrompt,
   buildNextBatchPrompt,
   buildDigestPrompt,
 } from './pm-prompts';
-import type {
-  BacklogReview,
-  ProjectHealth,
-  ProjectHealthReport,
-  PMAgentConfig,
-  DigestOptions,
-  WorkItem,
-  Project,
-} from './types';
+import { listWorkItems } from './work-items';
+import { readBlob, writeBlob, listBlobs } from './storage';
 
-// Storage keys
-const STORAGE_KEYS = {
-  latestReview: 'af-data/pm-agent/latest-review.json',
-  latestHealth: 'af-data/pm-agent/latest-health.json',
-  latestDigest: 'af-data/pm-agent/latest-digest.json',
-} as const;
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-// ATC state keys — confirm these against lib/atc.ts
-const ATC_KEYS = {
-  activeExecutions: 'af-data/atc/active-executions.json',
-  queue: 'af-data/atc/queue.json',
-} as const;
+const CLAUDE_MODEL = 'claude-opus-4-5';
 
-// Model — must match decomposer.ts
-const MODEL = 'claude-sonnet-4-5';  // replace with whatever decomposer.ts uses
-
-/**
- * Reads pipeline state from ATC blob storage.
- * Returns inFlightCount and queueDepth.
- */
-async function getPipelineState(): Promise<{ inFlightCount: number; queueDepth: number }> {
-  try {
-    const [activeRaw, queueRaw] = await Promise.all([
-      loadData(ATC_KEYS.activeExecutions),
-      loadData(ATC_KEYS.queue),
-    ]);
-    const active = activeRaw ? JSON.parse(activeRaw) : {};
-    const queue = queueRaw ? JSON.parse(queueRaw) : [];
-    const inFlightCount = Array.isArray(active) ? active.length : Object.keys(active).length;
-    const queueDepth = Array.isArray(queue) ? queue.length : 0;
-    return { inFlightCount, queueDepth };
-  } catch {
-    return { inFlightCount: 0, queueDepth: 0 };
-  }
-}
-
-/**
- * Calls Claude API with a prompt string.
- * Matches the pattern in lib/decomposer.ts exactly.
- */
-async function callClaude(prompt: string): Promise<string> {
+async function callClaude(prompt: string, maxTokens = 4096): Promise<string> {
   const { text } = await generateText({
-    model: anthropic(MODEL),
-    prompt,
+    model: anthropic(CLAUDE_MODEL),
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens,
   });
   return text;
 }
 
-/**
- * Safely parse JSON from Claude response.
- * Claude sometimes wraps JSON in markdown code fences — strip them first.
- */
-function parseJson<T>(raw: string): T {
-  const stripped = raw
-    .replace(/^```(?:json)?\n?/, '')
-    .replace(/\n?```$/, '')
-    .trim();
-  return JSON.parse(stripped) as T;
+function safeParseJSON<T>(text: string, fallback: T): T {
+  try {
+    // Claude sometimes wraps JSON in markdown code fences — strip them
+    const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    return JSON.parse(cleaned) as T;
+  } catch {
+    console.error('[pm-agent] Failed to parse Claude JSON response:', text.slice(0, 500));
+    return fallback;
+  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. reviewBacklog
-// ─────────────────────────────────────────────────────────────────────────────
+async function getATCPipelineState(): Promise<{ inFlight: number; concurrencyLimit: number; availableSlots: number }> {
+  try {
+    const raw = await readBlob('af-data/atc/state.json');
+    if (!raw) return { inFlight: 0, concurrencyLimit: 3, availableSlots: 3 };
+    const state = JSON.parse(raw);
+    // Adjust field names based on actual ATC state shape discovered in Step 1
+    const inFlight = Array.isArray(state.activeExecutions) ? state.activeExecutions.length : 0;
+    const concurrencyLimit = state.concurrencyLimit ?? 3;
+    return { inFlight, concurrencyLimit, availableSlots: Math.max(0, concurrencyLimit - inFlight) };
+  } catch {
+    return { inFlight: 0, concurrencyLimit: 3, availableSlots: 3 };
+  }
+}
 
-export async function reviewBacklog(): Promise<BacklogReview> {
-  // Fetch all data needed for the review
-  const [workItems, projects, pipelineState] = await Promise.all([
-    getAllWorkItems(),
-    getProjects(),
-    getPipelineState(),
-  ]);
+async function getActiveProjects(): Promise<unknown[]> {
+  try {
+    // Import and call the correct Notion function discovered in Step 1
+    // e.g., const { fetchNotionProjects } = await import('./notion');
+    // return await fetchNotionProjects();
+    // Adjust based on actual lib/notion.ts exports:
+    const notionModule = await import('./notion');
+    // Try common function names:
+    if (typeof notionModule.fetchNotionProjects === 'function') {
+      return await notionModule.fetchNotionProjects();
+    }
+    if (typeof notionModule.getActiveProjects === 'function') {
+      return await notionModule.getActiveProjects();
+    }
+    if (typeof notionModule.listProjects === 'function') {
+      return await notionModule.listProjects();
+    }
+    console.warn('[pm-agent] No recognized project-fetching function in lib/notion.ts');
+    return [];
+  } catch (err) {
+    console.error('[pm-agent] Failed to fetch Notion projects:', err);
+    return [];
+  }
+}
 
-  // Build prompt using pm-prompts.ts
-  const prompt = buildBacklogReviewPrompt({
-    workItems,
-    projects,
-    pipelineState,
-  });
+async function getEscalations(): Promise<unknown[]> {
+  try {
+    const keys = await listBlobs('escalations/');
+    const results = await Promise.allSettled(
+      keys.map(async (key: string) => {
+        const raw = await readBlob(key);
+        return raw ? JSON.parse(raw) : null;
+      })
+    );
+    return results
+      .filter((r): r is PromiseFulfilledResult<unknown> => r.status === 'fulfilled' && r.value !== null)
+      .map((r) => r.value);
+  } catch {
+    return [];
+  }
+}
 
-  // Call Claude
-  const raw = await callClaude(prompt);
+async function sendGmailSummary(subject: string, body: string): Promise<void> {
+  try {
+    const gmailModule = await import('./gmail');
+    // Try common function names discovered in Step 1:
+    if (typeof gmailModule.sendEmail === 'function') {
+      await gmailModule.sendEmail({ subject, body });
+    } else if (typeof gmailModule.sendGmail === 'function') {
+      await gmailModule.sendGmail(subject, body);
+    } else {
+      console.warn('[pm-agent] No recognized email-sending function in lib/gmail.ts');
+    }
+  } catch (err) {
+    console.error('[pm-agent] Failed to send Gmail summary:', err);
+    // Non-fatal — don't throw
+  }
+}
 
-  // Parse response
-  const review = parseJson<BacklogReview>(raw);
+// ── Core exports ──────────────────────────────────────────────────────────────
 
-  // Persist to Vercel Blob
-  await saveData(STORAGE_KEYS.latestReview, JSON.stringify(review, null, 2));
+export async function reviewBacklog(config?: Partial<PMAgentConfig>): Promise<BacklogReview> {
+  // 1. Fetch all work items
+  const workItems = await listWorkItems();
 
-  // Send Gmail summary
-  // Adjust sendEmailSummary call to match actual gmail.ts signature
-  await sendEmailSummary({
-    subject: `PM Agent: Backlog Review — ${new Date().toLocaleDateString()}`,
-    body: `Backlog review completed.\n\nSummary:\n${review.summary ?? JSON.stringify(review, null, 2)}`,
-  }).catch((err) => {
-    console.error('[pm-agent] Gmail send failed (non-fatal):', err);
-  });
+  // 2. Fetch active projects from Notion
+  const projects = await getActiveProjects();
 
+  // 3. Get pipeline state
+  const pipelineState = await getATCPipelineState();
+
+  // 4. Build prompt
+  const prompt = buildBacklogReviewPrompt(workItems, projects, pipelineState);
+
+  // 5. Call Claude, parse JSON response
+  const rawResponse = await callClaude(prompt, 4096);
+  const defaultBacklogReview: BacklogReview = {
+    reviewedAt: new Date().toISOString(),
+    totalItems: workItems.length,
+    recommendations: [],
+    summary: rawResponse,
+  };
+  const review = safeParseJSON<BacklogReview>(rawResponse, defaultBacklogReview);
+  // Ensure reviewedAt is always set
+  review.reviewedAt = review.reviewedAt ?? new Date().toISOString();
+
+  // 6. Persist to Vercel Blob
+  const timestamp = Date.now();
+  await writeBlob(
+    `af-data/pm-agent/reviews/${timestamp}.json`,
+    JSON.stringify(review, null, 2)
+  );
+
+  // 7. Send Gmail summary
+  const subject = `[Agent Forge] Backlog Review — ${new Date().toLocaleDateString()}`;
+  const body = review.summary ?? JSON.stringify(review, null, 2);
+  await sendGmailSummary(subject, body);
+
+  // 8. Return
   return review;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2. assessProjectHealth
-// ─────────────────────────────────────────────────────────────────────────────
+export async function assessProjectHealth(projectId?: string): Promise<ProjectHealth[]> {
+  // 1. Fetch all work items and projects
+  const allWorkItems = await listWorkItems();
+  const allProjects = await getActiveProjects() as Array<{ id: string; name?: string; title?: string }>;
+  const escalations = await getEscalations() as Array<{ projectId?: string; status?: string }>;
 
-export async function assessProjectHealth(): Promise<ProjectHealthReport> {
-  const [workItems, projects] = await Promise.all([
-    getAllWorkItems(),
-    getProjects(),
-  ]);
+  // 2. Determine which projects to assess
+  const projectsToAssess = projectId
+    ? allProjects.filter((p) => p.id === projectId)
+    : allProjects;
 
-  // Compute per-project metrics
-  const projectHealthInputs = projects.map((project: Project) => {
-    const projectItems = workItems.filter(
-      (item: WorkItem) => item.projectId === project.id
-    );
-    const totalItems = projectItems.length;
-    const mergedItems = projectItems.filter(
-      (item: WorkItem) => item.status === 'merged'
-    ).length;
-    const blockedItems = projectItems.filter(
-      (item: WorkItem) => item.status === 'blocked'
-    ).length;
-    const escalationCount = projectItems.filter(
-      (item: WorkItem) => item.status === 'blocked'
-    ).length; // adjust if escalation is tracked differently
+  // 3. Assess each project
+  const healthResults: ProjectHealth[] = await Promise.all(
+    projectsToAssess.map(async (project) => {
+      const projectItems = (allWorkItems as WorkItem[]).filter(
+        (item) => (item as WorkItem & { projectId?: string }).projectId === project.id
+      );
+      const projectEscalations = escalations.filter((e) => e.projectId === project.id);
 
-    // Avg time in queue (ms) for items that have left queued state
-    const queuedItems = projectItems.filter(
-      (item: WorkItem) => item.queuedAt && item.executingAt
-    );
-    const avgTimeInQueue =
-      queuedItems.length > 0
-        ? queuedItems.reduce((sum: number, item: WorkItem) => {
-            const queued = item.queuedAt ? new Date(item.queuedAt).getTime() : 0;
-            const executing = item.executingAt
-              ? new Date(item.executingAt).getTime()
-              : 0;
-            return sum + (executing - queued);
-          }, 0) / queuedItems.length
-        : 0;
+      // Calculate metrics
+      const total = projectItems.length;
+      const merged = projectItems.filter((i) => i.status === 'merged').length;
+      const blocked = projectItems.filter((i) => i.status === 'blocked').length;
+      const completionRate = total > 0 ? merged / total : 0;
+      const escalationCount = projectEscalations.length;
 
-    const completionRate = totalItems > 0 ? mergedItems / totalItems : 0;
+      // avgTimeInQueue: average ms between creation and dispatch for queued/dispatched items
+      const queuedItems = projectItems.filter(
+        (i) => i.createdAt && (i as WorkItem & { queuedAt?: string }).queuedAt
+      );
+      const avgTimeInQueue =
+        queuedItems.length > 0
+          ? queuedItems.reduce((sum, item) => {
+              const created = new Date(item.createdAt!).getTime();
+              const queued = new Date((item as WorkItem & { queuedAt?: string }).queuedAt!).getTime();
+              return sum + (queued - created);
+            }, 0) / queuedItems.length
+          : 0;
 
-    return {
-      project,
-      metrics: {
-        totalItems,
-        mergedItems,
-        blockedItems,
-        escalationCount,
-        avgTimeInQueueMs: avgTimeInQueue,
+      // Call Claude for AI-powered issue detection
+      const prompt = buildHealthAssessmentPrompt(project, projectItems, projectEscalations);
+      const rawResponse = await callClaude(prompt, 2048);
+
+      const defaultHealth: ProjectHealth = {
+        projectId: project.id,
+        projectName: project.name ?? project.title ?? project.id,
+        metrics: {
+          completionRate,
+          avgTimeInQueue,
+          blockedItems: blocked,
+          escalationCount,
+        },
+        issues: [],
+        recommendations: [],
+        assessedAt: new Date().toISOString(),
+      };
+
+      const health = safeParseJSON<ProjectHealth>(rawResponse, defaultHealth);
+      // Always ensure computed metrics override Claude's (source of truth)
+      health.projectId = project.id;
+      health.projectName = health.projectName ?? project.name ?? project.title ?? project.id;
+      health.assessedAt = health.assessedAt ?? new Date().toISOString();
+      health.metrics = {
+        ...health.metrics,
         completionRate,
-      },
-    };
-  });
+        avgTimeInQueue,
+        blockedItems: blocked,
+        escalationCount,
+      };
 
-  // Build prompt
-  const prompt = buildHealthAssessmentPrompt({ projectHealthInputs });
-
-  // Call Claude
-  const raw = await callClaude(prompt);
-
-  // Parse response
-  const healthReport = parseJson<ProjectHealthReport>(raw);
-
-  // Persist
-  await saveData(STORAGE_KEYS.latestHealth, JSON.stringify(healthReport, null, 2));
-
-  return healthReport;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. suggestNextBatch
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function suggestNextBatch(): Promise<{ items: string[]; rationale: string }> {
-  const [workItems, pipelineState] = await Promise.all([
-    getAllWorkItems(),
-    getPipelineState(),
-  ]);
-
-  // Filter to ready, non-blocked items
-  const availableItems = workItems.filter(
-    (item: WorkItem) => item.status === 'ready'
+      return health;
+    })
   );
 
-  // Build prompt
-  const prompt = buildNextBatchPrompt({
-    availableItems,
-    pipelineState,
-  });
-
-  // Call Claude
-  const raw = await callClaude(prompt);
-
-  // Parse response
-  const result = parseJson<{ items: string[]; rationale: string }>(raw);
-
-  return result;
+  return healthResults;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. composeDigest
-// ─────────────────────────────────────────────────────────────────────────────
+export async function suggestNextBatch(): Promise<{ workItemIds: string[]; rationale: string }> {
+  // 1. Get pipeline state (available slots)
+  const pipelineState = await getATCPipelineState();
+
+  // 2. Get ready items
+  const allItems = await listWorkItems();
+  const readyItems = (allItems as WorkItem[]).filter((i) => i.status === 'ready');
+
+  // 3. Get active projects
+  const projects = await getActiveProjects();
+
+  // 4. Build prompt and call Claude
+  const prompt = buildNextBatchPrompt(readyItems, projects, pipelineState);
+  const rawResponse = await callClaude(prompt, 2048);
+
+  const fallback = {
+    workItemIds: readyItems.slice(0, pipelineState.availableSlots).map((i) => i.id),
+    rationale: 'Fallback: selected oldest ready items by default.',
+  };
+  return safeParseJSON<{ workItemIds: string[]; rationale: string }>(rawResponse, fallback);
+}
 
 export async function composeDigest(options: DigestOptions): Promise<string> {
-  // Load recent review and health data (may not exist yet — handle gracefully)
-  const [reviewRaw, healthRaw] = await Promise.all([
-    loadData(STORAGE_KEYS.latestReview).catch(() => null),
-    loadData(STORAGE_KEYS.latestHealth).catch(() => null),
-  ]);
+  // 1. Optionally run reviewBacklog and assessProjectHealth
+  let backlogReview: BacklogReview | undefined;
+  let projectHealthList: ProjectHealth[] | undefined;
 
-  const latestReview: BacklogReview | null = reviewRaw
-    ? parseJson<BacklogReview>(reviewRaw)
-    : null;
-  const latestHealth: ProjectHealthReport | null = healthRaw
-    ? parseJson<ProjectHealthReport>(healthRaw)
-    : null;
+  if (options.includeBacklogReview) {
+    backlogReview = await reviewBacklog();
+  }
+  if (options.includeProjectHealth) {
+    projectHealthList = await assessProjectHealth();
+  }
 
-  // Aggregate stats
-  const [workItems, pipelineState] = await Promise.all([
-    getAllWorkItems(),
-    getPipelineState(),
-  ]);
-
-  const stats = {
-    totalWorkItems: workItems.length,
-    byStatus: workItems.reduce((acc: Record<string, number>, item: WorkItem) => {
-      acc[item.status] = (acc[item.status] ?? 0) + 1;
-      return acc;
-    }, {}),
-    pipelineState,
-  };
-
-  // Build prompt
-  const prompt = buildDigestPrompt({
-    options,
-    latestReview,
-    latestHealth,
-    stats,
+  // 2. Calculate pipeline delta since last digest
+  const allItems = await listWorkItems() as WorkItem[];
+  const since = options.since ? new Date(options.since).getTime() : Date.now() - 24 * 60 * 60 * 1000;
+  const recentItems = allItems.filter((i) => {
+    const updatedAt = (i as WorkItem & { updatedAt?: string }).updatedAt;
+    return updatedAt && new Date(updatedAt).getTime() > since;
   });
-
-  // Call Claude
-  const digestText = await callClaude(prompt);
-
-  // Persist
-  const digestRecord = {
-    generatedAt: new Date().toISOString(),
-    options,
-    digest: digestText,
+  const delta = {
+    merged: recentItems.filter((i) => i.status === 'merged').length,
+    failed: recentItems.filter((i) => i.status === 'failed').length,
+    blocked: recentItems.filter((i) => i.status === 'blocked').length,
+    total: recentItems.length,
   };
-  await saveData(STORAGE_KEYS.latestDigest, JSON.stringify(digestRecord, null, 2));
 
-  return digestText;
+  // 3. Build prompt and call Claude
+  const prompt = buildDigestPrompt(backlogReview, projectHealthList, delta, options);
+  const digest = await callClaude(prompt, 3000);
+
+  // 4. Send via Gmail if recipientEmail provided
+  if (options.recipientEmail) {
+    await sendGmailSummary(
+      `[Agent Forge] Pipeline Digest — ${new Date().toLocaleDateString()}`,
+      digest
+    );
+  }
+
+  // 5. Return formatted digest
+  return digest;
 }
 ```
 
-**Important notes while implementing:**
+### Step 3: Reconcile with actual type shapes
 
-1. **Match decomposer.ts exactly** for Claude API calls — if it uses `messages` instead of `prompt`, use that. If it passes `temperature`, include it. Do not guess; read the file first.
+After writing the initial implementation, check the actual type definitions in `lib/types.ts` for `BacklogReview`, `ProjectHealth`, `PMAgentConfig`, and `DigestOptions`. Adjust:
 
-2. **Match actual function signatures** from each dependency. The code above uses placeholder names like `getAllWorkItems()`, `getProjects()`, `sendEmailSummary()`, `saveData()`, `loadData()` — replace with whatever is actually exported.
+1. The `defaultBacklogReview` fallback object field names to match the actual `BacklogReview` type
+2. The `defaultHealth` fallback object field names to match the actual `ProjectHealth` type
+3. The `metrics` sub-object structure to match `ProjectHealthMetrics` if it differs
+4. The `DigestOptions` fields (`includeBacklogReview`, `includeProjectHealth`, `since`, `recipientEmail`) to match the actual type
 
-3. **Match actual type field names** — `item.projectId`, `item.status`, `item.queuedAt`, `item.executingAt` are guesses based on the work item domain. Check `lib/types.ts` for the real field names.
+Also check `buildBacklogReviewPrompt`, `buildHealthAssessmentPrompt`, `buildNextBatchPrompt`, `buildDigestPrompt` parameter types in `lib/pm-prompts.ts` and adjust call sites accordingly.
 
-4. **Match prompt builder signatures** — `buildBacklogReviewPrompt({ workItems, projects, pipelineState })` is illustrative. Check `lib/pm-prompts.ts` for the actual parameter shapes and adjust accordingly.
-
-5. **ATC state shape** — check `lib/atc.ts` for how active executions and queue are stored. The blob keys and JSON shape may differ from the placeholders above.
-
-6. **Gmail send signature** — `lib/gmail.ts` may have a different function name or signature. Read it and adapt.
-
-7. **Model string** — use whatever model string `lib/decomposer.ts` actually uses, not the placeholder above.
-
-### Step 3: TypeScript compilation check
+### Step 4: Fix any TypeScript errors
 
 ```bash
-npx tsc --noEmit
+npx tsc --noEmit 2>&1
 ```
 
-Fix any type errors. Common issues to watch for:
-- `WorkItem` field names not matching what's in `lib/types.ts`
-- Prompt builder parameter shapes not matching `lib/pm-prompts.ts`
-- `loadData`/`saveData` not accepting string content (may need `Buffer` or specific types)
-- `getProjects()` returning a different type than `Project[]`
+Common issues to fix:
+- Import not found: adjust the import path or use dynamic import pattern
+- Type mismatch on `WorkItem`: check if `projectId` is on the base `WorkItem` type or needs casting
+- `listBlobs` return type: check if it returns `string[]` or an object with `.blobs` array
+- `writeBlob`/`readBlob` signature differences: check actual signatures in `lib/storage.ts`
+- Missing fields on fallback objects: add required fields from the actual type definitions
 
-### Step 4: Lint check
+If `listBlobs` in `lib/storage.ts` returns an object (e.g., `{ blobs: BlobObject[] }`), adjust accordingly:
+```typescript
+const result = await listBlobs('escalations/');
+const keys = Array.isArray(result) ? result : result.blobs?.map((b: { url: string; pathname: string }) => b.pathname) ?? [];
+```
+
+### Step 5: Build verification
 
 ```bash
-npm run lint 2>&1 | head -50
+npm run build 2>&1
 ```
 
-Fix any lint errors in `lib/pm-agent.ts`.
+Fix any remaining type or compilation errors. The build must pass cleanly.
 
-### Step 5: Build check
+### Step 6: Verify exports
 
 ```bash
-npm run build 2>&1 | tail -30
+node -e "
+const mod = require('./.next/server/chunks/ssr/lib_pm-agent_ts.js');
+console.log('exports:', Object.keys(mod));
+" 2>/dev/null || echo "Module check via TS source:"
+grep -E '^export (async )?function' lib/pm-agent.ts
 ```
 
-If build fails due to environment variables not available at build time, verify that `lib/pm-agent.ts` doesn't do any top-level awaits or module-level side effects that require env vars. All data fetching must be inside the exported functions.
+Confirm all four functions are exported: `reviewBacklog`, `assessProjectHealth`, `suggestNextBatch`, `composeDigest`.
 
-### Step 6: Commit, push, open PR
+### Step 7: Commit, push, open PR
 
 ```bash
 git add lib/pm-agent.ts
-git commit -m "feat: A3 core PM Agent module (reviewBacklog, assessProjectHealth, suggestNextBatch, composeDigest)"
-git push origin feat/a3-pm-agent-core
+git add -A
+git commit -m "feat: A3 core PM Agent module with reviewBacklog, assessProjectHealth, suggestNextBatch, composeDigest"
+git push origin feat/a3-core-pm-agent-module
 gh pr create \
   --title "feat: A3 Core PM Agent Module" \
   --body "## Summary
 
-Creates \`lib/pm-agent.ts\` — the core PM Agent module with four exported functions:
+Implements \`lib/pm-agent.ts\` with the four core PM Agent functions as specified in the A3 work item.
 
-- \`reviewBacklog()\` — fetches work items + projects, calls Claude, persists to \`af-data/pm-agent/latest-review.json\`, sends Gmail summary
-- \`assessProjectHealth()\` — computes per-project metrics, calls Claude, persists to \`af-data/pm-agent/latest-health.json\`
-- \`suggestNextBatch()\` — reads pipeline state + available items, calls Claude, returns recommendations
-- \`composeDigest(options)\` — aggregates recent review/health data, calls Claude, returns formatted email body
+## What's included
 
-## Dependencies
-- A1: PM Agent Types (lib/types.ts) ✅
-- A2: PM Agent Prompts Library (lib/pm-prompts.ts) ✅
+- \`reviewBacklog(config?)\` — fetches work items + Notion projects + ATC pipeline state, calls Claude with backlog review prompt, persists result to \`af-data/pm-agent/reviews/{timestamp}.json\`, sends Gmail summary
+- \`assessProjectHealth(projectId?)\` — computes per-project metrics (completionRate, avgTimeInQueue, blockedItems, escalationCount) + Claude-powered issue detection
+- \`suggestNextBatch()\` — reads available pipeline slots, ready items, and active projects; returns Claude-recommended item IDs + rationale
+- \`composeDigest(options)\` — optionally runs backlog review and health assessment, computes pipeline delta, formats digest via Claude, sends via Gmail if recipientEmail provided
+
+## Implementation notes
+
+- Claude calls use \`generateText\` from \`@ai-sdk/anthropic\` matching the \`lib/decomposer.ts\` pattern
+- JSON parsing is defensive with try/catch and sensible fallbacks
+- Gmail and Notion integrations use dynamic imports to match actual export names
+- ATC pipeline state read from \`af-data/atc/state.json\` in Vercel Blob
+- Escalations fetched from \`escalations/\` prefix in Vercel Blob
 
 ## Testing
+
 - \`npx tsc --noEmit\` passes
 - \`npm run build\` passes
 
-## Storage Keys
-- \`af-data/pm-agent/latest-review.json\`
-- \`af-data/pm-agent/latest-health.json\`
-- \`af-data/pm-agent/latest-digest.json\`
-"
+Closes A3 work item." \
+  --base main
 ```
 
 ## Session Abort Protocol
 
 If running low on context or hitting unresolvable errors:
-
-1. Commit and push whatever compiles:
-   ```bash
-   git add lib/pm-agent.ts
-   git commit -m "feat: A3 PM agent module (partial)"
-   git push origin feat/a3-pm-agent-core
-   ```
-2. Open PR with partial status:
-   ```bash
-   gh pr create --title "feat: A3 Core PM Agent Module [PARTIAL]" --body "Partial implementation — see issues below."
-   ```
+1. Commit whatever compiles: `git add -A && git commit -m "wip: A3 pm-agent partial implementation" && git push origin feat/a3-core-pm-agent-module`
+2. Open PR with partial status: `gh pr create --title "wip: A3 Core PM Agent Module (partial)" --body "Partial implementation — see ISSUES below" --base main`
 3. Output structured report:
 
 ```
 STATUS: [PR Open | Failed | Blocked]
 PR: [URL or "none"]
-BRANCH: feat/a3-pm-agent-core
+BRANCH: feat/a3-core-pm-agent-module
 FILES CHANGED: lib/pm-agent.ts
 SUMMARY: [what was implemented]
-ISSUES: [what failed — include tsc error output if relevant]
-NEXT STEPS: [e.g., "fix type mismatch in WorkItem.projectId — actual field name is X per lib/types.ts"]
+ISSUES: [what failed or is incomplete]
+NEXT STEPS: [e.g., "Fix type mismatch on BacklogReview.recommendations field — actual type uses X but template assumed Y"]
+```
+
+If you encounter a blocker that requires human judgment (e.g., the `BacklogReview` or `ProjectHealth` types from A1 don't exist in `lib/types.ts`, or the pm-prompts functions from A2 are missing), escalate:
+
+```bash
+curl -X POST "${AGENT_FORGE_URL}/api/escalations" \
+  -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workItemId": "a3-core-pm-agent-module",
+    "reason": "<describe the missing dependency or ambiguity>",
+    "confidenceScore": 0.2,
+    "contextSnapshot": {
+      "step": "<current step>",
+      "error": "<error message>",
+      "filesChanged": ["lib/pm-agent.ts"]
+    }
+  }'
 ```
