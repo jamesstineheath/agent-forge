@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "echo 'No tests yet' && exit 0"
+    "test": "echo 'No tests yet' && exit 0",
+    "smoke-test": "npx tsx scripts/smoke-test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.58",
