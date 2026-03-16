@@ -8,6 +8,7 @@ import type { ATCEvent, ATCState, WorkItem } from "./types";
 import { getExecuteProjects, transitionToExecuting, transitionToFailed } from "./projects";
 import { decomposeProject } from "./decomposer";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
+import { summarizeDailyCacheMetrics } from "./cache-metrics";
 
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
@@ -780,6 +781,11 @@ async function _runATCCycleInner(): Promise<ATCState> {
     const updated = [...existing, ...gmailEventTypes].slice(-MAX_EVENTS);
     await saveJson(ATC_EVENTS_KEY, updated);
   }
+
+  // Cache metrics summary (observability)
+  await summarizeDailyCacheMetrics().catch((err) =>
+    console.error("[ATC] cache metrics summary failed:", err)
+  );
 
   return state;
 }
