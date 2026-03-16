@@ -12,6 +12,7 @@ import {
 } from "./github";
 import { buildCachedPrompt } from "./prompt-cache";
 import type { WorkItem, RepoConfig } from "./types";
+import { FAST_LANE_BUDGET_SIMPLE, FAST_LANE_BUDGET_MODERATE } from "./types";
 
 // --- Types ---
 
@@ -297,6 +298,18 @@ Generate the complete handoff markdown file now.`;
   return text;
 }
 
+// --- Direct-source metadata helper ---
+
+function buildDirectSourceMetadata(workItem: WorkItem): string {
+  const triggeredBy = workItem.triggeredBy ?? 'unknown';
+  const budget = workItem.complexityHint === 'simple'
+    ? String(FAST_LANE_BUDGET_SIMPLE)
+    : workItem.complexityHint === 'moderate'
+      ? String(FAST_LANE_BUDGET_MODERATE)
+      : '5';
+  return `<!-- source: direct -->\n<!-- triggeredBy: ${triggeredBy} -->\n<!-- budget: ${budget} -->\n\n`;
+}
+
 // --- Step 4: Dispatch flow ---
 
 export async function dispatchWorkItem(workItemId: string): Promise<DispatchResult> {
@@ -321,7 +334,12 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
     const repoContext = await fetchRepoContext(repoConfig);
 
     // 5. Generate handoff via Claude
-    const handoffContent = await generateHandoff(workItem, repoContext, repoConfig);
+    let handoffContent = await generateHandoff(workItem, repoContext, repoConfig);
+
+    // 5a. Prepend source metadata for direct-source items
+    if (workItem.source.type === 'direct') {
+      handoffContent = buildDirectSourceMetadata(workItem) + handoffContent;
+    }
 
     // 6. Determine branch name from work item
     const branchName = slugifyBranch(workItem);
