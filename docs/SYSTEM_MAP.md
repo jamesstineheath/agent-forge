@@ -49,14 +49,14 @@
 │  │  (daily cron)│  │ Orchestrator │  │  (workflow)  │  │
 │  └──────────────┘  │  (workflow)  │  └──────────────┘  │
 │                    └──────────────┘                     │
-│  ┌──────────────┐  ┌──────────────┐                     │
-│  │ Feedback     │  │    Repo      │                     │
-│  │ Compiler     │  │  Metadata    │                     │
-│  │ (weekly cron)│  │ (CLAUDE.md,  │                     │
-│  │ (ADR-009,    │  │ system map,  │                     │
-│  │  in pipeline)│  │ ADRs, TLM    │                     │
-│  └──────────────┘  │ memory)      │                     │
-│                    └──────────────┘                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │  TLM QA      │  │ Feedback     │  │    Repo      │  │
+│  │   Agent      │  │ Compiler     │  │  Metadata    │  │
+│  │ (post-deploy │  │ (weekly cron)│  │ (CLAUDE.md,  │  │
+│  │  smoke tests)│  │ (ADR-009,    │  │ system map,  │  │
+│  └──────────────┘  │  in pipeline)│  │ ADRs, TLM    │  │
+│                    └──────────────┘  │ memory)      │  │
+│                                      └──────────────┘  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -119,14 +119,29 @@ Orchestrator → Push handoff to branch
                     ↓
             PR opened with execution results
                     ↓
-            TLM Code Review (defers if CI red)
+            ┌───────┴───────┐
+            │               │
+     TLM Code Review   TLM QA Agent
+     (defers if CI red) (post-deploy smoke)
+            │               │
+            └───────┬───────┘
                     ↓
-            Auto-merge (if low-risk + CI passes)
+            Auto-merge (if low-risk + CI passes + QA passes)
                     ↓
             Handoff Lifecycle Orchestrator tracks state
                     ↓
             TLM Outcome Tracker (daily assessment)
 ```
+
+## Agent Evaluation
+
+### TLM QA Agent — Tier 1
+
+The QA Agent is currently in **Tier 1** (supervised mode). Graduation to Tier 2 (autonomous) requires:
+- **20+ runs** recorded in `docs/tlm-action-ledger.json`
+- **<10% false-negative rate** (smoke tests pass when deploy is actually broken)
+
+Until graduation, QA Agent results are advisory only and do not block auto-merge.
 
 ## Key Files
 
@@ -157,11 +172,13 @@ Orchestrator → Push handoff to branch
 | TLM Spec Reviewer | `.github/actions/tlm-spec-review/` | Handoff improvement before execution |
 | TLM Outcome Tracker | `.github/actions/tlm-outcome-tracker/` | Daily assessment of merged PR outcomes |
 | Feedback Compiler (in pipeline) | `.github/actions/tlm-feedback-compiler/` | Weekly self-improvement proposals |
+| TLM QA Agent | `.github/actions/tlm-qa-agent/` | Post-deploy verification via Playwright + HTTP |
 | Execute Handoff | `.github/workflows/execute-handoff.yml` | Claude Code runs handoff, waits for CI |
 | TLM Review workflow | `.github/workflows/tlm-review.yml` | Triggers Code Reviewer on PR events |
 | Spec Review workflow | `.github/workflows/tlm-spec-review.yml` | Triggers on handoff push |
 | Outcome Tracker cron | `.github/workflows/tlm-outcome-tracker.yml` | Daily assessment cron |
 | Handoff Orchestrator | `.github/workflows/handoff-orchestrator.yml` | Lifecycle state machine, CI retry |
+| QA Agent workflow | `.github/workflows/tlm-qa-agent.yml` | Triggers on deployment_status + check_suite |
 | CI Stuck PR Monitor | `.github/workflows/ci-stuck-pr-monitor.yml` | Alerts after 2h stuck |
 | TLM shared memory | `docs/tlm-memory.md` | Rolling 20-entry review patterns + lessons |
 | Action Ledger (in pipeline) | `docs/tlm-action-ledger.json` | Never-pruned outcome history |
@@ -190,6 +207,7 @@ Orchestrator → Push handoff to branch
 | PA | Agent Forge | `file_work_item` tool → `POST /api/work-items` (Bearer token auth) |
 | Agent Forge | Notion | Notion API (read project plans, poll project status) |
 | Agent Forge | Gmail | Gmail API OAuth2 (escalation emails, decomposition summaries, reply polling) |
+| TLM QA Agent | Target app (deployed) | HTTP smoke tests with `QA_BYPASS_SECRET` header to bypass auth on protected routes |
 | GitHub Issues | Agent Forge | Webhook or polling |
 
 ## Environment Variables
@@ -207,6 +225,7 @@ Orchestrator → Push handoff to branch
 | `AGENT_FORGE_API_SECRET` | Bearer token for pipeline auth |
 | `WORK_ITEMS_API_KEY` | Bearer token for PA → AF work item filing |
 | `GH_PAT` | Fine-grained PAT for GitHub API (avoids token suppression) |
+| `QA_BYPASS_SECRET` | Shared secret for QA Agent to bypass auth on protected routes during smoke tests |
 
 ### Target Repos (GitHub Secrets)
 
@@ -216,3 +235,4 @@ Orchestrator → Push handoff to branch
 | `GH_PAT` | PAT for cross-workflow triggers |
 | `AGENT_FORGE_API_SECRET` | Auth for escalation callbacks |
 | `AGENT_FORGE_URL` | Agent Forge deployment URL |
+| `QA_BYPASS_SECRET` | Shared secret injected into deployed app; validated by QA Agent smoke tests |
