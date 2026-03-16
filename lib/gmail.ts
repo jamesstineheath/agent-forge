@@ -435,6 +435,109 @@ export async function parseReplyContent(messageId: string): Promise<string> {
 }
 
 /**
+ * Send a project-level escalation email.
+ * Returns true on successful send, false if credentials are missing or send fails.
+ */
+export async function sendProjectEscalationEmail(params: {
+  projectId: string;
+  projectTitle: string;
+  reason: string;
+  context?: string;
+  escalationType: string;
+}): Promise<boolean> {
+  const client = getGmailClient();
+  if (!client) {
+    console.log('[Gmail] Skipping project escalation email (credentials not configured).');
+    return false;
+  }
+
+  try {
+    const subject = `[Agent Forge] Project Escalation: ${params.projectTitle}`;
+
+    const contextSection = params.context
+      ? `\n    <div class="section">
+      <div class="section-title">Additional Context</div>
+      <div class="section-content">${escapeHtml(params.context)}</div>
+    </div>`
+      : '';
+
+    const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #333; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+    .header { background: #fff3cd; padding: 15px; border-radius: 4px; margin-bottom: 15px; }
+    .header h1 { margin: 0 0 10px 0; font-size: 18px; color: #222; }
+    .meta { font-size: 14px; color: #666; }
+    .section { margin: 15px 0; }
+    .section-title { font-weight: 600; font-size: 14px; color: #222; margin-bottom: 8px; }
+    .section-content { background: #fafafa; padding: 12px; border-left: 3px solid #f0ad4e; border-radius: 4px; font-size: 14px; }
+    .footer { margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Agent Forge – Project Escalation</h1>
+      <div class="meta">
+        <strong>Project:</strong> ${escapeHtml(params.projectTitle)}<br>
+        <strong>Project ID:</strong> ${escapeHtml(params.projectId)}<br>
+        <strong>Escalation Type:</strong> ${escapeHtml(params.escalationType)}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Reason</div>
+      <div class="section-content">${escapeHtml(params.reason)}</div>
+    </div>
+    ${contextSection}
+
+    <div class="footer">
+      <p>This is an automated notification from Agent Forge.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `.trim();
+
+    const message = [
+      `From: james.stine.heath@gmail.com`,
+      `To: james.stine.heath@gmail.com`,
+      `Subject: ${subject}`,
+      `Content-Type: text/html; charset="UTF-8"`,
+      `MIME-Version: 1.0`,
+      '',
+      htmlBody,
+    ].join('\r\n');
+
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+
+    const response = await client.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    console.log(
+      `[Gmail] Project escalation email sent for "${params.projectTitle}" (${params.projectId}). Thread ID: ${response.data.threadId}`
+    );
+
+    return true;
+  } catch (error) {
+    console.error('[Gmail] Failed to send project escalation email:', error);
+    return false;
+  }
+}
+
+/**
  * Format context snapshot for HTML email display
  */
 function formatContextSnapshot(snapshot: Record<string, unknown>): string {
