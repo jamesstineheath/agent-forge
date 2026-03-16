@@ -77,9 +77,15 @@ Filed → Ready → Queued → Generating → Executing → Reviewing → Merged
 4. **Generating**: Orchestrator reading repo context and generating handoff
 5. **Executing**: Handoff pushed to target repo, Execute Handoff workflow running
 6. **Reviewing**: PR opened, TLM Code Review in progress
-7. **Merged**: PR merged (auto or manual), outcome tracked
+7. **Merged**: PR merged (auto or manual), outcome tracked. Also set by §2.8 reconciliation when a "failed" item's PR is actually merged.
 8. **Blocked**: Escalation created, awaiting human resolution via email
 9. **Parked**: File conflict detected or execution failed, waiting for retry
+
+### ATC Self-Healing Sections
+
+- **§2.8 — Failed Work Item PR Reconciliation**: Checks all "failed" work items with a `prNumber`. If the PR is actually merged on GitHub, transitions the work item to "merged". If the PR is still open, moves back to "reviewing". Catches cases where a workflow step failed (e.g., bash parsing error in "Report results") but the code change actually landed.
+- **§13a — Stuck Executing Recovery**: Detects projects in "Executing" status with no work items and no dedup guard (decomposition never ran, e.g., due to ATC cycle timeout). Resets them to "Execute" for re-decomposition on the next cycle.
+- **§13b — Project Completion Detection**: When all work items for a project reach terminal state (merged/parked/failed/cancelled), auto-transitions the Notion project to "Complete" (if any merged, none failed) or "Failed" (if any failed).
 
 ### Project Autopilot Flow
 
@@ -128,7 +134,7 @@ Orchestrator → Push handoff to branch
 
 | Subsystem | Path | Purpose |
 |-----------|------|---------|
-| ATC | `lib/atc.ts` | Air Traffic Controller cron: dispatch, monitoring, project lifecycle |
+| ATC | `lib/atc.ts` | Air Traffic Controller cron: dispatch, monitoring, PR reconciliation (§2.8), project lifecycle (§13) |
 | Orchestrator | `lib/orchestrator.ts` | Handoff generation + dispatch to target repos |
 | Work Items | `lib/work-items.ts` | CRUD + dependency-aware dispatch (`getNextDispatchable`) |
 | Decomposer | `lib/decomposer.ts` | Plan page → ordered work items with dependency DAG |
@@ -139,7 +145,7 @@ Orchestrator → Push handoff to branch
 | Storage | `lib/storage.ts` | Vercel Blob CRUD with auth headers |
 | Types | `lib/types.ts` | Shared types (WorkItem, Project, source types including "project") |
 | Repos | `lib/repos.ts` | Multi-repo registry with per-repo concurrency limits |
-| GitHub helper | `lib/github.ts` | GitHub API wrapper for branches, pushes, workflow triggers |
+| GitHub helper | `lib/github.ts` | GitHub API wrapper for branches, pushes, workflow triggers, PR lookups |
 | Hooks (SWR) | `lib/hooks.ts` | React data fetching hooks for dashboard |
 | Handoffs | `handoffs/` | Version-controlled handoff files |
 
