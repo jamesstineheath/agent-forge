@@ -237,11 +237,7 @@ function getNextState(
       return null;
 
     case "pr_merged":
-      if (
-        current === HandoffState.CodeReviewComplete ||
-        current === HandoffState.NeedsHumanReview ||
-        current === HandoffState.CIPassed
-      ) {
+      if (!isTerminal(current)) {
         return HandoffState.Merged;
       }
       return null;
