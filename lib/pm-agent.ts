@@ -3,7 +3,7 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { loadJson, saveJson } from "./storage";
 import { listWorkItems, getWorkItem } from "./work-items";
 import { listProjects } from "./projects";
-import { getGmailClient } from "./gmail";
+import { sendEmail } from "./gmail";
 import {
   buildBacklogReviewPrompt,
   buildHealthAssessmentPrompt,
@@ -12,7 +12,10 @@ import {
 } from "./pm-prompts";
 import type {
   BacklogReview,
+  BacklogRecommendation,
+  ProjectHealth,
   ProjectHealthReport,
+  PMAgentConfig,
   DigestOptions,
   WorkItem,
   ATCState,
@@ -35,7 +38,7 @@ const STORAGE_KEYS = {
   latestDigest: "pm-agent/latest-digest",
 } as const;
 
-const MODEL = "claude-sonnet-4-5";
+const MODEL = "claude-sonnet-4-5-20250514";
 
 /**
  * Calls Claude API with a prompt string.
@@ -52,13 +55,19 @@ async function callClaude(prompt: string): Promise<string> {
 /**
  * Safely parse JSON from Claude response.
  * Claude sometimes wraps JSON in markdown code fences — strip them first.
+ * Returns fallback on parse failure instead of throwing.
  */
-function parseJson<T>(raw: string): T {
-  const stripped = raw
-    .replace(/^```(?:json)?\n?/m, "")
-    .replace(/\n?```$/m, "")
-    .trim();
-  return JSON.parse(stripped) as T;
+function safeParseJSON<T>(raw: string, fallback: T): T {
+  try {
+    const stripped = raw
+      .replace(/^```(?:json)?\n?/m, "")
+      .replace(/\n?```$/m, "")
+      .trim();
+    return JSON.parse(stripped) as T;
+  } catch {
+    console.error("[pm-agent] Failed to parse Claude JSON response:", raw.slice(0, 500));
+    return fallback;
+  }
 }
 
 /**
@@ -86,46 +95,11 @@ async function getPipelineState(): Promise<{ inFlightCount: number; queueDepth: 
   }
 }
 
-/**
- * Send a simple email via the Gmail client.
- * Returns the thread ID if sent, null otherwise.
- */
-async function sendEmail(subject: string, body: string): Promise<string | null> {
-  const client = getGmailClient();
-  if (!client) {
-    console.log("[pm-agent] Gmail not configured, skipping email.");
-    return null;
-  }
-
-  const message = [
-    "From: james.stine.heath@gmail.com",
-    "To: james.stine.heath@gmail.com",
-    `Subject: ${subject}`,
-    "Content-Type: text/plain; charset=\"UTF-8\"",
-    "MIME-Version: 1.0",
-    "",
-    body,
-  ].join("\r\n");
-
-  const encodedMessage = Buffer.from(message)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-
-  const response = await client.users.messages.send({
-    userId: "me",
-    requestBody: { raw: encodedMessage },
-  });
-
-  return response.data.threadId || null;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. reviewBacklog
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function reviewBacklog(): Promise<BacklogReview> {
+export async function reviewBacklog(config?: Partial<PMAgentConfig>): Promise<BacklogReview> {
   const [workItems, projects, pipelineState] = await Promise.all([
     fetchAllWorkItems(),
     listProjects(),
@@ -161,15 +135,46 @@ export async function reviewBacklog(): Promise<BacklogReview> {
   });
 
   const raw = await callClaude(prompt);
-  const review = parseJson<BacklogReview>(raw);
+
+  // Parse Claude response defensively
+  const parsed = safeParseJSON<{
+    recommendations?: Array<{
+      itemId: string;
+      action: string;
+      rationale: string;
+      priority: number;
+    }>;
+    summary?: string;
+  }>(raw, { recommendations: [], summary: raw });
+
+  // Map to BacklogReview type
+  const id = `br_${Date.now()}`;
+  const recommendations: BacklogRecommendation[] = (parsed.recommendations ?? []).map((r) => ({
+    workItemId: r.itemId,
+    action: (["dispatch", "defer", "kill", "escalate"].includes(r.action)
+      ? r.action
+      : "defer") as BacklogRecommendation["action"],
+    priority: r.priority >= 7 ? "high" : r.priority >= 4 ? "medium" : "low",
+    rationale: r.rationale,
+  }));
+
+  const maxRecs = config?.maxRecommendations;
+  const review: BacklogReview = {
+    id,
+    timestamp: new Date().toISOString(),
+    repos: [...new Set(workItems.map((i) => i.targetRepo))],
+    totalItemsReviewed: workItems.length,
+    recommendations: maxRecs ? recommendations.slice(0, maxRecs) : recommendations,
+    summary: parsed.summary ?? raw,
+  };
 
   await saveJson(STORAGE_KEYS.latestReview, review);
 
   // Send Gmail summary (non-fatal)
-  await sendEmail(
-    `PM Agent: Backlog Review — ${new Date().toLocaleDateString()}`,
-    `Backlog review completed.\n\nSummary:\n${review.summary ?? JSON.stringify(review, null, 2)}`,
-  ).catch((err) => {
+  await sendEmail({
+    subject: `[Agent Forge] Backlog Review — ${new Date().toLocaleDateString()}`,
+    body: review.summary,
+  }).catch((err) => {
     console.error("[pm-agent] Gmail send failed (non-fatal):", err);
   });
 
@@ -180,11 +185,15 @@ export async function reviewBacklog(): Promise<BacklogReview> {
 // 2. assessProjectHealth
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function assessProjectHealth(): Promise<ProjectHealthReport> {
-  const [workItems, projects] = await Promise.all([
+export async function assessProjectHealth(projectId?: string): Promise<ProjectHealth[]> {
+  const [workItems, allProjects] = await Promise.all([
     fetchAllWorkItems(),
     listProjects(),
   ]);
+
+  const projects = projectId
+    ? allProjects.filter((p) => p.id === projectId || p.projectId === projectId)
+    : allProjects;
 
   const projectHealthSummaries: ProjectHealthSummary[] = projects.map((project) => {
     const projectItems = workItems.filter(
@@ -224,18 +233,73 @@ export async function assessProjectHealth(): Promise<ProjectHealthReport> {
 
   const prompt = buildHealthAssessmentPrompt({ projects: projectHealthSummaries });
   const raw = await callClaude(prompt);
-  const healthReport = parseJson<ProjectHealthReport>(raw);
 
-  await saveJson(STORAGE_KEYS.latestHealth, healthReport);
+  // Parse Claude's response defensively
+  const parsed = safeParseJSON<{
+    projectReports?: Array<{
+      projectId: string;
+      projectName: string;
+      healthStatus: string;
+      completionRate: number;
+      concerns: string[];
+    }>;
+  }>(raw, { projectReports: [] });
 
-  return healthReport;
+  // Build ProjectHealth[] with computed metrics, enriched by Claude's analysis
+  const statusMap: Record<string, ProjectHealth["status"]> = {
+    healthy: "healthy",
+    at_risk: "at-risk",
+    stalling: "stalling",
+    critical: "blocked",
+  };
+
+  const healthResults: ProjectHealth[] = projects.map((project) => {
+    const summary = projectHealthSummaries.find((s) => s.id === project.projectId)!;
+    const claudeReport = (parsed.projectReports ?? []).find(
+      (r) => r.projectId === project.id || r.projectId === project.projectId,
+    );
+
+    const projectItems = workItems.filter(
+      (item) => item.source.type === "project" && item.source.sourceId === project.projectId,
+    );
+    const total = summary.itemCount;
+    const merged = summary.completedCount;
+    const failed = projectItems.filter((i) => i.status === "failed").length;
+    const completionRate = total > 0 ? merged / total : 0;
+
+    return {
+      projectId: project.projectId,
+      projectName: project.title,
+      status: claudeReport?.healthStatus
+        ? statusMap[claudeReport.healthStatus] ?? "healthy"
+        : "healthy",
+      completionRate,
+      escalationCount: summary.escalations,
+      avgTimeInQueue: summary.avgQueueTime,
+      blockedItems: summary.blockedItems,
+      totalItems: total,
+      mergedItems: merged,
+      failedItems: failed,
+      issues: claudeReport?.concerns ?? [],
+    };
+  });
+
+  // Persist as ProjectHealthReport
+  const report: ProjectHealthReport = {
+    projects: healthResults,
+    generatedAt: new Date().toISOString(),
+    overallSummary: `Assessed ${projects.length} projects`,
+  };
+  await saveJson(STORAGE_KEYS.latestHealth, report);
+
+  return healthResults;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. suggestNextBatch
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function suggestNextBatch(): Promise<{ items: string[]; rationale: string }> {
+export async function suggestNextBatch(): Promise<{ workItemIds: string[]; rationale: string }> {
   const [workItems, pipelineState] = await Promise.all([
     fetchAllWorkItems(),
     getPipelineState(),
@@ -244,9 +308,11 @@ export async function suggestNextBatch(): Promise<{ items: string[]; rationale: 
   const readyItems = workItems.filter((item) => item.status === "ready");
   const recentlyMerged = workItems
     .filter((item) => item.status === "merged")
+    .slice(0, 10)
     .map((item) => item.id);
   const recentlyFailed = workItems
     .filter((item) => item.status === "failed")
+    .slice(0, 10)
     .map((item) => item.id);
 
   const availableItems: AvailableItem[] = readyItems.map((item) => ({
@@ -270,9 +336,23 @@ export async function suggestNextBatch(): Promise<{ items: string[]; rationale: 
   });
 
   const raw = await callClaude(prompt);
-  const result = parseJson<{ items: string[]; rationale: string }>(raw);
 
-  return result;
+  // Claude returns array of { itemId, title, repo, rationale, dispatchOrder }
+  const parsed = safeParseJSON<Array<{ itemId: string; rationale: string }>>(raw, []);
+
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    return {
+      workItemIds: parsed.map((p) => p.itemId),
+      rationale: parsed.map((p) => `${p.itemId}: ${p.rationale}`).join("; "),
+    };
+  }
+
+  // Fallback: select oldest ready items
+  const availableSlots = Math.max(0, 5 - pipelineState.inFlightCount);
+  return {
+    workItemIds: readyItems.slice(0, availableSlots).map((i) => i.id),
+    rationale: "Fallback: selected oldest ready items by default.",
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -280,9 +360,18 @@ export async function suggestNextBatch(): Promise<{ items: string[]; rationale: 
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function composeDigest(options: DigestOptions): Promise<string> {
-  const [reviewData, healthData, workItems, projects] = await Promise.all([
-    loadJson<BacklogReview>(STORAGE_KEYS.latestReview).catch(() => null),
-    loadJson<ProjectHealthReport>(STORAGE_KEYS.latestHealth).catch(() => null),
+  // Optionally invoke reviewBacklog and assessProjectHealth
+  let backlogReview: BacklogReview | undefined;
+  let healthResults: ProjectHealth[] | undefined;
+
+  if (options.includeBacklog) {
+    backlogReview = await reviewBacklog();
+  }
+  if (options.includeHealth) {
+    healthResults = await assessProjectHealth();
+  }
+
+  const [workItems, projects] = await Promise.all([
     fetchAllWorkItems(),
     listProjects(),
   ]);
@@ -305,13 +394,16 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
     };
   });
 
-  // Build recommendations from latest review if available
+  // Build recommendations from latest review/health if available
   const recommendations: string[] = [];
-  if (reviewData?.summary) {
-    recommendations.push(reviewData.summary);
+  if (backlogReview?.summary) {
+    recommendations.push(backlogReview.summary);
   }
-  if (healthData?.overallSummary) {
-    recommendations.push(healthData.overallSummary);
+  if (healthResults) {
+    const atRisk = healthResults.filter((h) => h.status !== "healthy");
+    for (const h of atRisk) {
+      recommendations.push(`${h.projectName}: ${h.issues.join(", ") || h.status}`);
+    }
   }
 
   const digestContext: DigestContext = {
@@ -335,6 +427,16 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
     digest: digestText,
   };
   await saveJson(STORAGE_KEYS.latestDigest, digestRecord);
+
+  // Send via Gmail if recipientEmail provided
+  if (options.recipientEmail) {
+    await sendEmail({
+      subject: `[Agent Forge] Pipeline Digest — ${new Date().toLocaleDateString()}`,
+      body: digestText,
+    }).catch((err) => {
+      console.error("[pm-agent] Digest email send failed (non-fatal):", err);
+    });
+  }
 
   return digestText;
 }
