@@ -1,0 +1,70 @@
+name: TLM QA Agent
+description: >
+  Playwright-based QA agent that verifies PRs against Vercel preview URLs
+  and posts advisory findings as a PR comment. Never blocks merges.
+
+inputs:
+  preview-url:
+    description: 'Vercel preview deployment URL to test against'
+    required: true
+  pr-number:
+    description: 'Pull request number'
+    required: true
+  repo:
+    description: 'Repository in owner/name format'
+    required: true
+  anthropic-api-key:
+    description: 'Anthropic API key for Claude'
+    required: true
+  qa-bypass-secret:
+    description: 'Secret token to skip QA checks when set in PR body'
+    required: false
+    default: ''
+  github-token:
+    description: 'GitHub token for posting PR comments'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Get Playwright version
+      id: playwright-version
+      shell: bash
+      run: |
+        PLAYWRIGHT_VERSION=$(node -e "console.log(require('./node_modules/@playwright/test/package.json').version)" 2>/dev/null || echo "latest")
+        echo "version=${PLAYWRIGHT_VERSION}" >> $GITHUB_OUTPUT
+
+    - name: Restore Playwright browser cache
+      uses: actions/cache@v4
+      id: playwright-cache
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-browsers-${{ steps.playwright-version.outputs.version }}
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm ci --prefer-offline
+
+    - name: Install Playwright browsers
+      if: steps.playwright-cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npx playwright install chromium --with-deps
+
+    - name: Run QA Agent
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        PREVIEW_URL: ${{ inputs.preview-url }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPO: ${{ inputs.repo }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        QA_BYPASS_SECRET: ${{ inputs.qa-bypass-secret }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: npx ts-node run-qa.ts
