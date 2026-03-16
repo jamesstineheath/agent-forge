@@ -10,6 +10,7 @@ import {
   getWorkflowRuns,
   triggerWorkflow,
 } from "./github";
+import { buildCachedPrompt } from "./prompt-cache";
 import type { WorkItem, RepoConfig } from "./types";
 
 // --- Types ---
@@ -168,44 +169,7 @@ NEXT STEPS: [what remains]
 \`\`\`
 `;
 
-export async function generateHandoff(
-  workItem: WorkItem,
-  repoContext: RepoContext,
-  repoConfig: RepoConfig
-): Promise<string> {
-  const systemPrompt = `You are a dev orchestration agent generating handoff files for autonomous AI agents.
-
-Your task is to generate a complete, executable v3 handoff markdown file that an AI agent (Claude Code) will execute to implement a work item in a target repository.
-
-${V3_FORMAT_TEMPLATE}
-
-## Target Repository Context
-
-### CLAUDE.md (truncated to 3000 chars)
-${repoContext.claudeMd || "(not available)"}
-
-### System Map
-${repoContext.systemMap || "(not configured)"}
-
-### Architecture Decision Records
-${
-  repoContext.adrs.length > 0
-    ? repoContext.adrs
-        .map((adr) => `- **${adr.title}** (${adr.status}): ${adr.decision}`)
-        .join("\n")
-    : "(none)"
-}
-
-### Recent Merged PRs (for coding pattern awareness)
-${
-  repoContext.recentPRs.length > 0
-    ? repoContext.recentPRs
-        .map((pr) => `- ${pr.title}\n  Files: ${pr.files.slice(0, 5).join(", ")}`)
-        .join("\n")
-    : "(none)"
-}
-
-## Escalation Protocol
+const ESCALATION_PROTOCOL = `## Escalation Protocol
 
 If the executing agent encounters a blocker it cannot resolve autonomously (ambiguous requirements,
 missing credentials, architectural decisions requiring human judgment, or repeated failures after
@@ -232,6 +196,54 @@ environment. This will notify the project owner via email and block the work ite
 
 Generate a precise, actionable handoff file. Be specific about file paths, function signatures, and implementation details. The agent executing this handoff has no other context — the handoff must be self-contained.`;
 
+/**
+ * Static system content: instructions + v3 format template + escalation protocol.
+ * Extracted to module scope so it is never rebuilt per call and is eligible for
+ * Anthropic prompt caching as a stable prefix.
+ */
+const STATIC_SYSTEM_CONTENT = `You are a dev orchestration agent generating handoff files for autonomous AI agents.
+
+Your task is to generate a complete, executable v3 handoff markdown file that an AI agent (Claude Code) will execute to implement a work item in a target repository.
+
+${V3_FORMAT_TEMPLATE}
+
+${ESCALATION_PROTOCOL}`;
+
+function buildRepoContextBlock(repoContext: RepoContext): string {
+  return `## Target Repository Context
+
+### CLAUDE.md (truncated to 3000 chars)
+${repoContext.claudeMd || "(not available)"}
+
+### System Map
+${repoContext.systemMap || "(not configured)"}
+
+### Architecture Decision Records
+${
+  repoContext.adrs.length > 0
+    ? repoContext.adrs
+        .map((adr) => `- **${adr.title}** (${adr.status}): ${adr.decision}`)
+        .join("\n")
+    : "(none)"
+}
+
+### Recent Merged PRs (for coding pattern awareness)
+${
+  repoContext.recentPRs.length > 0
+    ? repoContext.recentPRs
+        .map((pr) => `- ${pr.title}\n  Files: ${pr.files.slice(0, 5).join(", ")}`)
+        .join("\n")
+    : "(none)"
+}`;
+}
+
+export async function generateHandoff(
+  workItem: WorkItem,
+  repoContext: RepoContext,
+  repoConfig: RepoConfig
+): Promise<string> {
+  const repoContextBlock = buildRepoContextBlock(repoContext);
+
   const userPrompt = `Generate a v3 handoff file for the following work item:
 
 **Title:** ${workItem.title}
@@ -246,10 +258,40 @@ Generate a precise, actionable handoff file. Be specific about file paths, funct
 
 Generate the complete handoff markdown file now.`;
 
+  // Use buildCachedPrompt to organize the static/dynamic content split
+  const cachedPrompt = buildCachedPrompt(
+    { enabled: true, staticSections: [STATIC_SYSTEM_CONTENT, repoContextBlock] },
+    userPrompt
+  );
+
+  // Guard: ensure the static template is non-empty
+  if (!STATIC_SYSTEM_CONTENT || STATIC_SYSTEM_CONTENT.length < 100) {
+    throw new Error("STATIC_SYSTEM_CONTENT is unexpectedly empty");
+  }
+
+  // Structure the API call with two cache breakpoints via AI SDK providerOptions:
+  // 1. Static instructions + template (never changes between calls)
+  // 2. Repo context (semi-static — same for all work items targeting the same repo)
+  // Work item details are in the user prompt (dynamic, not cached)
   const { text } = await generateText({
     model: anthropic("claude-sonnet-4-6"),
-    system: systemPrompt,
-    prompt: userPrompt,
+    system: [
+      {
+        role: "system" as const,
+        content: STATIC_SYSTEM_CONTENT,
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        },
+      },
+      {
+        role: "system" as const,
+        content: repoContextBlock,
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" } },
+        },
+      },
+    ],
+    prompt: cachedPrompt.dynamicSuffix,
   });
 
   return text;
