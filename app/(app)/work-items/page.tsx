@@ -20,6 +20,7 @@ const STATUS_OPTIONS: { label: string; value: WorkItem["status"] | "" }[] = [
   { label: "Merged", value: "merged" },
   { label: "Failed", value: "failed" },
   { label: "Parked", value: "parked" },
+  { label: "Escalated", value: "escalated" },
 ];
 
 const PRIORITY_OPTIONS: { label: string; value: WorkItem["priority"] | "" }[] =
@@ -39,6 +40,7 @@ export default function WorkItemsPage() {
     WorkItem["priority"] | ""
   >("");
   const [repoFilter, setRepoFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState<"" | "direct">("");
 
   const { data: items, isLoading, error } = useWorkItems({
     status: statusFilter || undefined,
@@ -46,6 +48,10 @@ export default function WorkItemsPage() {
     targetRepo: repoFilter || undefined,
   });
   const { data: repos } = useRepos();
+
+  const filteredItems = items?.filter((item) =>
+    sourceFilter === "direct" ? item.source?.type === "direct" : true
+  );
 
   // New work item form state
   const [showForm, setShowForm] = useState(false);
@@ -299,13 +305,25 @@ export default function WorkItemsPage() {
             </option>
           ))}
         </select>
+        <button
+          className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+            sourceFilter === "direct"
+              ? "border-green-500 bg-green-50 text-green-800"
+              : "border-input bg-background text-muted-foreground hover:bg-accent"
+          }`}
+          onClick={() =>
+            setSourceFilter(sourceFilter === "direct" ? "" : "direct")
+          }
+        >
+          ⚡ Fast Lane
+        </button>
       </div>
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading...</p>
       ) : error ? (
         <p className="text-sm text-red-600">Failed to load work items.</p>
-      ) : !items || items.length === 0 ? (
+      ) : !filteredItems || filteredItems.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center">
             <p className="text-muted-foreground">
@@ -322,7 +340,7 @@ export default function WorkItemsPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => (
+          {filteredItems.map((item) => (
             <WorkItemCard key={item.id} item={item} />
           ))}
         </div>
