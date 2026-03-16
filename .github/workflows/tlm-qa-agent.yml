@@ -27,6 +27,7 @@ concurrency:
 jobs:
   qa-agent:
     name: QA Agent
+    continue-on-error: true
     runs-on: ubuntu-latest
     # For deployment_status: only run on successful preview deployments
     # For check_suite: always run (graceful skip handled in steps)

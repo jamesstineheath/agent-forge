@@ -1,0 +1,14 @@
+{
+  "name": "tlm-qa-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TLM QA Agent — Playwright-based QA automation",
+  "scripts": {
+    "qa": "ts-node run-qa.ts"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.41.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
