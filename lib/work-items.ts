@@ -6,8 +6,19 @@ import type {
   CreateWorkItemInput,
   UpdateWorkItemInput,
 } from "./types";
+import { FAST_LANE_BUDGET_SIMPLE, FAST_LANE_BUDGET_MODERATE } from "./types";
 
 const INDEX_KEY = "work-items/index";
+
+/**
+ * Return the default budget for a given complexityHint.
+ * Used during handoff generation when no explicit budget is provided.
+ */
+export function getDefaultBudgetForHint(hint?: 'simple' | 'moderate'): number | undefined {
+  if (hint === 'simple') return FAST_LANE_BUDGET_SIMPLE;
+  if (hint === 'moderate') return FAST_LANE_BUDGET_MODERATE;
+  return undefined;
+}
 
 function itemKey(id: string): string {
   return `work-items/${id}`;
@@ -66,6 +77,7 @@ export async function getWorkItem(id: string): Promise<WorkItem | null> {
 
 export async function createWorkItem(data: CreateWorkItemInput): Promise<WorkItem> {
   const now = new Date().toISOString();
+
   const item: WorkItem = {
     id: randomUUID(),
     title: data.title,
@@ -77,6 +89,8 @@ export async function createWorkItem(data: CreateWorkItemInput): Promise<WorkIte
     complexity: data.complexity,
     status: "filed",
     dependencies: data.dependencies,
+    triggeredBy: data.triggeredBy,
+    complexityHint: data.complexityHint,
     handoff: null,
     execution: null,
     createdAt: now,
@@ -149,6 +163,11 @@ export async function getNextDispatchable(targetRepo: string): Promise<WorkItem 
   // Filter out items with unmet dependencies
   const dispatchable: WorkItem[] = [];
   for (const item of valid) {
+    // Direct items have no project and no dependencies — always dispatchable
+    if (item.source.type === 'direct') {
+      dispatchable.push(item);
+      continue;
+    }
     if (item.dependencies.length === 0) {
       dispatchable.push(item);
       continue;
@@ -181,6 +200,11 @@ export async function getAllDispatchable(targetRepo: string): Promise<WorkItem[]
 
   const dispatchable: WorkItem[] = [];
   for (const item of valid) {
+    // Direct items have no project and no dependencies — always dispatchable
+    if (item.source.type === 'direct') {
+      dispatchable.push(item);
+      continue;
+    }
     if (item.dependencies.length === 0) {
       dispatchable.push(item);
       continue;

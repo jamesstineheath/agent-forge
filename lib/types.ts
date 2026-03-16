@@ -84,6 +84,8 @@ export const createWorkItemSchema = z.object({
   riskLevel: z.enum(["low", "medium", "high"]).default("medium"),
   complexity: z.enum(["simple", "moderate", "complex"]).default("moderate"),
   dependencies: z.array(z.string()).default([]),
+  triggeredBy: z.string().optional(),
+  complexityHint: z.enum(["simple", "moderate"]).optional(),
 });
 
 export const updateWorkItemSchema = z.object({
