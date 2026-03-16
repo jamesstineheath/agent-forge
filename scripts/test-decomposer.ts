@@ -50,9 +50,13 @@ async function main() {
   };
 
   try {
-    const items = await decomposeProject(mockProject);
+    const result = await decomposeProject(mockProject);
+    const items = result.workItems;
 
     console.log(`\nDecomposition produced ${items.length} work items.\n`);
+    if (result.phases) {
+      console.log(`Split into ${result.phases.length} phases: ${result.phases.map((p) => p.length + " items").join(", ")}\n`);
+    }
 
     if (items.length === 0) {
       console.error("FAIL: decomposeProject returned empty array (escalation may have triggered).");

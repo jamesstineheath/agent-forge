@@ -7,7 +7,17 @@ import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
 import type { Project, WorkItem, RepoConfig } from "./types";
 
+// --- Constants ---
+
+const DECOMPOSER_SOFT_LIMIT = parseInt(process.env.DECOMPOSER_SOFT_LIMIT || "15");
+const DECOMPOSER_HARD_LIMIT = parseInt(process.env.DECOMPOSER_HARD_LIMIT || "30");
+
 // --- Types ---
+
+export interface DecompositionResult {
+  workItems: WorkItem[];
+  phases: WorkItem[][] | null;
+}
 
 interface DecomposedItem {
   title: string;
@@ -219,9 +229,108 @@ function buildUserPrompt(
   return prompt;
 }
 
+// --- Sub-Phase Splitting ---
+
+/**
+ * Split decomposed items into 2-3 sub-phases based on dependency clustering.
+ * Items that depend on each other go in the same phase. Items with no
+ * cross-dependencies form separate phases. Phases are ordered so that
+ * dependencies flow forward (phase A before phase B).
+ */
+function splitIntoSubPhases(items: DecomposedItem[]): DecomposedItem[][] {
+  const n = items.length;
+
+  // Build adjacency (undirected) for clustering: items connected by
+  // dependencies should be in the same phase when possible
+  const adj = new Map<number, Set<number>>();
+  for (let i = 0; i < n; i++) adj.set(i, new Set());
+  for (let i = 0; i < n; i++) {
+    for (const dep of items[i].dependencies) {
+      adj.get(i)!.add(dep);
+      adj.get(dep)!.add(i);
+    }
+  }
+
+  // Connected-components via BFS
+  const componentOf = new Array<number>(n).fill(-1);
+  let componentCount = 0;
+  for (let i = 0; i < n; i++) {
+    if (componentOf[i] !== -1) continue;
+    const queue = [i];
+    componentOf[i] = componentCount;
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      for (const neighbor of adj.get(cur)!) {
+        if (componentOf[neighbor] === -1) {
+          componentOf[neighbor] = componentCount;
+          queue.push(neighbor);
+        }
+      }
+    }
+    componentCount++;
+  }
+
+  // Group items by component
+  const components = new Map<number, number[]>();
+  for (let i = 0; i < n; i++) {
+    const c = componentOf[i];
+    if (!components.has(c)) components.set(c, []);
+    components.get(c)!.push(i);
+  }
+
+  // Sort components by topological order: earliest item index in each component
+  const sortedComponents = [...components.values()].sort(
+    (a, b) => Math.min(...a) - Math.min(...b),
+  );
+
+  // Merge components into 2-3 phases, distributing evenly
+  const targetPhaseCount = sortedComponents.length >= 3 ? 3 : 2;
+  const phases: number[][] = Array.from({ length: targetPhaseCount }, () => []);
+
+  // Greedy bin-packing: assign each component to the phase with fewest items
+  for (const component of sortedComponents) {
+    let minPhase = 0;
+    for (let p = 1; p < phases.length; p++) {
+      if (phases[p].length < phases[minPhase].length) minPhase = p;
+    }
+    phases[minPhase].push(...component);
+  }
+
+  // Remove empty phases
+  const nonEmptyPhases = phases.filter((p) => p.length > 0);
+
+  // Sort items within each phase by original index to preserve ordering
+  for (const phase of nonEmptyPhases) {
+    phase.sort((a, b) => a - b);
+  }
+
+  // Order phases so dependencies flow forward: a phase whose items are
+  // depended upon by items in another phase should come first
+  nonEmptyPhases.sort((phaseA, phaseB) => {
+    const setA = new Set(phaseA);
+    const setB = new Set(phaseB);
+    // If any item in B depends on an item in A, A should come first
+    for (const idx of phaseB) {
+      for (const dep of items[idx].dependencies) {
+        if (setA.has(dep)) return -1;
+      }
+    }
+    // If any item in A depends on an item in B, B should come first
+    for (const idx of phaseA) {
+      for (const dep of items[idx].dependencies) {
+        if (setB.has(dep)) return 1;
+      }
+    }
+    return Math.min(...phaseA) - Math.min(...phaseB);
+  });
+
+  // Map back to DecomposedItem arrays
+  return nonEmptyPhases.map((phase) => phase.map((idx) => items[idx]));
+}
+
 // --- Main ---
 
-export async function decomposeProject(project: Project): Promise<WorkItem[]> {
+export async function decomposeProject(project: Project): Promise<DecompositionResult> {
   // 1. Extract page ID and fetch plan content
   if (!project.planUrl) {
     await escalate(
@@ -231,7 +340,7 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
       { projectId: project.projectId, title: project.title },
       project.projectId,
     );
-    return [];
+    return { workItems: [], phases: null };
   }
 
   const pageId = extractPageId(project.planUrl);
@@ -245,7 +354,7 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
       { projectId: project.projectId, pageId, contentLength: planContent.length },
       project.projectId,
     );
-    return [];
+    return { workItems: [], phases: null };
   }
 
   // 2. Determine target repos
@@ -261,7 +370,7 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
       { projectId: project.projectId },
       project.projectId,
     );
-    return [];
+    return { workItems: [], phases: null };
   }
 
   const referencedRepos = await findReferencedRepos(planContent, primaryRepo);
@@ -274,7 +383,7 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
       { projectId: project.projectId, primaryRepo },
       project.projectId,
     );
-    return [];
+    return { workItems: [], phases: null };
   }
 
   // 3. Fetch repo context for each target repo
@@ -329,22 +438,53 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
       { projectId: project.projectId, lastError },
       project.projectId,
     );
-    return [];
+    return { workItems: [], phases: null };
   }
 
-  // 5. Check item count limit
-  if (decomposedItems.length > 15) {
+  // 5. Check item count limits and route accordingly
+  if (decomposedItems.length > DECOMPOSER_HARD_LIMIT) {
     await escalate(
       `project:${project.projectId}`,
-      `Decomposition produced ${decomposedItems.length} items (max 15). The plan should be split into smaller phases.`,
+      `Decomposition produced ${decomposedItems.length} items (max ${DECOMPOSER_HARD_LIMIT}). The plan should be split into smaller phases.`,
       0.7,
       { projectId: project.projectId, itemCount: decomposedItems.length },
       project.projectId,
     );
-    return [];
+    return { workItems: [], phases: null };
   }
 
-  // 6. Create work items, mapping indices to actual IDs
+  // 6. If above soft limit, split into sub-phases
+  let phases: DecomposedItem[][] | null = null;
+
+  if (decomposedItems.length > DECOMPOSER_SOFT_LIMIT) {
+    phases = splitIntoSubPhases(decomposedItems);
+
+    // Validate each sub-phase against soft limit
+    for (let p = 0; p < phases.length; p++) {
+      if (phases[p].length > DECOMPOSER_SOFT_LIMIT) {
+        await escalate(
+          `project:${project.projectId}`,
+          `Decomposition sub-phase ${p + 1} has ${phases[p].length} items (max ${DECOMPOSER_SOFT_LIMIT}). Phase contains too many tightly-coupled items to split further.`,
+          0.7,
+          {
+            projectId: project.projectId,
+            totalItems: decomposedItems.length,
+            phaseIndex: p,
+            phaseSize: phases[p].length,
+            phaseSizes: phases.map((ph) => ph.length),
+          },
+          project.projectId,
+        );
+        return { workItems: [], phases: null };
+      }
+    }
+
+    console.log(
+      `[decomposer] Split into ${phases.length} phases: ${phases.map((p) => p.length + " items").join(", ")}`,
+    );
+  }
+
+  // 7. Create work items, mapping original indices to actual IDs
   const indexToId = new Map<number, string>();
   const createdItems: WorkItem[] = [];
 
@@ -377,7 +517,7 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
     createdItems.push(workItem);
   }
 
-  // 7. Set all created items to "ready"
+  // 8. Set all created items to "ready"
   for (const item of createdItems) {
     await updateWorkItem(item.id, { status: "ready" });
   }
@@ -386,5 +526,20 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
     `[decomposer] Created ${createdItems.length} work items for project ${project.projectId}`,
   );
 
-  return createdItems;
+  // Build WorkItem phases if sub-phase splitting occurred
+  let workItemPhases: WorkItem[][] | null = null;
+  if (phases) {
+    // Map DecomposedItem phases to WorkItem phases using the original index mapping
+    workItemPhases = phases.map((phase) =>
+      phase
+        .map((item) => {
+          const origIdx = decomposedItems.indexOf(item);
+          const id = indexToId.get(origIdx);
+          return id ? createdItems.find((wi) => wi.id === id) : undefined;
+        })
+        .filter((wi): wi is WorkItem => wi !== undefined),
+    );
+  }
+
+  return { workItems: createdItems, phases: workItemPhases };
 }
