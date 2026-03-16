@@ -188,45 +188,51 @@ Return a JSON array (no markdown fencing, no explanation) where each element is:
   ]
 }`;
 
-function buildUserPrompt(
-  planContent: string,
+/**
+ * Build the repo context string (semi-static: changes per repo, not per call).
+ */
+function buildRepoContext(
   project: Project,
   repoContexts: Map<string, RepoContext>,
 ): string {
-  let prompt = `## Architecture Plan\n\n${planContent}\n\n`;
-
-  prompt += `## Project Metadata\n`;
-  prompt += `- **Title:** ${project.title}\n`;
-  prompt += `- **Priority:** ${project.priority ?? "P1"}\n`;
-  prompt += `- **Complexity:** ${project.complexity ?? "Moderate"}\n`;
-  prompt += `- **Risk Level:** ${project.riskLevel ?? "Medium"}\n`;
-  prompt += `- **Primary Target Repo:** ${project.targetRepo ?? "unknown"}\n\n`;
+  let context = `## Project Metadata\n`;
+  context += `- **Title:** ${project.title}\n`;
+  context += `- **Priority:** ${project.priority ?? "P1"}\n`;
+  context += `- **Complexity:** ${project.complexity ?? "Moderate"}\n`;
+  context += `- **Risk Level:** ${project.riskLevel ?? "Medium"}\n`;
+  context += `- **Primary Target Repo:** ${project.targetRepo ?? "unknown"}\n\n`;
 
   for (const [repoName, ctx] of repoContexts) {
-    prompt += `## Repo Context: ${repoName}\n\n`;
-    prompt += `### CLAUDE.md\n${ctx.claudeMd || "(not available)"}\n\n`;
-    prompt += `### System Map\n${ctx.systemMap || "(not configured)"}\n\n`;
-    prompt += `### ADRs\n`;
+    context += `## Repo Context: ${repoName}\n\n`;
+    context += `### CLAUDE.md\n${ctx.claudeMd || "(not available)"}\n\n`;
+    context += `### System Map\n${ctx.systemMap || "(not configured)"}\n\n`;
+    context += `### ADRs\n`;
     if (ctx.adrs.length > 0) {
-      prompt += ctx.adrs
+      context += ctx.adrs
         .map((adr) => `- **${adr.title}** (${adr.status}): ${adr.decision}`)
         .join("\n");
     } else {
-      prompt += "(none)";
+      context += "(none)";
     }
-    prompt += `\n\n### Recent PRs\n`;
+    context += `\n\n### Recent PRs\n`;
     if (ctx.recentPRs.length > 0) {
-      prompt += ctx.recentPRs
+      context += ctx.recentPRs
         .map((pr) => `- ${pr.title}\n  Files: ${pr.files.slice(0, 5).join(", ")}`)
         .join("\n");
     } else {
-      prompt += "(none)";
+      context += "(none)";
     }
-    prompt += "\n\n";
+    context += "\n\n";
   }
 
-  prompt += `Decompose this plan into ordered work items now.`;
-  return prompt;
+  return context;
+}
+
+/**
+ * Build the dynamic plan content string (changes every call).
+ */
+function buildPlanPrompt(planContent: string): string {
+  return `## Architecture Plan\n\n${planContent}\n\nDecompose this plan into ordered work items now.`;
 }
 
 // --- Sub-Phase Splitting ---
@@ -394,21 +400,46 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   }
 
   // 4. Call Claude Opus for decomposition
-  const userPrompt = buildUserPrompt(planContent, project, repoContexts);
+  const repoContext = buildRepoContext(project, repoContexts);
+  const planPrompt = buildPlanPrompt(planContent);
+
+  // Anthropic prompt caching provider options
+  const cacheEphemeral = {
+    anthropic: { cacheControl: { type: "ephemeral" as const } },
+  };
 
   let decomposedItems: DecomposedItem[] | null = null;
   let lastError: string | null = null;
 
   for (let attempt = 0; attempt < 2; attempt++) {
-    const promptToSend =
+    const dynamicContent =
       attempt === 0
-        ? userPrompt
-        : `${userPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED VALIDATION:\n${lastError}\n\nPlease fix the issues and return a valid JSON array.`;
+        ? planPrompt
+        : `${planPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED VALIDATION:\n${lastError}\n\nPlease fix the issues and return a valid JSON array.`;
 
     const { text } = await generateText({
       model: anthropic("claude-opus-4-6"),
-      system: SYSTEM_PROMPT,
-      prompt: promptToSend,
+      system: {
+        role: "system" as const,
+        content: SYSTEM_PROMPT,
+        providerOptions: cacheEphemeral,
+      },
+      messages: [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: repoContext,
+              providerOptions: cacheEphemeral,
+            },
+            {
+              type: "text" as const,
+              text: dynamicContent,
+            },
+          ],
+        },
+      ],
     });
 
     // Strip markdown code fences if present
