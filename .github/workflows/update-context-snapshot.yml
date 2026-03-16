@@ -1,0 +1,23 @@
+name: Update Context Snapshot
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  update-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tree jq
+
+      - name: Generate and upload context snapshot
+        env:
+          NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+          NOTION_CONTEXT_PAGE_ID: ${{ secrets.NOTION_CONTEXT_PAGE_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/generate-context-snapshot.sh
