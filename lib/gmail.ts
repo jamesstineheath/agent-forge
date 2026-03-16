@@ -302,6 +302,56 @@ export async function sendDecompositionSummary(
 }
 
 /**
+ * Send a plain-text email via Gmail.
+ * Returns the Gmail thread ID if sent, null if credentials missing or error.
+ */
+export async function sendEmail({
+  subject,
+  body,
+}: {
+  subject: string;
+  body: string;
+}): Promise<string | null> {
+  const client = getGmailClient();
+  if (!client) {
+    console.log('[Gmail] Skipping email (credentials not configured).');
+    return null;
+  }
+
+  try {
+    const message = [
+      `From: james.stine.heath@gmail.com`,
+      `To: james.stine.heath@gmail.com`,
+      `Subject: ${subject}`,
+      `Content-Type: text/plain; charset="UTF-8"`,
+      `MIME-Version: 1.0`,
+      '',
+      body,
+    ].join('\r\n');
+
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+
+    const response = await client.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    const threadId = response.data.threadId;
+    console.log(`[Gmail] Email sent: "${subject}". Thread ID: ${threadId}`);
+    return threadId || null;
+  } catch (error) {
+    console.error('[Gmail] Failed to send email:', error);
+    return null;
+  }
+}
+
+/**
  * Check if a reply exists in an escalation thread.
  * Returns the reply message object if found, null otherwise.
  */
