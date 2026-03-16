@@ -92,6 +92,15 @@ export async function updateRepo(
   return updated;
 }
 
+export async function isRepoRegistered(repoName: string): Promise<boolean> {
+  try {
+    const index = await loadIndex();
+    return index.some((entry) => entry.fullName === repoName);
+  } catch {
+    return false;
+  }
+}
+
 export async function deleteRepo(id: string): Promise<boolean> {
   const existing = await getRepo(id);
   if (!existing) return false;
