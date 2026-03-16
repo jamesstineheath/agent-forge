@@ -5,6 +5,7 @@ import { fetchRepoContext, type RepoContext } from "./orchestrator";
 import { listRepos, getRepo } from "./repos";
 import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
+import { buildCachedPrompt } from "./prompt-cache";
 import type { Project, WorkItem, RepoConfig } from "./types";
 
 // --- Types ---
@@ -178,10 +179,47 @@ Return a JSON array (no markdown fencing, no explanation) where each element is:
   ]
 }`;
 
-function buildUserPrompt(
+/**
+ * Build the repo context block (semi-static — same for all plans targeting the same repos).
+ * Separated from plan content so it can be cached via Anthropic prompt caching.
+ */
+function buildRepoContextBlock(
+  repoContexts: Map<string, RepoContext>,
+): string {
+  if (repoContexts.size === 0) return "";
+
+  let block = "";
+  for (const [repoName, ctx] of repoContexts) {
+    block += `## Repo Context: ${repoName}\n\n`;
+    block += `### CLAUDE.md\n${ctx.claudeMd || "(not available)"}\n\n`;
+    block += `### System Map\n${ctx.systemMap || "(not configured)"}\n\n`;
+    block += `### ADRs\n`;
+    if (ctx.adrs.length > 0) {
+      block += ctx.adrs
+        .map((adr) => `- **${adr.title}** (${adr.status}): ${adr.decision}`)
+        .join("\n");
+    } else {
+      block += "(none)";
+    }
+    block += `\n\n### Recent PRs\n`;
+    if (ctx.recentPRs.length > 0) {
+      block += ctx.recentPRs
+        .map((pr) => `- ${pr.title}\n  Files: ${pr.files.slice(0, 5).join(", ")}`)
+        .join("\n");
+    } else {
+      block += "(none)";
+    }
+    block += "\n\n";
+  }
+  return block.trim();
+}
+
+/**
+ * Build the dynamic plan prompt (changes on every call — not cached).
+ */
+function buildPlanPrompt(
   planContent: string,
   project: Project,
-  repoContexts: Map<string, RepoContext>,
 ): string {
   let prompt = `## Architecture Plan\n\n${planContent}\n\n`;
 
@@ -191,29 +229,6 @@ function buildUserPrompt(
   prompt += `- **Complexity:** ${project.complexity ?? "Moderate"}\n`;
   prompt += `- **Risk Level:** ${project.riskLevel ?? "Medium"}\n`;
   prompt += `- **Primary Target Repo:** ${project.targetRepo ?? "unknown"}\n\n`;
-
-  for (const [repoName, ctx] of repoContexts) {
-    prompt += `## Repo Context: ${repoName}\n\n`;
-    prompt += `### CLAUDE.md\n${ctx.claudeMd || "(not available)"}\n\n`;
-    prompt += `### System Map\n${ctx.systemMap || "(not configured)"}\n\n`;
-    prompt += `### ADRs\n`;
-    if (ctx.adrs.length > 0) {
-      prompt += ctx.adrs
-        .map((adr) => `- **${adr.title}** (${adr.status}): ${adr.decision}`)
-        .join("\n");
-    } else {
-      prompt += "(none)";
-    }
-    prompt += `\n\n### Recent PRs\n`;
-    if (ctx.recentPRs.length > 0) {
-      prompt += ctx.recentPRs
-        .map((pr) => `- ${pr.title}\n  Files: ${pr.files.slice(0, 5).join(", ")}`)
-        .join("\n");
-    } else {
-      prompt += "(none)";
-    }
-    prompt += "\n\n";
-  }
 
   prompt += `Decompose this plan into ordered work items now.`;
   return prompt;
@@ -285,7 +300,53 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
   }
 
   // 4. Call Claude Opus for decomposition
-  const userPrompt = buildUserPrompt(planContent, project, repoContexts);
+  const repoContextBlock = buildRepoContextBlock(repoContexts);
+  const planPrompt = buildPlanPrompt(planContent, project);
+
+  // Use buildCachedPrompt for organizational structure
+  const cachedPrompt = buildCachedPrompt(
+    {
+      enabled: true,
+      staticSections: repoContextBlock
+        ? [SYSTEM_PROMPT, repoContextBlock]
+        : [SYSTEM_PROMPT],
+    },
+    planPrompt,
+  );
+
+  // Build system blocks with Anthropic prompt caching via AI SDK providerOptions.
+  // cache_control goes on the last static/semi-static block:
+  //   - If repo context is present: cache_control on repo context block
+  //   - If repo context is absent: cache_control on the static guidelines block
+  const systemBlocks: Array<{
+    role: "system";
+    content: string;
+    providerOptions?: {
+      anthropic: { cacheControl: { type: "ephemeral" } };
+    };
+  }> = [];
+
+  if (repoContextBlock) {
+    systemBlocks.push({
+      role: "system" as const,
+      content: SYSTEM_PROMPT,
+    });
+    systemBlocks.push({
+      role: "system" as const,
+      content: repoContextBlock,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
+    });
+  } else {
+    systemBlocks.push({
+      role: "system" as const,
+      content: SYSTEM_PROMPT,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" } },
+      },
+    });
+  }
 
   let decomposedItems: DecomposedItem[] | null = null;
   let lastError: string | null = null;
@@ -293,12 +354,12 @@ export async function decomposeProject(project: Project): Promise<WorkItem[]> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const promptToSend =
       attempt === 0
-        ? userPrompt
-        : `${userPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED VALIDATION:\n${lastError}\n\nPlease fix the issues and return a valid JSON array.`;
+        ? cachedPrompt.dynamicSuffix
+        : `${cachedPrompt.dynamicSuffix}\n\n---\nPREVIOUS ATTEMPT FAILED VALIDATION:\n${lastError}\n\nPlease fix the issues and return a valid JSON array.`;
 
     const { text } = await generateText({
       model: anthropic("claude-opus-4-6"),
-      system: SYSTEM_PROMPT,
+      system: systemBlocks,
       prompt: promptToSend,
     });
 
