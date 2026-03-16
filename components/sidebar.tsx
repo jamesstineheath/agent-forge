@@ -7,6 +7,7 @@ import { Zap } from "lucide-react";
 const navItems = [
   { href: "/", label: "Dashboard" },
   { href: "/work-items", label: "Work Items" },
+  { href: "/work-items/escalated", label: "Escalated" },
   { href: "/agents", label: "Agents" },
   { href: "/pipeline", label: "Pipeline" },
   { href: "/repos", label: "Repos" },
