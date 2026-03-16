@@ -14,12 +14,24 @@ function itemKey(id: string): string {
 }
 
 async function loadIndex(): Promise<WorkItemIndexEntry[]> {
-  const index = await loadJson<WorkItemIndexEntry[]>(INDEX_KEY);
-  if (!index) {
-    console.log(`[work-items] Index returned null for key "${INDEX_KEY}" — treating as empty (valid for new deploys).`);
-    return [];
+  try {
+    const index = await loadJson<WorkItemIndexEntry[]>(INDEX_KEY, { required: true });
+    if (!index) {
+      console.log(`[work-items] Index returned null for key "${INDEX_KEY}" — treating as empty (valid for new deploys).`);
+      return [];
+    }
+    return index;
+  } catch (err) {
+    // Distinguish "file doesn't exist" from "load failed" — only treat missing as empty
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("Not Found") || msg.includes("404")) {
+      console.log(`[work-items] Index file not found — treating as empty (new deploy or deleted).`);
+      return [];
+    }
+    // For actual errors (network, corruption), rethrow so callers know the index is unreliable
+    console.error(`[work-items] Index load FAILED (not missing, actual error):`, err);
+    throw err;
   }
-  return index;
 }
 
 async function saveIndex(index: WorkItemIndexEntry[]): Promise<void> {
@@ -218,4 +230,47 @@ export async function deleteWorkItem(id: string): Promise<boolean> {
   await saveIndex(filtered);
 
   return true;
+}
+
+/**
+ * Rebuild the work items index by scanning all blobs in Vercel Blob storage.
+ * Use this to recover from index deletion/corruption.
+ */
+export async function rebuildIndex(): Promise<{ recovered: number; errors: number }> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error("rebuildIndex requires BLOB_READ_WRITE_TOKEN (production only)");
+  }
+
+  const { list } = await import("@vercel/blob");
+  const { blobs } = await list({ prefix: "af-data/work-items/", mode: "folded" });
+
+  const recoveredEntries: WorkItemIndexEntry[] = [];
+  let errors = 0;
+
+  for (const blob of blobs) {
+    const id = blob.pathname.replace("af-data/work-items/", "").replace(".json", "");
+    if (!id || id === "index") continue;
+
+    try {
+      const item = await loadJson<WorkItem>(itemKey(id), { required: true });
+      if (item) {
+        recoveredEntries.push({
+          id: item.id,
+          title: item.title,
+          targetRepo: item.targetRepo,
+          status: item.status,
+          priority: item.priority,
+          updatedAt: item.updatedAt,
+        });
+      }
+    } catch {
+      console.error(`[work-items] rebuildIndex: failed to load blob for id "${id}"`);
+      errors++;
+    }
+  }
+
+  await saveIndex(recoveredEntries);
+  console.log(`[work-items] rebuildIndex: recovered ${recoveredEntries.length} items, ${errors} errors`);
+
+  return { recovered: recoveredEntries.length, errors };
 }
