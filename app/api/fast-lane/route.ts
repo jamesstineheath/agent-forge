@@ -3,6 +3,7 @@ import { validateAuth } from "@/lib/api-auth";
 import { createWorkItem } from "@/lib/work-items";
 import { listRepos } from "@/lib/repos";
 import type { ComplexityHint } from "@/lib/types";
+import { checkDailyCap, incrementDailyCount } from "@/lib/daily-cap";
 import {
   createWorkItemSchema,
   FAST_LANE_BUDGET_SIMPLE,
@@ -82,7 +83,24 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 8. Resolve final budget
+  // 8. Daily cap check for non-human producers
+  const resolvedTriggeredBy =
+    typeof triggeredBy === "string" && triggeredBy.trim() !== ""
+      ? triggeredBy.trim()
+      : "james";
+  const capResult = await checkDailyCap(resolvedTriggeredBy);
+  if (!capResult.allowed) {
+    return NextResponse.json(
+      {
+        error: "daily_cap_exceeded",
+        remaining: 0,
+        limit: capResult.limit,
+      },
+      { status: 429 },
+    );
+  }
+
+  // 9. Resolve final budget
   const resolvedBudget =
     typeof budgetOverride === "number"
       ? budgetOverride
@@ -104,7 +122,10 @@ export async function POST(request: NextRequest) {
   });
   const workItem = await createWorkItem(parsed);
 
-  // 10. Return response
+  // 11. Increment daily cap count
+  await incrementDailyCount(resolvedTriggeredBy);
+
+  // 12. Return response
   return NextResponse.json(
     {
       workItemId: workItem.id,

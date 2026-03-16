@@ -6,6 +6,7 @@ import {
   FAST_LANE_BUDGET_SIMPLE,
   FAST_LANE_BUDGET_MODERATE,
 } from "./types";
+import { checkDailyCap, incrementDailyCount } from "./daily-cap";
 
 // --- Tool Schemas (zod shapes for MCP registerTool) ---
 
@@ -63,6 +64,12 @@ export async function handleCreateFastLaneItem(input: {
     triggeredBy = "james",
   } = input;
 
+  // Daily cap check for non-human producers
+  const capResult = await checkDailyCap(triggeredBy);
+  if (!capResult.allowed) {
+    throw new Error(`daily cap exceeded (0 remaining of ${capResult.limit})`);
+  }
+
   const resolvedBudget =
     typeof budgetOverride === "number"
       ? budgetOverride
@@ -79,6 +86,9 @@ export async function handleCreateFastLaneItem(input: {
     ...(complexity ? { complexityHint: complexity } : {}),
   });
   const workItem = await createWorkItem(parsed);
+
+  // Increment daily cap count after successful creation
+  await incrementDailyCount(triggeredBy);
 
   return {
     workItemId: workItem.id,
