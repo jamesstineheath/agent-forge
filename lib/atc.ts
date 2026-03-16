@@ -575,7 +575,9 @@ async function _runATCCycleInner(): Promise<ATCState> {
         const { list } = await import("@vercel/blob");
         const { blobs } = await list({ prefix: "af-data/work-items/", mode: "folded" });
         const blobIds = new Set(
-          blobs.map(b => b.pathname.replace("af-data/work-items/", "").replace(".json", ""))
+          blobs
+            .map(b => b.pathname.replace("af-data/work-items/", "").replace(".json", ""))
+            .filter(id => id && id !== "index") // Exclude the index file itself
         );
 
         const indexEntries = await listWorkItems({});
