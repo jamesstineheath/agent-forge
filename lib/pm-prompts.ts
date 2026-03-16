@@ -1,365 +1,290 @@
-/**
- * PM Agent Prompts Library
- *
- * Pure functions returning structured prompt strings for PM Agent capabilities.
- * Prompts are separated from orchestration logic for independent iteration.
- */
+// lib/pm-prompts.ts
+// Structured prompt-generation functions for the PM Agent capabilities.
+// Each function accepts a typed context object and returns a prompt string
+// to be sent to Claude via the AI SDK.
 
-// ─── Context Types ───────────────────────────────────────────────────────────
+export function buildBacklogReviewPrompt(context: {
+  workItems: {
+    id: string;
+    title: string;
+    status: string;
+    repo: string;
+    priority: string;
+    createdAt: string;
+  }[];
+  projects: {
+    id: string;
+    name: string;
+    status: string;
+  }[];
+  pipelineState: {
+    inFlight: number;
+    concurrencyLimit: number;
+    recentMerges: number;
+    recentFailures: number;
+  };
+}): string {
+  return `## Task
+You are an autonomous PM Agent for a software development orchestration platform (Agent Forge).
+Review the current backlog of work items and categorize each one by recommended action.
 
-export interface WorkItemSummary {
-  id: string;
-  title: string;
-  repo: string;
-  status: string;
-  priority: string;
-  createdAt: string;
+## Pipeline State
+\`\`\`json
+${JSON.stringify(context.pipelineState, null, 2)}
+\`\`\`
+
+## Active Projects
+\`\`\`json
+${JSON.stringify(context.projects, null, 2)}
+\`\`\`
+
+## Work Items (Backlog)
+\`\`\`json
+${JSON.stringify(context.workItems, null, 2)}
+\`\`\`
+
+## Instructions
+For each work item, assign exactly one of the following actions:
+- **dispatch**: Ready to execute now (dependencies met, pipeline has capacity, priority warrants it)
+- **defer**: Not ready yet (blocked, low priority, pipeline saturated, or waiting on dependency)
+- **kill**: Should be cancelled (stale, duplicate, superseded, or no longer relevant)
+- **escalate**: Needs human attention (stuck, ambiguous, requires decision beyond automation)
+
+Consider the pipeline state (in-flight vs concurrency limit, recent failure rate) when making dispatch recommendations.
+Provide a brief rationale for each item. Then provide an overall summary.
+
+## Output Format
+Respond with valid JSON only. No markdown outside the JSON block. Use this schema:
+
+\`\`\`json
+{
+  "summary": "Brief overall assessment of backlog health",
+  "recommendations": [
+    {
+      "workItemId": "string",
+      "action": "dispatch | defer | kill | escalate",
+      "rationale": "One sentence explanation"
+    }
+  ],
+  "stats": {
+    "dispatch": 0,
+    "defer": 0,
+    "kill": 0,
+    "escalate": 0
+  }
+}
+\`\`\``;
 }
 
-export interface ProjectSummary {
-  id: string;
-  name: string;
-  status: string;
+export function buildHealthAssessmentPrompt(context: {
+  project: {
+    id: string;
+    name: string;
+    status: string;
+  };
+  workItems: {
+    id: string;
+    title: string;
+    status: string;
+    createdAt: string;
+    updatedAt: string;
+  }[];
+  escalations: {
+    id: string;
+    status: string;
+    createdAt: string;
+  }[];
+}): string {
+  return `## Task
+You are an autonomous PM Agent for Agent Forge, a dev orchestration platform.
+Assess the health of the following project and identify any stalling signals or issues requiring attention.
+
+## Project
+\`\`\`json
+${JSON.stringify(context.project, null, 2)}
+\`\`\`
+
+## Work Items
+\`\`\`json
+${JSON.stringify(context.workItems, null, 2)}
+\`\`\`
+
+## Escalations
+\`\`\`json
+${JSON.stringify(context.escalations, null, 2)}
+\`\`\`
+
+## Instructions
+Analyze the project health by considering:
+- Work item velocity (are items moving through statuses or stalling?)
+- Age of items in non-terminal statuses (filed, queued, executing, reviewing)
+- Ratio of pending escalations to total work items
+- Time since last status update (use updatedAt vs current time context)
+- Whether the project is on track, at risk, or blocked
+
+Identify specific stalling signals: items stuck in "executing" >24h, items in "blocked" state, unresolved escalations older than 48h, etc.
+
+## Output Format
+Respond with valid JSON only. No markdown outside the JSON block. Use this schema:
+
+\`\`\`json
+{
+  "healthStatus": "healthy | at-risk | blocked | stalled",
+  "completionRate": 0.0,
+  "stallingSignals": [
+    {
+      "type": "string (e.g., stuck_executing | unresolved_escalation | stale_item)",
+      "workItemId": "string or null",
+      "description": "Brief description of the issue",
+      "severity": "low | medium | high"
+    }
+  ],
+  "summary": "2-3 sentence overall health assessment",
+  "recommendedAction": "string describing what should happen next, or null if healthy"
+}
+\`\`\``;
 }
 
-export interface PipelineState {
-  inFlight: number;
-  queued: number;
-  concurrencyLimit: number;
+export function buildNextBatchPrompt(context: {
+  pipelineState: {
+    inFlight: number;
+    concurrencyLimit: number;
+    availableSlots: number;
+  };
+  readyItems: {
+    id: string;
+    title: string;
+    repo: string;
+    priority: string;
+    complexity: string;
+  }[];
+  activeProjects: {
+    id: string;
+    name: string;
+    status: string;
+    pendingItems: number;
+  }[];
+}): string {
+  return `## Task
+You are an autonomous PM Agent for Agent Forge, a dev orchestration platform.
+Recommend the next batch of work items to dispatch into the execution pipeline.
+
+## Pipeline State
+\`\`\`json
+${JSON.stringify(context.pipelineState, null, 2)}
+\`\`\`
+
+## Ready Items (Eligible for Dispatch)
+\`\`\`json
+${JSON.stringify(context.readyItems, null, 2)}
+\`\`\`
+
+## Active Projects
+\`\`\`json
+${JSON.stringify(context.activeProjects, null, 2)}
+\`\`\`
+
+## Instructions
+Select 3-5 items from the ready items list to dispatch next. Optimize for:
+1. **Priority**: Higher priority items first
+2. **Pipeline balance**: Avoid saturating a single repo; spread load across repos when possible
+3. **Project momentum**: Prefer items belonging to projects with high pendingItems to unblock projects
+4. **Complexity fit**: In a saturated pipeline (availableSlots <= 1), prefer simple items; when slots are available, complex items are acceptable
+5. **Do not exceed availableSlots**: Never recommend more items than there are available slots
+
+If availableSlots is 0, recommend an empty list.
+
+## Output Format
+Respond with valid JSON only. No markdown outside the JSON block. Use this schema:
+
+\`\`\`json
+{
+  "recommended": [
+    {
+      "workItemId": "string",
+      "reason": "One sentence explaining why this item was selected"
+    }
+  ],
+  "skipped": [
+    {
+      "workItemId": "string",
+      "reason": "One sentence explaining why this item was not selected"
+    }
+  ],
+  "summary": "Brief explanation of the overall dispatch strategy for this batch"
+}
+\`\`\``;
 }
 
-export interface BacklogReviewContext {
-  workItems: WorkItemSummary[];
-  projects: ProjectSummary[];
-  pipelineState: PipelineState;
-}
-
-export interface ProjectHealthSummary {
-  id: string;
-  name: string;
-  status: string;
-  itemCount: number;
-  completedCount: number;
-  escalations: number;
-  blockedItems: number;
-  avgQueueTime: number; // minutes
-}
-
-export interface HealthAssessmentContext {
-  projects: ProjectHealthSummary[];
-}
-
-export interface AvailableItem {
-  id: string;
-  title: string;
-  repo: string;
-  priority: string;
-  dependencies: string[];
-}
-
-export interface NextBatchPipelineState {
-  inFlight: number;
-  queued: number;
-  recentlyMerged: string[];
-  recentlyFailed: string[];
-}
-
-export interface NextBatchContext {
-  pipelineState: NextBatchPipelineState;
-  availableItems: AvailableItem[];
-}
-
-export interface DigestProjectSummary {
-  name: string;
-  status: string;
-  delta: string;
-}
-
-export interface DigestContext {
-  period: string;
-  stats: {
+export function buildDigestPrompt(context: {
+  backlogReview?: {
+    summary: string;
+    recommendations: {
+      action: string;
+      count: number;
+    }[];
+  };
+  projectHealths: {
+    name: string;
+    status: string;
+    completionRate: number;
+  }[];
+  pipelineDelta: {
     merged: number;
     failed: number;
     blocked: number;
-    escalations: number;
+    escalationsPending: number;
   };
-  projectSummaries: DigestProjectSummary[];
-  recommendations: string[];
+}): string {
+  return `## Task
+You are an autonomous PM Agent for Agent Forge, a dev orchestration platform.
+Compose a concise, scannable progress digest email summarizing current system state.
+
+## Pipeline Delta (Since Last Digest)
+\`\`\`json
+${JSON.stringify(context.pipelineDelta, null, 2)}
+\`\`\`
+
+## Project Health Summary
+\`\`\`json
+${JSON.stringify(context.projectHealths, null, 2)}
+\`\`\`
+
+${
+  context.backlogReview
+    ? `## Backlog Review Summary
+\`\`\`json
+${JSON.stringify(context.backlogReview, null, 2)}
+\`\`\``
+    : `## Backlog Review
+No backlog review available for this digest period.`
 }
 
-// ─── Prompt Builders ─────────────────────────────────────────────────────────
+## Instructions
+Compose a digest email that is:
+- **Scannable**: Use bullet points and short sections, not dense paragraphs
+- **Action-oriented**: Highlight items needing human attention first
+- **Concise**: Entire email should be readable in under 2 minutes
+- **Honest**: Surface failures and blockers clearly, not buried
 
-/**
- * Builds a prompt instructing Claude to review the work item backlog and produce
- * prioritized dispatch/defer/kill recommendations.
- *
- * Expected output: JSON matching BacklogReview structure.
- */
-export function buildBacklogReviewPrompt(context: BacklogReviewContext): string {
-  const { workItems, projects, pipelineState } = context;
-
-  const workItemsJson = JSON.stringify(workItems, null, 2);
-  const projectsJson = JSON.stringify(projects, null, 2);
-  const capacity = pipelineState.concurrencyLimit - pipelineState.inFlight;
-
-  return `You are a PM Agent responsible for managing a software development pipeline. Your job is to review the current work item backlog and produce clear, actionable prioritization recommendations.
-
-## Current Pipeline State
-
-- In-flight executions: ${pipelineState.inFlight}
-- Queued items: ${pipelineState.queued}
-- Concurrency limit: ${pipelineState.concurrencyLimit}
-- Available capacity: ${capacity} slot(s)
-
-## Active Projects
-
-${projectsJson}
-
-## Work Items Backlog
-
-${workItemsJson}
-
-## Your Task
-
-Review all work items above and produce prioritized recommendations. For each item, decide one of:
-- **dispatch**: Should be dispatched now (high value, unblocked, fits capacity)
-- **defer**: Should wait (lower priority, dependencies not met, or pipeline at capacity)
-- **kill**: Should be cancelled (stale, duplicate, no longer relevant, or permanently blocked)
-
-## Constraints
-
-- Be specific: always cite item IDs in your recommendations
-- Provide a concise rationale (1–2 sentences) for each recommendation
-- Consider repo distribution — avoid saturating a single repo
-- Prioritize items that unblock other items (dependency-chain awareness)
-- Flag any items that appear stale (created long ago, low priority, no project linkage)
-- Respect the concurrency limit — do not recommend dispatching more items than available capacity
+Structure the email with these sections (include only sections with relevant content):
+1. **🚦 Status at a Glance** — one-line summary of system health
+2. **✅ Progress** — merged count, any notable completions
+3. **⚠️ Attention Required** — failures, blocked items, pending escalations
+4. **📋 Backlog** — brief backlog action summary (if backlogReview is provided)
+5. **🏗️ Projects** — per-project status with completion rates
 
 ## Output Format
+Respond with valid JSON only. No markdown outside the JSON block. Use this schema:
 
-Respond with a single JSON object matching this structure exactly:
-
+\`\`\`json
 {
-  "recommendations": [
-    {
-      "itemId": "<work item id>",
-      "action": "dispatch" | "defer" | "kill",
-      "rationale": "<1-2 sentence explanation>",
-      "priority": <number 1-10, 10 = highest>
-    }
-  ],
-  "summary": "<2-3 sentence overall backlog health assessment>",
-  "dispatchOrder": ["<itemId>", ...],
-  "flags": [
-    {
-      "itemId": "<work item id>",
-      "issue": "<description of concern>"
-    }
+  "subject": "Agent Forge Digest — [date/period summary]",
+  "body": "Full email body as a plain text string with newlines (\\n) for line breaks. Use emoji section headers as described above.",
+  "urgencyLevel": "normal | attention-needed | critical",
+  "highlights": [
+    "One-line bullet string summarizing a key point"
   ]
 }
-
-Do not include any text outside the JSON object.`;
-}
-
-/**
- * Builds a prompt instructing Claude to assess the health of each project,
- * flagging stalling projects, high escalation rates, and long queue times.
- *
- * Expected output: JSON matching ProjectHealthReport structure.
- */
-export function buildHealthAssessmentPrompt(context: HealthAssessmentContext): string {
-  const { projects } = context;
-  const projectsJson = JSON.stringify(projects, null, 2);
-
-  return `You are a PM Agent responsible for monitoring project health in a software development pipeline. Your job is to assess the health of each active project and surface risks early.
-
-## Projects Under Review
-
-${projectsJson}
-
-## Field Definitions
-
-- \`itemCount\`: total work items in the project
-- \`completedCount\`: work items that have been merged/completed
-- \`escalations\`: number of escalations raised in this project
-- \`blockedItems\`: items currently in blocked state
-- \`avgQueueTime\`: average minutes work items spend in queue before execution
-
-## Your Task
-
-For each project, assess its health and assign a status of:
-- **healthy**: progressing well, no significant concerns
-- **at_risk**: showing warning signs — flag the specific concern
-- **stalling**: little or no progress, intervention likely needed
-- **critical**: severe issues requiring immediate human attention
-
-## Constraints
-
-- Always cite the project ID when referencing a project
-- Flag any project where escalations > 2 as at minimum at_risk
-- Flag any project where blockedItems / itemCount > 0.3 (30%) as at minimum at_risk
-- Flag any project where avgQueueTime > 120 minutes as at minimum at_risk
-- Flag any project where completedCount / itemCount < 0.1 and itemCount > 5 as potentially stalling
-- Provide specific, actionable recommendations — not vague advice
-
-## Output Format
-
-Respond with a single JSON object matching this structure exactly:
-
-{
-  "projectReports": [
-    {
-      "projectId": "<project id>",
-      "projectName": "<project name>",
-      "healthStatus": "healthy" | "at_risk" | "stalling" | "critical",
-      "completionRate": <number 0.0-1.0>,
-      "concerns": ["<specific concern>", ...],
-      "recommendations": ["<specific actionable recommendation>", ...],
-      "urgency": "low" | "medium" | "high" | "immediate"
-    }
-  ],
-  "overallPipelineHealth": "healthy" | "at_risk" | "stalling" | "critical",
-  "topRisks": ["<risk description citing project IDs>", ...],
-  "immediateActions": ["<action item>", ...]
-}
-
-Do not include any text outside the JSON object.`;
-}
-
-/**
- * Builds a prompt instructing Claude to recommend the next 3–5 items to dispatch,
- * considering dependencies, repo distribution, and recent failures.
- *
- * Expected output: JSON array of item IDs with rationale.
- */
-export function buildNextBatchPrompt(context: NextBatchContext): string {
-  const { pipelineState, availableItems } = context;
-
-  const availableItemsJson = JSON.stringify(availableItems, null, 2);
-  const recentlyMerged = pipelineState.recentlyMerged.length > 0
-    ? pipelineState.recentlyMerged.join(', ')
-    : 'none';
-  const recentlyFailed = pipelineState.recentlyFailed.length > 0
-    ? pipelineState.recentlyFailed.join(', ')
-    : 'none';
-
-  return `You are a PM Agent responsible for deciding which work items to dispatch next in a software development pipeline. Your goal is to maximize throughput while avoiding conflicts and respecting dependencies.
-
-## Current Pipeline State
-
-- In-flight executions: ${pipelineState.inFlight}
-- Queued items: ${pipelineState.queued}
-- Recently merged item IDs: ${recentlyMerged}
-- Recently failed item IDs: ${recentlyFailed}
-
-## Available Items for Dispatch
-
-These items are ready to dispatch (dependencies met, not blocked):
-
-${availableItemsJson}
-
-## Your Task
-
-Select the next 3–5 items to dispatch from the available items list. Your selection should optimize for:
-
-1. **Dependency unblocking**: prefer items that will unblock many downstream items
-2. **Repo distribution**: avoid dispatching multiple items to the same repo simultaneously
-3. **Priority**: higher priority items should generally be preferred
-4. **Failure avoidance**: do not re-dispatch recently failed items without good reason — if you recommend a recently failed item, explain why
-5. **Parallelism**: prefer items that can safely run in parallel (different repos, no shared dependencies)
-
-## Constraints
-
-- Only recommend items from the available items list (cite their exact IDs)
-- Recommend between 3 and 5 items total
-- Do not recommend more items than would keep total in-flight + queued under a reasonable limit
-- Provide a specific rationale for each selection citing the item ID
-- If a recently failed item is recommended, explicitly acknowledge the failure and justify re-dispatch
-- If fewer than 3 items are available, recommend all available items and explain
-
-## Output Format
-
-Respond with a single JSON array matching this structure exactly:
-
-[
-  {
-    "itemId": "<work item id>",
-    "title": "<item title>",
-    "repo": "<target repo>",
-    "rationale": "<specific reason this item should be dispatched now>",
-    "dispatchOrder": <integer 1-5, 1 = dispatch first>
-  }
-]
-
-Do not include any text outside the JSON array.`;
-}
-
-/**
- * Builds a prompt instructing Claude to compose a scannable progress digest email body
- * including a scorecard, per-project status, and action items.
- *
- * Expected output: plain text email body.
- */
-export function buildDigestPrompt(context: DigestContext): string {
-  const { period, stats, projectSummaries, recommendations } = context;
-
-  const projectSummariesText = projectSummaries
-    .map(p => `  - ${p.name} [${p.status}]: ${p.delta}`)
-    .join('\n');
-
-  const recommendationsText = recommendations
-    .map((r, i) => `  ${i + 1}. ${r}`)
-    .join('\n');
-
-  return `You are a PM Agent composing a concise, scannable progress digest email for a software development pipeline. Your audience is a technical project owner who reviews this digest quickly — keep it clear, direct, and actionable.
-
-## Digest Period
-
-${period}
-
-## Pipeline Scorecard
-
-- Items merged (completed): ${stats.merged}
-- Items failed: ${stats.failed}
-- Items currently blocked: ${stats.blocked}
-- Escalations raised: ${stats.escalations}
-
-## Per-Project Status
-
-${projectSummariesText}
-
-## Recommended Actions
-
-${recommendationsText}
-
-## Your Task
-
-Compose a plain text email body for this digest. The email should be:
-- Scannable: use clear section headers, short paragraphs, and bullet points
-- Specific: reference project names and concrete numbers
-- Action-oriented: make it obvious what (if anything) requires human attention
-- Concise: total length should be under 400 words
-
-## Email Structure
-
-Your digest must include these sections in order:
-1. **Subject line** (prefix with "SUBJECT: " on its own line)
-2. **Summary** (2-3 sentences: overall pipeline health this period)
-3. **Scorecard** (formatted table or bullet list of the key metrics)
-4. **Project Status** (one line per project with status indicator: ✅ healthy, ⚠️ at risk, 🔴 critical)
-5. **Action Items** (numbered list — only include if there are actual actions needed; omit section if none)
-6. **Closing** (single sentence, e.g., "Next digest in 24 hours." or similar)
-
-## Constraints
-
-- Use plain text only — no HTML, no markdown headers with #, no code blocks
-- Section headers should be in ALL CAPS followed by a colon (e.g., SCORECARD:)
-- Keep each project status line to one line maximum
-- If stats.escalations > 0, the summary must mention escalations explicitly
-- If stats.failed > 0, the summary must mention failures explicitly
-- Action items must be specific and reference project names or item counts
-
-## Output Format
-
-Output the plain text email body only. Begin with the SUBJECT: line. Do not include any preamble or explanation outside the email body itself.`;
+\`\`\``;
 }

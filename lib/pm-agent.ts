@@ -17,16 +17,6 @@ import type {
   WorkItem,
   ATCState,
 } from "./types";
-import type {
-  WorkItemSummary,
-  ProjectSummary,
-  PipelineState,
-  ProjectHealthSummary,
-  AvailableItem,
-  NextBatchPipelineState,
-  DigestProjectSummary,
-  DigestContext,
-} from "./pm-prompts";
 
 // Storage keys (without af-data/ prefix and .json suffix — storage.ts adds those)
 const STORAGE_KEYS = {
@@ -133,7 +123,7 @@ export async function reviewBacklog(): Promise<BacklogReview> {
   ]);
 
   // Map to prompt context types
-  const workItemSummaries: WorkItemSummary[] = workItems.map((item) => ({
+  const workItemSummaries = workItems.map((item) => ({
     id: item.id,
     title: item.title,
     repo: item.targetRepo,
@@ -142,22 +132,24 @@ export async function reviewBacklog(): Promise<BacklogReview> {
     createdAt: item.createdAt,
   }));
 
-  const projectSummaries: ProjectSummary[] = projects.map((p) => ({
+  const projectSummaries = projects.map((p) => ({
     id: p.projectId,
     name: p.title,
     status: p.status,
   }));
 
-  const pipeline: PipelineState = {
-    inFlight: pipelineState.inFlightCount,
-    queued: pipelineState.queueDepth,
-    concurrencyLimit: 5, // matches GLOBAL_CONCURRENCY_LIMIT in atc.ts
-  };
+  const recentMerges = workItems.filter((i) => i.status === "merged").length;
+  const recentFailures = workItems.filter((i) => i.status === "failed").length;
 
   const prompt = buildBacklogReviewPrompt({
     workItems: workItemSummaries,
     projects: projectSummaries,
-    pipelineState: pipeline,
+    pipelineState: {
+      inFlight: pipelineState.inFlightCount,
+      concurrencyLimit: 5,
+      recentMerges,
+      recentFailures,
+    },
   });
 
   const raw = await callClaude(prompt);
@@ -186,45 +178,49 @@ export async function assessProjectHealth(): Promise<ProjectHealthReport> {
     listProjects(),
   ]);
 
-  const projectHealthSummaries: ProjectHealthSummary[] = projects.map((project) => {
-    const projectItems = workItems.filter(
-      (item) => item.source.type === "project" && item.source.sourceId === project.projectId,
-    );
-    const totalItems = projectItems.length;
-    const completedCount = projectItems.filter((item) => item.status === "merged").length;
-    const blockedCount = projectItems.filter((item) => item.status === "blocked").length;
-    const escalationCount = projectItems.filter(
-      (item) => item.escalation !== undefined,
-    ).length;
+  // Assess each project individually and aggregate results
+  const projectReports = await Promise.all(
+    projects.map(async (project) => {
+      const projectItems = workItems.filter(
+        (item) => item.source.type === "project" && item.source.sourceId === project.projectId,
+      );
 
-    // Avg time in queue (minutes) for items that have started executing
-    const executedItems = projectItems.filter(
-      (item) => item.execution?.startedAt && item.createdAt,
-    );
-    const avgQueueTime =
-      executedItems.length > 0
-        ? executedItems.reduce((sum, item) => {
-            const created = new Date(item.createdAt).getTime();
-            const started = new Date(item.execution!.startedAt!).getTime();
-            return sum + (started - created) / 60_000;
-          }, 0) / executedItems.length
-        : 0;
+      const projectWorkItems = projectItems.map((item) => ({
+        id: item.id,
+        title: item.title,
+        status: item.status,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt ?? item.createdAt,
+      }));
 
-    return {
-      id: project.projectId,
-      name: project.title,
-      status: project.status,
-      itemCount: totalItems,
-      completedCount,
-      escalations: escalationCount,
-      blockedItems: blockedCount,
-      avgQueueTime: Math.round(avgQueueTime),
-    };
-  });
+      const escalations = projectItems
+        .filter((item) => item.escalation !== undefined)
+        .map((item) => ({
+          id: item.escalation!.id,
+          status: item.status,
+          createdAt: item.escalation!.blockedAt,
+        }));
 
-  const prompt = buildHealthAssessmentPrompt({ projects: projectHealthSummaries });
-  const raw = await callClaude(prompt);
-  const healthReport = parseJson<ProjectHealthReport>(raw);
+      const prompt = buildHealthAssessmentPrompt({
+        project: {
+          id: project.projectId,
+          name: project.title,
+          status: project.status,
+        },
+        workItems: projectWorkItems,
+        escalations,
+      });
+
+      const raw = await callClaude(prompt);
+      return parseJson<Record<string, unknown>>(raw);
+    }),
+  );
+
+  const healthReport = {
+    projects: projectReports,
+    generatedAt: new Date().toISOString(),
+    overallSummary: `Health assessment completed for ${projects.length} project(s).`,
+  } as unknown as ProjectHealthReport;
 
   await saveJson(STORAGE_KEYS.latestHealth, healthReport);
 
@@ -242,31 +238,42 @@ export async function suggestNextBatch(): Promise<{ items: string[]; rationale: 
   ]);
 
   const readyItems = workItems.filter((item) => item.status === "ready");
-  const recentlyMerged = workItems
-    .filter((item) => item.status === "merged")
-    .map((item) => item.id);
-  const recentlyFailed = workItems
-    .filter((item) => item.status === "failed")
-    .map((item) => item.id);
+  const projects = await listProjects();
 
-  const availableItems: AvailableItem[] = readyItems.map((item) => ({
+  const readyItemSummaries = readyItems.map((item) => ({
     id: item.id,
     title: item.title,
     repo: item.targetRepo,
     priority: item.priority,
-    dependencies: item.dependencies,
+    complexity: "medium", // default — no complexity field on WorkItem yet
   }));
 
-  const nextBatchPipeline: NextBatchPipelineState = {
-    inFlight: pipelineState.inFlightCount,
-    queued: pipelineState.queueDepth,
-    recentlyMerged,
-    recentlyFailed,
-  };
+  const concurrencyLimit = 5;
+  const availableSlots = Math.max(0, concurrencyLimit - pipelineState.inFlightCount);
+
+  const activeProjects = projects.map((p) => {
+    const pending = workItems.filter(
+      (i) =>
+        i.source.type === "project" &&
+        i.source.sourceId === p.projectId &&
+        !["merged", "failed"].includes(i.status),
+    ).length;
+    return {
+      id: p.projectId,
+      name: p.title,
+      status: p.status,
+      pendingItems: pending,
+    };
+  });
 
   const prompt = buildNextBatchPrompt({
-    pipelineState: nextBatchPipeline,
-    availableItems,
+    pipelineState: {
+      inFlight: pipelineState.inFlightCount,
+      concurrencyLimit,
+      availableSlots,
+    },
+    readyItems: readyItemSummaries,
+    activeProjects,
   });
 
   const raw = await callClaude(prompt);
@@ -292,7 +299,7 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
   const blockedCount = workItems.filter((i) => i.status === "blocked").length;
   const escalationCount = workItems.filter((i) => i.escalation !== undefined).length;
 
-  const projectSummaries: DigestProjectSummary[] = projects.map((p) => {
+  const projectHealths = projects.map((p) => {
     const projectItems = workItems.filter(
       (i) => i.source.type === "project" && i.source.sourceId === p.projectId,
     );
@@ -301,32 +308,28 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
     return {
       name: p.title,
       status: p.status,
-      delta: `${merged}/${total} items merged`,
+      completionRate: total > 0 ? merged / total : 0,
     };
   });
 
-  // Build recommendations from latest review if available
-  const recommendations: string[] = [];
-  if (reviewData?.summary) {
-    recommendations.push(reviewData.summary);
-  }
-  if (healthData?.overallSummary) {
-    recommendations.push(healthData.overallSummary);
-  }
+  // Build backlog review summary from latest review if available
+  const backlogReview = reviewData?.summary
+    ? {
+        summary: reviewData.summary,
+        recommendations: [] as { action: string; count: number }[],
+      }
+    : undefined;
 
-  const digestContext: DigestContext = {
-    period: options.period,
-    stats: {
+  const prompt = buildDigestPrompt({
+    backlogReview,
+    projectHealths,
+    pipelineDelta: {
       merged: mergedCount,
       failed: failedCount,
       blocked: blockedCount,
-      escalations: escalationCount,
+      escalationsPending: escalationCount,
     },
-    projectSummaries,
-    recommendations,
-  };
-
-  const prompt = buildDigestPrompt(digestContext);
+  });
   const digestText = await callClaude(prompt);
 
   const digestRecord = {
