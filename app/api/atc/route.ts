@@ -1,12 +1,10 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
+import { validateAuth } from "@/lib/api-auth";
 import { getATCState, getATCEvents } from "@/lib/atc";
 
-export async function GET() {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+export async function GET(req: NextRequest) {
+  const authError = await validateAuth(req, "AGENT_FORGE_API_SECRET");
+  if (authError) return authError;
 
   try {
     const [state, events] = await Promise.all([getATCState(), getATCEvents(20)]);

@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { validateAuth } from "@/lib/api-auth";
 import { getATCEvents } from "@/lib/atc";
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authError = await validateAuth(req, "AGENT_FORGE_API_SECRET");
+  if (authError) return authError;
 
   try {
     const limit = parseInt(req.nextUrl.searchParams.get("limit") ?? "50", 10);
