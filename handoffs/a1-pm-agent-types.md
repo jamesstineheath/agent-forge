@@ -11,26 +11,23 @@
 
 ## Context
 
-This is a foundational task for the PM Agent feature set. All subsequent PM Agent modules (backlog reviewer, project health monitor, plan validator, digest composer) will depend on the types defined here.
+This is a foundational change to `lib/types.ts` that adds type definitions for the upcoming PM Agent feature. The PM Agent will handle backlog reviews, project health monitoring, plan validation, and digest generation. These types will be imported and used by other PM Agent components once implemented.
 
-`lib/types.ts` already contains shared types for `WorkItem`, `Project`, escalations, and related structures. The new PM Agent types must follow the same conventions: string IDs, ISO date strings, exported interfaces with JSDoc comments.
-
-No existing types should be modified — this is purely additive.
+The existing `lib/types.ts` already contains types like `WorkItem`, `Project`, and source type unions. We need to append new interfaces without modifying any existing exports. The `WorkItem.source` field (if it exists as a union type) needs `'pm-agent'` added as a valid value.
 
 ## Requirements
 
-1. Add `BacklogReviewItem` interface with fields: `workItemId`, `repo`, `title`, `priority`, `recommendation` (`'dispatch' | 'defer' | 'kill'`), `rationale`
-2. Add `BacklogReview` interface with fields: `id`, `timestamp`, `items`, `summary`, `notionPageId?`
-3. Add `ProjectHealth` interface with fields: `projectId`, `projectName`, `status`, `completionRate`, `escalationCount`, `avgTimeInQueue`, `blockedItems`, `flags`, `assessedAt`
-4. Add `ProjectHealthReport` interface as a collection of `ProjectHealth` results with an overall summary field
-5. Add `PlanValidationIssue` interface with fields: `section`, `severity` (`'error' | 'warning'`), `message`
-6. Add `PlanValidation` interface with fields: `projectId`, `valid`, `issues`, `checkedAt`
-7. Add `PMAgentConfig` interface with fields: `enabled`, `sweepSchedule`, `digestRecipient`, `autoReview`
-8. Add `DigestOptions` interface with fields: `period` (`'daily' | 'weekly'`), `includeHealth`, `includeBacklog`, `includeRecommendations`
-9. All 8 types must be exported from `lib/types.ts`
-10. Each type must include a JSDoc comment describing its purpose
-11. `npx tsc --noEmit` must pass with no errors
-12. No existing exports modified or removed
+1. `lib/types.ts` exports `BacklogReview` interface with all specified fields
+2. `lib/types.ts` exports `BacklogRecommendation` interface with all specified fields
+3. `lib/types.ts` exports `ProjectHealth` interface with all specified fields
+4. `lib/types.ts` exports `PlanValidation` interface with all specified fields
+5. `lib/types.ts` exports `PlanValidationIssue` interface with all specified fields
+6. `lib/types.ts` exports `PMAgentConfig` interface with all specified fields
+7. `lib/types.ts` exports `DigestOptions` interface with all specified fields
+8. No `any` types used in any new interface
+9. If `WorkItem.source` is a string union type, `'pm-agent'` is added as a valid value
+10. All existing type exports remain unchanged and backward compatible
+11. `npm run build` passes with no type errors
 
 ## Execution Steps
 
@@ -40,167 +37,100 @@ git checkout main && git pull
 git checkout -b feat/pm-agent-types
 ```
 
-### Step 1: Inspect existing types file
+### Step 1: Inspect current lib/types.ts
 
-Read `lib/types.ts` in full to understand existing conventions, import patterns, and where to append the new types.
+Read the full contents of `lib/types.ts` to understand existing exports and find the `WorkItem.source` field definition.
 
 ```bash
 cat lib/types.ts
 ```
 
-Take note of:
-- How interfaces are ordered and grouped
-- Whether there are barrel exports elsewhere (e.g., `index.ts`) that need updating
-- Existing union type patterns (e.g., how status enums are expressed as string unions)
+### Step 2: Add PM Agent types to lib/types.ts
 
-### Step 2: Append PM Agent types to lib/types.ts
+Append the following type definitions to the end of `lib/types.ts`. Do not modify any existing content.
 
-At the end of `lib/types.ts`, add the following block. Adjust formatting to match the existing file's style (spacing, comment style, etc.).
+If `WorkItem` has a `source` field typed as a string union (e.g., `'manual' | 'github' | 'notion' | ...`), add `'pm-agent'` to that union.
+
+The types to add:
 
 ```typescript
-// ---------------------------------------------------------------------------
-// PM Agent Types
-// ---------------------------------------------------------------------------
-
-/** An individual work item entry within a backlog review, with a triage recommendation. */
-export interface BacklogReviewItem {
-  /** The ID of the work item being reviewed. */
-  workItemId: string;
-  /** The target repository for this work item (e.g., "owner/repo"). */
-  repo: string;
-  /** Human-readable title of the work item. */
-  title: string;
-  /** Priority level of the work item. */
-  priority: string;
-  /** Triage recommendation: dispatch now, defer, or remove from backlog. */
-  recommendation: 'dispatch' | 'defer' | 'kill';
-  /** Rationale explaining the recommendation. */
-  rationale: string;
-}
-
-/** Result of a full backlog review operation across queued work items. */
 export interface BacklogReview {
-  /** Unique identifier for this review run. */
   id: string;
-  /** ISO 8601 timestamp of when the review was performed. */
   timestamp: string;
-  /** Individual item assessments produced during the review. */
-  items: BacklogReviewItem[];
-  /** Human-readable summary of the overall review findings. */
+  repos: string[];
+  totalItemsReviewed: number;
+  recommendations: BacklogRecommendation[];
   summary: string;
-  /** Notion page ID if the review was written to a Notion page. */
   notionPageId?: string;
 }
 
-/** Health assessment for a single project at a point in time. */
+export interface BacklogRecommendation {
+  workItemId: string;
+  action: 'dispatch' | 'defer' | 'kill' | 'escalate';
+  priority: 'high' | 'medium' | 'low';
+  rationale: string;
+}
+
 export interface ProjectHealth {
-  /** The ID of the project being assessed. */
   projectId: string;
-  /** Human-readable name of the project. */
   projectName: string;
-  /** Overall health status of the project. */
-  status: 'healthy' | 'at-risk' | 'stalled' | 'blocked';
-  /** Fraction of work items completed, from 0 (none) to 1 (all). */
+  status: 'healthy' | 'at-risk' | 'stalling' | 'blocked';
   completionRate: number;
-  /** Number of active or recent escalations for this project. */
   escalationCount: number;
-  /** Average time work items spend in the queue, in hours. */
   avgTimeInQueue: number;
-  /** IDs of work items currently in a blocked state. */
-  blockedItems: string[];
-  /** Specific issues or anomalies detected during the assessment. */
-  flags: string[];
-  /** ISO 8601 timestamp of when this assessment was performed. */
-  assessedAt: string;
+  blockedItems: number;
+  totalItems: number;
+  mergedItems: number;
+  failedItems: number;
+  issues: string[];
 }
 
-/** Aggregated health report covering all assessed projects. */
-export interface ProjectHealthReport {
-  /** Individual health assessments keyed by project ID. */
-  projects: ProjectHealth[];
-  /** ISO 8601 timestamp of when the report was generated. */
-  generatedAt: string;
-  /** Human-readable overall summary across all projects. */
-  overallSummary: string;
-}
-
-/** An individual issue found during plan validation. */
-export interface PlanValidationIssue {
-  /** The section or field of the plan where the issue was found. */
-  section: string;
-  /** Severity of the issue: errors block dispatch, warnings are advisory. */
-  severity: 'error' | 'warning';
-  /** Human-readable description of the issue. */
-  message: string;
-}
-
-/** Result of validating a project plan against PM Agent rules. */
 export interface PlanValidation {
-  /** The ID of the project whose plan was validated. */
   projectId: string;
-  /** Whether the plan passed validation (no errors; warnings are allowed). */
   valid: boolean;
-  /** List of issues found during validation. */
   issues: PlanValidationIssue[];
-  /** ISO 8601 timestamp of when validation was performed. */
   checkedAt: string;
 }
 
-/** Configuration controlling PM Agent behaviour and scheduling. */
+export interface PlanValidationIssue {
+  section: string;
+  severity: 'error' | 'warning';
+  message: string;
+}
+
 export interface PMAgentConfig {
-  /** Whether PM Agent operations are active. */
   enabled: boolean;
-  /** Cron expression defining how often the PM Agent sweep runs (e.g., "0 9 * * *" for daily at 9am). */
-  sweepSchedule: string;
-  /** Email address that receives digest and alert emails from the PM Agent. */
-  digestRecipient: string;
-  /** Whether the PM Agent automatically reviews and re-prioritises the backlog each sweep. */
-  autoReview: boolean;
+  dailySweepHour: number;
+  repos: string[];
+  maxRecommendations: number;
 }
 
-/** Options controlling the content and scope of a progress digest. */
 export interface DigestOptions {
-  /** Time period the digest covers. */
-  period: 'daily' | 'weekly';
-  /** Whether to include project health assessments in the digest. */
   includeHealth: boolean;
-  /** Whether to include backlog review results in the digest. */
   includeBacklog: boolean;
-  /** Whether to include triage recommendations in the digest. */
   includeRecommendations: boolean;
+  recipientEmail?: string;
 }
 ```
 
-### Step 3: Verify TypeScript compiles cleanly
-
-```bash
-npx tsc --noEmit
+**Implementation note for the `source` union:** After reading `lib/types.ts`, search for the `source` field on `WorkItem`. It likely looks like:
+```typescript
+source: 'manual' | 'github' | 'pa' | 'project' | ...
 ```
+Add `'pm-agent'` to that union if it exists and does not already include it. If `source` is typed as `string`, no change is needed.
 
-If there are errors, inspect them carefully. Likely causes:
-- A type references another type that doesn't exist yet — double-check spelling against the interfaces just added
-- Formatting broke an adjacent declaration — check the lines immediately before the new block
-
-Fix any issues before proceeding.
-
-### Step 4: Verify no existing exports were modified
-
-```bash
-git diff lib/types.ts
-```
-
-Confirm the diff is **only additions** (lines starting with `+`). No existing exported interfaces or types should show modification (`-` lines on existing declarations).
-
-### Step 5: Verification
+### Step 3: Verification
 
 ```bash
 npx tsc --noEmit
 npm run build
 ```
 
-`npm run build` may produce warnings about unused vars in other files — that is acceptable. It must not fail due to type errors in `lib/types.ts`.
+If there are any type errors, fix them before proceeding. Common issues:
+- Duplicate export names (check that none of the new interface names already exist in the file)
+- Syntax errors from editing (verify the file ends properly)
 
-### Step 6: Commit, push, open PR
+### Step 4: Commit, push, open PR
 
 ```bash
 git add lib/types.ts
@@ -210,31 +140,27 @@ gh pr create \
   --title "feat: A1 PM Agent Types" \
   --body "## Summary
 
-Adds foundational PM Agent type definitions to \`lib/types.ts\`. This is a purely additive change — no existing exports are modified.
+Adds foundational PM Agent type definitions to \`lib/types.ts\`. This is a prerequisite for all other PM Agent components.
 
-### New Types
-- \`BacklogReviewItem\` — individual triage entry within a backlog review
-- \`BacklogReview\` — full result of a backlog review operation
-- \`ProjectHealth\` — health assessment for a single project
-- \`ProjectHealthReport\` — aggregated report across all projects
-- \`PlanValidationIssue\` — individual issue from plan validation
-- \`PlanValidation\` — full plan validation result
-- \`PMAgentConfig\` — PM Agent configuration
-- \`DigestOptions\` — options for progress digest composition
+## New Types Added
+- \`BacklogReview\` — represents a backlog review session with recommendations
+- \`BacklogRecommendation\` — a single action recommendation for a work item
+- \`ProjectHealth\` — health snapshot for a project (completion rate, escalations, etc.)
+- \`PlanValidation\` — result of validating a project plan
+- \`PlanValidationIssue\` — individual issue found during plan validation
+- \`PMAgentConfig\` — configuration for the PM Agent
+- \`DigestOptions\` — options for generating PM Agent digests
 
-All types include JSDoc comments and follow existing conventions (string IDs, ISO date strings, string union literals for status fields).
+## Source Union Update
+Added \`'pm-agent'\` to \`WorkItem.source\` union type if applicable.
 
-### Acceptance Criteria
-- [x] All 8 types exported from \`lib/types.ts\`
-- [x] \`npx tsc --noEmit\` passes
-- [x] No existing exports modified or removed
-- [x] JSDoc on every interface"
+## Risk
+Low — additive changes only. No existing types modified."
 ```
 
 ## Session Abort Protocol
 
 If running low on context or hitting unresolvable errors:
-
 1. Commit and push whatever compiles
 2. Open the PR with partial status
 3. Output structured report
@@ -243,8 +169,28 @@ If running low on context or hitting unresolvable errors:
 STATUS: [PR Open | Failed | Blocked]
 PR: [URL or "none"]
 BRANCH: feat/pm-agent-types
-FILES CHANGED: lib/types.ts
+FILES CHANGED: [lib/types.ts]
 SUMMARY: [what was done]
-ISSUES: [what failed or remains]
-NEXT STEPS: [what remains — e.g., specific interfaces not yet added]
+ISSUES: [what failed]
+NEXT STEPS: [what remains]
+```
+
+## Escalation Protocol
+
+If encountering a blocker that cannot be resolved autonomously (e.g., existing type names conflict with new ones, or the `source` union type structure is ambiguous):
+
+```bash
+curl -X POST "${AGENT_FORGE_URL}/api/escalations" \
+  -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "workItemId": "a1-pm-agent-types",
+    "reason": "<concise description of the blocker>",
+    "confidenceScore": 0.3,
+    "contextSnapshot": {
+      "step": "<current step number>",
+      "error": "<error message or blocker description>",
+      "filesChanged": ["lib/types.ts"]
+    }
+  }'
 ```

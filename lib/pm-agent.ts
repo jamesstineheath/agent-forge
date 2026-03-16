@@ -315,7 +315,7 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
   }
 
   const digestContext: DigestContext = {
-    period: options.period,
+    period: "daily",
     stats: {
       merged: mergedCount,
       failed: failedCount,
