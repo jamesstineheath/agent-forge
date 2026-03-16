@@ -32,6 +32,18 @@ const COMPLEXITY_COLORS: Record<WorkItem["complexity"], string> = {
   complex: "bg-orange-50 text-orange-700",
 };
 
+const SOURCE_COLORS: Record<string, string> = {
+  project: "bg-blue-100 text-blue-800",
+  manual: "bg-gray-100 text-gray-700",
+  direct: "bg-green-100 text-green-800",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  project: "Project",
+  manual: "Manual",
+  direct: "Fast Lane",
+};
+
 interface WorkItemCardProps {
   item: WorkItem;
 }
@@ -44,6 +56,11 @@ export function WorkItemCard({ item }: WorkItemCardProps) {
           <CardTitle className="text-base font-semibold line-clamp-2">
             {item.title}
           </CardTitle>
+          {item.triggeredBy && (
+            <p className="text-xs text-muted-foreground mt-0.5">
+              via {item.triggeredBy}
+            </p>
+          )}
           <p className="text-sm text-muted-foreground">{item.targetRepo}</p>
         </CardHeader>
         <CardContent>
@@ -55,6 +72,11 @@ export function WorkItemCard({ item }: WorkItemCardProps) {
             <Badge className={COMPLEXITY_COLORS[item.complexity]}>
               {item.complexity}
             </Badge>
+            {item.source?.type && SOURCE_COLORS[item.source.type] && (
+              <Badge className={SOURCE_COLORS[item.source.type]}>
+                {SOURCE_LABELS[item.source.type] ?? item.source.type}
+              </Badge>
+            )}
           </div>
         </CardContent>
       </Card>
