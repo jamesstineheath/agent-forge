@@ -175,6 +175,7 @@ export async function sendEscalationEmail(
 export async function sendDecompositionSummary(
   project: Project,
   workItems: WorkItem[],
+  phases?: WorkItem[][],
 ): Promise<string | null> {
   const client = getGmailClient();
   if (!client) {
@@ -240,6 +241,15 @@ export async function sendDecompositionSummary(
         ${depLines.join('<br>')}
       </div>
     </div>
+
+    ${phases && phases.length > 1 ? `
+    <div class="section">
+      <div class="section-title">Phase Structure</div>
+      <div class="section-content dep-list">
+        ${phases.map((phase, idx) => `<strong>Phase ${idx + 1}</strong> (${phase.length} items)<br>${phase.map((item) => `&nbsp;&nbsp;- ${escapeHtml(item.title)}`).join('<br>')}`).join('<br><br>')}
+      </div>
+    </div>
+    ` : ''}
 
     <div class="section">
       <div class="section-title">Dashboard</div>
