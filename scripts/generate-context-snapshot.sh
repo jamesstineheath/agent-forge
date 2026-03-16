@@ -15,6 +15,12 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${REPO_ROOT}"
 
+# Capture all output to a temp file so we can both print it and upload it
+_SNAP_TMP=$(mktemp)
+trap 'rm -f "$_SNAP_TMP"' EXIT
+exec 3>&1              # save original stdout
+exec 1>"$_SNAP_TMP"   # redirect stdout to temp file
+
 # ────────────────────────────────────────────────────────────
 # Header
 # ────────────────────────────────────────────────────────────
@@ -202,5 +208,151 @@ echo ""
 echo "---"
 echo ""
 echo "_End of context snapshot_"
+
+# ── Restore stdout and output the snapshot ───────────────────────────────────
+exec 1>&3 3>&-         # restore original stdout
+cat "$_SNAP_TMP"       # write snapshot to original stdout
+
+# ── Notion Upload ─────────────────────────────────────────────────────────────
+
+upload_to_notion() {
+  local content="$1"
+
+  # Check for jq
+  if ! command -v jq &>/dev/null; then
+    echo "Warning: jq not found, skipping Notion upload" >&2
+    return 0
+  fi
+
+  # Check env vars
+  if [[ -z "${NOTION_API_KEY:-}" || -z "${NOTION_CONTEXT_PAGE_ID:-}" ]]; then
+    echo "Notion env vars not set, skipping upload"
+    return 0
+  fi
+
+  local PAGE_ID="$NOTION_CONTEXT_PAGE_ID"
+  local AUTH_HEADER="Authorization: Bearer $NOTION_API_KEY"
+  local VERSION_HEADER="Notion-Version: 2022-06-28"
+  local CONTENT_HEADER="Content-Type: application/json"
+  local API_BASE="https://api.notion.com/v1"
+
+  echo "Fetching existing child blocks from Notion page ${PAGE_ID}..." >&2
+
+  # 1. GET existing children
+  local children_response
+  children_response=$(curl -s -w "\n%{http_code}" \
+    -H "$AUTH_HEADER" \
+    -H "$VERSION_HEADER" \
+    "${API_BASE}/blocks/${PAGE_ID}/children?page_size=100")
+
+  local children_body children_status
+  children_status=$(echo "$children_response" | tail -n1)
+  children_body=$(echo "$children_response" | sed '$d')
+
+  if [[ "$children_status" != "200" ]]; then
+    echo "Error fetching Notion children (HTTP $children_status): $children_body" >&2
+    return 0
+  fi
+
+  # 2. Delete each existing child block
+  local block_ids
+  block_ids=$(echo "$children_body" | jq -r '.results[].id // empty')
+
+  if [[ -n "$block_ids" ]]; then
+    echo "Deleting existing blocks..." >&2
+    while IFS= read -r block_id; do
+      local del_status
+      del_status=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X DELETE \
+        -H "$AUTH_HEADER" \
+        -H "$VERSION_HEADER" \
+        "${API_BASE}/blocks/${block_id}")
+      if [[ "$del_status" != "200" ]]; then
+        echo "Warning: failed to delete block ${block_id} (HTTP $del_status)" >&2
+      fi
+    done <<< "$block_ids"
+  fi
+
+  # 3. Convert markdown to Notion block JSON array
+  local blocks_file
+  blocks_file=$(mktemp)
+  echo "[]" > "$blocks_file"
+
+  while IFS= read -r line; do
+    local block_json
+
+    if [[ "$line" =~ ^##[[:space:]](.+)$ ]]; then
+      # heading_2 block
+      local heading_text="${BASH_REMATCH[1]}"
+      heading_text="${heading_text:0:2000}"
+      block_json=$(jq -n \
+        --arg text "$heading_text" \
+        '{type:"heading_2", heading_2:{rich_text:[{type:"text",text:{content:$text}}]}}')
+    elif [[ -n "$line" ]]; then
+      # paragraph block — split long lines into ≤2000-char chunks
+      local remaining="$line"
+      while [[ ${#remaining} -gt 0 ]]; do
+        local chunk="${remaining:0:2000}"
+        remaining="${remaining:2000}"
+        block_json=$(jq -n \
+          --arg text "$chunk" \
+          '{type:"paragraph", paragraph:{rich_text:[{type:"text",text:{content:$text}}]}}')
+        local blocks_file_tmp
+        blocks_file_tmp=$(mktemp)
+        jq --argjson block "$block_json" '. + [$block]' "$blocks_file" > "$blocks_file_tmp"
+        mv "$blocks_file_tmp" "$blocks_file"
+      done
+      continue
+    else
+      continue
+    fi
+
+    local blocks_file_tmp
+    blocks_file_tmp=$(mktemp)
+    jq --argjson block "$block_json" '. + [$block]' "$blocks_file" > "$blocks_file_tmp"
+    mv "$blocks_file_tmp" "$blocks_file"
+
+  done <<< "$content"
+
+  # 4. Batch append in groups of 100
+  local total_blocks
+  total_blocks=$(jq 'length' "$blocks_file")
+  echo "Appending ${total_blocks} blocks to Notion page (batches of 100)..." >&2
+
+  local offset=0
+  while [[ $offset -lt $total_blocks ]]; do
+    local batch
+    batch=$(jq --argjson offset "$offset" '.[$offset:$offset+100]' "$blocks_file")
+
+    local payload
+    payload=$(jq -n --argjson children "$batch" '{children: $children}')
+
+    local append_response append_status append_body
+    append_response=$(curl -s -w "\n%{http_code}" \
+      -X PATCH \
+      -H "$AUTH_HEADER" \
+      -H "$VERSION_HEADER" \
+      -H "$CONTENT_HEADER" \
+      -d "$payload" \
+      "${API_BASE}/blocks/${PAGE_ID}/children")
+
+    append_status=$(echo "$append_response" | tail -n1)
+    append_body=$(echo "$append_response" | sed '$d')
+
+    if [[ "$append_status" != "200" ]]; then
+      echo "Error appending blocks at offset ${offset} (HTTP $append_status): $append_body" >&2
+    else
+      echo "Appended batch at offset ${offset} ($(echo "$batch" | jq 'length') blocks)" >&2
+    fi
+
+    offset=$((offset + 100))
+  done
+
+  rm -f "$blocks_file"
+  echo "Notion upload complete." >&2
+}
+
+# Call the upload function with the assembled snapshot content
+upload_to_notion "$(cat "$_SNAP_TMP")"
 
 exit 0
