@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { validateAuth } from "@/lib/api-auth";
 import { getWorkItem, updateWorkItem, deleteWorkItem } from "@/lib/work-items";
 import { updateWorkItemSchema } from "@/lib/types";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authError = await validateAuth(req, "WORK_ITEMS_API_KEY");
+  if (authError) return authError;
 
   const { id } = await params;
   try {
@@ -28,10 +26,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authError = await validateAuth(req, "WORK_ITEMS_API_KEY");
+  if (authError) return authError;
 
   const { id } = await params;
 
@@ -62,13 +58,11 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authError = await validateAuth(req, "WORK_ITEMS_API_KEY");
+  if (authError) return authError;
 
   const { id } = await params;
   try {
