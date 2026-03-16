@@ -15,6 +15,8 @@ const ATC_EVENTS_KEY = "atc/events";
 const ATC_BRANCH_CLEANUP_KEY = "atc/last-branch-cleanup";
 const ATC_LOCK_KEY = "atc/cycle-lock";
 const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const LOCK_HARD_CEILING_MS = 10 * 60 * 1000; // 10 minutes — force-clear zombie locks
+const CYCLE_TIMEOUT_MS = 55 * 1000; // 55s — abort before Vercel's 60s kill
 const STALL_TIMEOUT_MINUTES = 30;
 const MAX_EVENTS = 200;
 const CLEANUP_THROTTLE_MINUTES = 60;
@@ -29,16 +31,26 @@ const MAX_BRANCHES_PER_REPO = 20;
  */
 export async function acquireATCLock(): Promise<boolean> {
   const existing = await loadJson<{ acquiredAt: string; id: string }>(ATC_LOCK_KEY);
+
   if (existing) {
     const age = Date.now() - new Date(existing.acquiredAt).getTime();
-    if (age < LOCK_TTL_MS) {
+
+    if (age >= LOCK_HARD_CEILING_MS) {
+      console.warn(
+        `[atc] Lock exceeded hard ceiling (age: ${Math.round(age / 1000)}s). Force-clearing.`,
+      );
+      await deleteJson(ATC_LOCK_KEY);
+    } else if (age < LOCK_TTL_MS) {
       console.log(`[atc] Cycle lock held (age: ${Math.round(age / 1000)}s). Skipping.`);
       return false;
+    } else {
+      console.log(`[atc] Expired lock found (age: ${Math.round(age / 1000)}s). Clearing before re-acquire.`);
+      await deleteJson(ATC_LOCK_KEY);
     }
   }
+
   const lockId = randomUUID();
   await saveJson(ATC_LOCK_KEY, { acquiredAt: new Date().toISOString(), id: lockId });
-  // Re-read to check for race (optimistic lock)
   const reread = await loadJson<{ id: string }>(ATC_LOCK_KEY);
   return reread?.id === lockId;
 }
@@ -58,13 +70,37 @@ function hasFileOverlap(filesA: string[], filesB: string[]): boolean {
   return filesA.some(f => setB.has(f));
 }
 
+class CycleTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`ATC cycle timed out after ${ms}ms`);
+    this.name = 'CycleTimeoutError';
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new CycleTimeoutError(ms)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
+
 export async function runATCCycle(): Promise<ATCState> {
   const locked = await acquireATCLock();
   if (!locked) {
-    return await getATCState(); // Return last known state
+    return await getATCState();
   }
+
   try {
-    return await _runATCCycleInner();
+    return await withTimeout(_runATCCycleInner(), CYCLE_TIMEOUT_MS);
+  } catch (err) {
+    if (err instanceof CycleTimeoutError) {
+      console.error(`[atc] Cycle aborted after ${CYCLE_TIMEOUT_MS / 1000}s timeout.`);
+      return await getATCState();
+    }
+    throw err;
   } finally {
     await releaseATCLock();
   }
