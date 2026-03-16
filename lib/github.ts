@@ -210,6 +210,26 @@ export async function getPRFiles(repo: string, prNumber: number): Promise<string
   return files.map(f => f.filename);
 }
 
+export async function getPRByNumber(repo: string, prNumber: number): Promise<PR | null> {
+  const url = `${GITHUB_API}/repos/${repo}/pulls/${prNumber}`;
+  const res = await ghFetch(url);
+  if (!res.ok) return null;
+  const pr = (await res.json()) as {
+    number: number;
+    title: string;
+    state: string;
+    html_url: string;
+    merged_at: string | null;
+  };
+  return {
+    number: pr.number,
+    title: pr.title,
+    state: pr.state,
+    htmlUrl: pr.html_url,
+    mergedAt: pr.merged_at,
+  };
+}
+
 export async function getPRByBranch(repo: string, branch: string): Promise<PR | null> {
   const url = `${GITHUB_API}/repos/${repo}/pulls?head=${encodeURIComponent(
     `${repo.split("/")[0]}:${branch}`

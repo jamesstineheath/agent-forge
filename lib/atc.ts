@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { loadJson, saveJson, deleteJson } from "./storage";
 import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
-import { getWorkflowRuns, getPRByBranch, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
+import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, WorkItem } from "./types";
 import { getExecuteProjects, transitionToExecuting, transitionToFailed } from "./projects";
@@ -298,6 +298,54 @@ async function _runATCCycleInner(): Promise<ATCState> {
         "timeout", item.id, "generating", "failed",
         `Handoff generation stalled for ${Math.round(elapsed)} minutes (reason: generating_timeout)`
       ));
+    }
+  }
+
+  // 2.8: Failed work item PR reconciliation
+  // A work item can be marked "failed" due to a workflow step failure (e.g., "Report results" bash error)
+  // even though its PR actually merged. Check all failed items with a prNumber — if the PR merged,
+  // reconcile the work item to "merged".
+  const failedEntries = await listWorkItems({ status: "failed" });
+  for (const entry of failedEntries) {
+    const item = await getWorkItem(entry.id);
+    if (!item || !item.execution?.prNumber) continue;
+
+    try {
+      const pr = await getPRByNumber(item.targetRepo, item.execution.prNumber);
+      if (pr?.mergedAt) {
+        await updateWorkItem(item.id, {
+          status: "merged",
+          execution: {
+            ...item.execution,
+            prUrl: pr.htmlUrl,
+            completedAt: pr.mergedAt,
+            outcome: "merged",
+          },
+        });
+        events.push(makeEvent(
+          "work_item_reconciled", item.id, "failed", "merged",
+          `Reconciled: work item was "failed" but PR #${pr.number} is merged (merged at ${pr.mergedAt})`
+        ));
+      } else if (!pr || (pr.state === "closed" && !pr.mergedAt)) {
+        // PR is closed without merge or doesn't exist — genuinely failed, leave as-is
+      } else if (pr.state === "open") {
+        // PR is still open — the work item might still be in progress, move back to reviewing
+        await updateWorkItem(item.id, {
+          status: "reviewing",
+          execution: {
+            ...item.execution,
+            prUrl: pr.htmlUrl,
+            outcome: undefined,
+            completedAt: undefined,
+          },
+        });
+        events.push(makeEvent(
+          "work_item_reconciled", item.id, "failed", "reviewing",
+          `Reconciled: work item was "failed" but PR #${pr.number} is still open — moved to reviewing`
+        ));
+      }
+    } catch (err) {
+      console.error(`[atc] PR reconciliation failed for work item ${item.id}:`, err);
     }
   }
 
@@ -822,52 +870,74 @@ async function _runATCCycleInner(): Promise<ATCState> {
     console.error("[atc] Escalation reminder check failed:", err);
   }
 
-  // Section 13: Project completion detection
+  // Section 13: Project lifecycle management
+  // 13a: Stuck "Executing" recovery — projects that transitioned to Executing but never decomposed
+  //      (e.g., ATC cycle timed out before reaching Section 4.5). Reset to "Execute" so next cycle retries.
+  // 13b: Project completion detection — when all work items reach terminal state, update Notion accordingly.
   try {
     const { listProjects, transitionToComplete, transitionToFailed } = await import("./projects");
+    const { updateProjectStatus } = await import("./notion");
     const executingProjects = await listProjects("Executing");
+
+    // Cache the full work item list once (avoid repeated list calls per project)
+    const allItemEntries = await listWorkItems({});
+    const allItemsById = new Map<string, WorkItem>();
+    for (const entry of allItemEntries) {
+      const item = await getWorkItem(entry.id);
+      if (item) allItemsById.set(item.id, item);
+    }
 
     for (const project of executingProjects) {
       // Find all work items for this project
-      const allItems = await listWorkItems({});
-      const projectItems: WorkItem[] = [];
-      for (const entry of allItems) {
-        const item = await getWorkItem(entry.id);
-        if (item && item.source.type === "project" && item.source.sourceId === project.projectId) {
-          projectItems.push(item);
+      const projectItems = [...allItemsById.values()].filter(
+        (item) => item.source.type === "project" && item.source.sourceId === project.projectId
+      );
+
+      // 13a: Stuck Executing recovery
+      if (projectItems.length === 0) {
+        const dedupKey = `atc/project-decomposed/${project.projectId}`;
+        const hasDedup = await loadJson<{ decomposedAt: string }>(dedupKey);
+        if (!hasDedup) {
+          // No dedup guard + no work items = decomposition never ran. Reset to Execute.
+          await updateProjectStatus(project.id, "Execute");
+          events.push(makeEvent(
+            "project_trigger", project.projectId, "Executing", "Execute",
+            `Stuck recovery: project "${project.title}" was Executing with no work items and no dedup guard. Reset to Execute for re-decomposition.`
+          ));
         }
+        // If dedup exists but 0 items, the partial-failure recovery in Section 4.5 handles it
+        continue;
       }
 
-      // Skip if no work items yet (decomposition pending)
-      if (projectItems.length === 0) continue;
-
+      // 13b: Project completion detection
       const terminalStatuses = ["merged", "parked", "failed", "cancelled"];
       const allTerminal = projectItems.every((item) => terminalStatuses.includes(item.status));
       if (!allTerminal) continue;
 
-      const hasFailed = projectItems.some((item) => item.status === "failed");
-      if (hasFailed) {
+      const failedItems = projectItems.filter((i) => i.status === "failed");
+      const mergedItems = projectItems.filter((i) => i.status === "merged");
+      const parkedItems = projectItems.filter((i) => i.status === "parked");
+      const cancelledItems = projectItems.filter((i) => i.status === "cancelled");
+
+      // A project is "complete" if it has at least one merged item and no failed items
+      // (parked/cancelled items are acceptable — they were intentionally set aside)
+      if (failedItems.length > 0) {
         await transitionToFailed(project);
         events.push(makeEvent(
-          "project_trigger",
-          project.projectId,
-          "Executing",
-          "Failed",
-          `Project "${project.title}" failed: ${projectItems.filter(i => i.status === "failed").length} work items failed`
+          "project_completion", project.projectId, "Executing", "Failed",
+          `Project "${project.title}" failed: ${failedItems.length} failed, ${mergedItems.length} merged, ${parkedItems.length} parked, ${cancelledItems.length} cancelled`
         ));
-      } else {
+      } else if (mergedItems.length > 0) {
         await transitionToComplete(project);
         events.push(makeEvent(
-          "project_trigger",
-          project.projectId,
-          "Executing",
-          "Complete",
-          `Project "${project.title}" complete: ${projectItems.filter(i => i.status === "merged").length} merged, ${projectItems.filter(i => i.status === "parked").length} parked`
+          "project_completion", project.projectId, "Executing", "Complete",
+          `Project "${project.title}" complete: ${mergedItems.length} merged, ${parkedItems.length} parked, ${cancelledItems.length} cancelled`
         ));
       }
+      // Edge case: all items parked/cancelled, none merged — leave as Executing for human review
     }
   } catch (err) {
-    console.error("[atc] Project completion detection failed:", err);
+    console.error("[atc] Project lifecycle management failed:", err);
   }
 
   // Save events if Gmail sections produced any

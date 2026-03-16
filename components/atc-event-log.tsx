@@ -15,6 +15,8 @@ const EVENT_COLORS: Record<ATCEvent["type"], string> = {
   error: "bg-red-100 text-red-700",
   cleanup: "bg-teal-100 text-teal-700",
   project_trigger: "bg-indigo-100 text-indigo-700",
+  project_completion: "bg-emerald-100 text-emerald-700",
+  work_item_reconciled: "bg-cyan-100 text-cyan-700",
   escalation: "bg-red-100 text-red-700",
   escalation_timeout: "bg-red-200 text-red-800",
   escalation_resolved: "bg-green-100 text-green-700",
