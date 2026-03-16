@@ -65,12 +65,12 @@ export function EscalationCard({
           <span className="text-sm font-medium text-zinc-200">
             {workItemTitle ?? escalation.workItemId}
           </span>
-          <span className="text-[10px] text-zinc-500">
+          <span className="text-[10px] text-zinc-400">
             {escalation.projectId && <>{escalation.projectId} &middot; </>}
             {formatRelativeTime(escalation.createdAt)}
           </span>
         </div>
-        <div className="text-xs text-zinc-500 mb-2">{escalation.reason}</div>
+        <div className="text-xs text-zinc-400 mb-2">{escalation.reason}</div>
         <div className="flex gap-2">
           <button
             onClick={handleResolve}

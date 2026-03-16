@@ -15,7 +15,7 @@ import {
 import type { WorkItem } from "@/lib/types";
 
 function formatRelativeTime(ts?: string): string {
-  if (!ts) return "—";
+  if (!ts) return "\u2014";
   const ms = Date.now() - new Date(ts).getTime();
   const minutes = Math.floor(ms / 60000);
   if (minutes < 1) return "just now";
@@ -36,7 +36,7 @@ function SystemHealth({
 }) {
   if (atcLoading) {
     return (
-      <div className="text-xs text-zinc-500">Loading system status...</div>
+      <div className="text-xs text-zinc-400">Loading system status...</div>
     );
   }
 
@@ -56,11 +56,11 @@ function SystemHealth({
     : `Concurrency: 0 active`;
 
   return (
-    <div className="flex items-center gap-4 text-xs text-zinc-500 px-1 py-2">
+    <div className="flex items-center gap-4 text-xs text-zinc-400 px-1 py-2">
       <div className="flex items-center gap-1.5">
         <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
         <span>ATC: {atcState ? "healthy" : "unknown"}</span>
-        <span className="text-zinc-700">
+        <span className="text-zinc-600">
           &middot; last sweep {formatRelativeTime(atcState?.lastRunAt)}
         </span>
       </div>
@@ -145,7 +145,7 @@ export default function DashboardPage() {
 
       {/* Quick Stats */}
       {itemsLoading ? (
-        <div className="text-sm text-zinc-500">Loading stats...</div>
+        <div className="text-sm text-zinc-400">Loading stats...</div>
       ) : (
         <QuickStats workItems={workItems ?? []} />
       )}
@@ -153,7 +153,7 @@ export default function DashboardPage() {
       {/* Needs Attention (Escalations) */}
       {!escalationsLoading && escalations && escalations.length > 0 && (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
             Needs attention
           </div>
           <div className="space-y-2">
@@ -178,7 +178,7 @@ export default function DashboardPage() {
       {/* Projects */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
             Projects
           </div>
           <button className="text-xs text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1">
@@ -186,9 +186,9 @@ export default function DashboardPage() {
           </button>
         </div>
         {projectsLoading ? (
-          <div className="text-sm text-zinc-500">Loading projects...</div>
+          <div className="text-sm text-zinc-400">Loading projects...</div>
         ) : !projects || projects.length === 0 ? (
-          <div className="text-sm text-zinc-500">
+          <div className="text-sm text-zinc-400">
             No projects found. Projects are managed in Notion.
           </div>
         ) : (
@@ -209,17 +209,17 @@ export default function DashboardPage() {
       {/* Merged Today */}
       {mergedToday.length > 0 && (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
             Merged today
           </div>
           {mergedToday.map((item) => (
             <div
               key={item.id}
-              className="flex items-center gap-2 text-sm text-zinc-400 py-1"
+              className="flex items-center gap-2 text-sm text-zinc-300 py-1"
             >
               <CheckCircle2 size={14} className="text-emerald-400" />
               <span>{item.title}</span>
-              <span className="text-xs text-zinc-600 ml-auto">
+              <span className="text-xs text-zinc-500 ml-auto">
                 {item.targetRepo} &middot;{" "}
                 {formatRelativeTime(item.execution?.completedAt)}
               </span>

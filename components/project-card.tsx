@@ -27,12 +27,12 @@ const statusColor = (s: string) =>
     reviewing: "text-blue-400",
     executing: "text-amber-400",
     generating: "text-amber-400",
-    queued: "text-zinc-500",
-    ready: "text-zinc-500",
+    queued: "text-zinc-400",
+    ready: "text-zinc-400",
     blocked: "text-orange-400",
     failed: "text-red-400",
-    draft: "text-zinc-600",
-  })[s] || "text-zinc-500";
+    draft: "text-zinc-500",
+  })[s] || "text-zinc-400";
 
 const statusBg = (s: string) =>
   ({
@@ -110,7 +110,7 @@ function WorkItemMeta({ item }: { item: WorkItem }) {
   }
   if (item.status === "blocked" && item.escalation?.reason) {
     return (
-      <span className="text-xs text-zinc-600">{item.escalation.reason}</span>
+      <span className="text-xs text-zinc-500">{item.escalation.reason}</span>
     );
   }
   if (item.status === "failed") {
@@ -173,9 +173,9 @@ export function ProjectCard({
       >
         <div className="mt-0.5">
           {expanded ? (
-            <ChevronDown size={16} className="text-zinc-500" />
+            <ChevronDown size={16} className="text-zinc-400" />
           ) : (
-            <ChevronRight size={16} className="text-zinc-500" />
+            <ChevronRight size={16} className="text-zinc-400" />
           )}
         </div>
         <div className="flex-1 min-w-0">
@@ -207,8 +207,8 @@ export function ProjectCard({
               </span>
             )}
           </div>
-          <div className="text-xs text-zinc-600 mb-2">
-            {project.targetRepo} &middot; {project.id}
+          <div className="text-xs text-zinc-500 mb-2">
+            {project.targetRepo} &middot; {project.projectId}
           </div>
           <ProgressBar
             total={workItems.length}
@@ -219,27 +219,35 @@ export function ProjectCard({
           />
         </div>
       </button>
-      {expanded && workItems.length > 0 && (
+      {expanded && (
         <div className="border-t border-zinc-800 px-4 py-2">
-          {workItems.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-2.5 py-1.5 text-sm"
-            >
-              <StatusIcon status={item.status} />
-              <span
-                className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
+          {workItems.length > 0 ? (
+            workItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-2.5 py-1.5 text-sm"
               >
-                {item.title}
-              </span>
-              {item.handoff?.budget != null && item.execution && (
-                <span className="text-[11px] text-zinc-600">
-                  ${item.handoff.budget.toFixed(2)}
+                <StatusIcon status={item.status} />
+                <span
+                  className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
+                >
+                  {item.title}
                 </span>
-              )}
-              <WorkItemMeta item={item} />
+                {item.handoff?.budget != null && item.execution && (
+                  <span className="text-[11px] text-zinc-500">
+                    ${item.handoff.budget.toFixed(2)}
+                  </span>
+                )}
+                <WorkItemMeta item={item} />
+              </div>
+            ))
+          ) : (
+            <div className="py-2 text-xs text-zinc-500">
+              No work items linked to this project yet. Work items with{" "}
+              <code className="text-zinc-400">source.sourceId: &quot;{project.projectId}&quot;</code>{" "}
+              will appear here.
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

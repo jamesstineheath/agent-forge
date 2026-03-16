@@ -83,7 +83,7 @@ export function QuickStats({ workItems }: QuickStatsProps) {
           className="rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-center"
         >
           <div className={`text-lg font-bold ${stat.color}`}>{stat.value}</div>
-          <div className="text-[11px] text-zinc-500">{stat.label}</div>
+          <div className="text-[11px] text-zinc-400">{stat.label}</div>
         </div>
       ))}
     </div>
