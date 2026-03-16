@@ -290,3 +290,108 @@ export async function getBranchLastCommitDate(
   if (commits.length === 0) return null;
   return commits[0].commit.committer.date;
 }
+
+export async function createGitHubRepo(options: {
+  name: string;
+  private?: boolean;
+  description?: string;
+  autoInit?: boolean;
+}): Promise<{ full_name: string; html_url: string; id: number; default_branch: string }> {
+  const res = await ghFetch(`${GITHUB_API}/user/repos`, {
+    method: "POST",
+    body: JSON.stringify({
+      name: options.name,
+      private: options.private ?? false,
+      description: options.description,
+      auto_init: options.autoInit ?? true,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to create repo: ${res.status} ${err}`);
+  }
+  const data = (await res.json()) as {
+    full_name: string;
+    html_url: string;
+    id: number;
+    default_branch: string;
+  };
+  return data;
+}
+
+export async function getRepoPublicKey(
+  owner: string,
+  repo: string
+): Promise<{ key_id: string; key: string }> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/actions/secrets/public-key`
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to get repo public key: ${res.status} ${err}`);
+  }
+  return (await res.json()) as { key_id: string; key: string };
+}
+
+export async function setRepoSecret(
+  owner: string,
+  repo: string,
+  secretName: string,
+  encryptedValue: string,
+  keyId: string
+): Promise<void> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/actions/secrets/${secretName}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        encrypted_value: encryptedValue,
+        key_id: keyId,
+      }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to set secret ${secretName}: ${res.status} ${err}`);
+  }
+}
+
+export async function setActionsPermissions(
+  owner: string,
+  repo: string
+): Promise<void> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/actions/permissions`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        enabled: true,
+        allowed_actions: "all",
+      }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to set actions permissions: ${res.status} ${err}`);
+  }
+}
+
+export async function setDefaultWorkflowPermissions(
+  owner: string,
+  repo: string
+): Promise<void> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/actions/permissions/workflow`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        default_workflow_permissions: "write",
+        can_approve_pull_request_reviews: true,
+      }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to set workflow permissions: ${res.status} ${err}`);
+  }
+}

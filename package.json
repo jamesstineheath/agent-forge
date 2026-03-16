@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "googleapis": "^171.4.0",
     "jose": "^6.2.1",
+    "libsodium-wrappers": "^0.8.2",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "next-auth": "^5.0.0-beta.30",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
