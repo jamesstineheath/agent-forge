@@ -17,7 +17,7 @@ export function ProgressBar({
 }: ProgressBarProps) {
   if (total === 0) {
     return (
-      <div className="text-xs text-zinc-600">No work items yet</div>
+      <div className="text-xs text-zinc-500">No work items yet</div>
     );
   }
 
@@ -51,7 +51,7 @@ export function ProgressBar({
           />
         )}
       </div>
-      <div className="flex gap-3 mt-1.5 text-xs text-zinc-500">
+      <div className="flex gap-3 mt-1.5 text-xs text-zinc-400">
         {completed > 0 && (
           <span className="text-emerald-400">{completed} done</span>
         )}
