@@ -222,6 +222,29 @@ function loadCodebaseContext(): {
   return { systemMap, adrSummaries, reviewMemory };
 }
 
+async function hasRecentTLMComment(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  marker: string,
+  withinMinutes: number = 10
+): Promise<boolean> {
+  const { data: reviews } = await octokit.rest.pulls.listReviews({
+    owner,
+    repo,
+    pull_number: prNumber,
+    per_page: 20,
+  });
+
+  const cutoff = Date.now() - withinMinutes * 60 * 1000;
+  return reviews.some(
+    (r) =>
+      r.body?.includes(marker) &&
+      new Date(r.submitted_at ?? 0).getTime() > cutoff
+  );
+}
+
 async function checkCIStatus(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
@@ -250,22 +273,29 @@ async function checkCIStatus(
   if (failedChecks.length > 0) {
     core.info(`CI failing: ${failedChecks.map((c) => c.name).join(", ")}`);
 
-    await octokit.rest.pulls.createReview({
-      owner,
-      repo,
-      pull_number: prNumber,
-      body: [
-        "## TLM Review: CI Failing",
-        "",
-        "CI is failing. Deferring code review until CI passes.",
-        "",
-        "Failing checks:",
-        ...failedChecks.map((c) => `- \`${c.name}\`: ${c.conclusion}`),
-        "",
-        "*Will automatically re-review when CI completes (via check_suite trigger).*",
-      ].join("\n"),
-      event: "COMMENT",
-    });
+    const alreadyPostedFailing = await hasRecentTLMComment(
+      octokit, owner, repo, prNumber, "TLM Review: CI Failing"
+    );
+    if (!alreadyPostedFailing) {
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        body: [
+          "## TLM Review: CI Failing",
+          "",
+          "CI is failing. Deferring code review until CI passes.",
+          "",
+          "Failing checks:",
+          ...failedChecks.map((c) => `- \`${c.name}\`: ${c.conclusion}`),
+          "",
+          "*Will automatically re-review when CI completes (via check_suite trigger).*",
+        ].join("\n"),
+        event: "COMMENT",
+      });
+    } else {
+      core.info("Skipping duplicate CI Failing comment (recent one exists).");
+    }
     return "failing";
   }
 
@@ -275,20 +305,27 @@ async function checkCIStatus(
   if (pendingChecks.length > 0) {
     core.info(`CI still running: ${pendingChecks.map((c) => c.name).join(", ")}`);
 
-    await octokit.rest.pulls.createReview({
-      owner,
-      repo,
-      pull_number: prNumber,
-      body: [
-        "## TLM Review: CI Pending",
-        "",
-        "CI still running. Will review on check_suite completion.",
-        "",
-        "Pending checks:",
-        ...pendingChecks.map((c) => `- \`${c.name}\`: ${c.status}`),
-      ].join("\n"),
-      event: "COMMENT",
-    });
+    const alreadyPostedPending = await hasRecentTLMComment(
+      octokit, owner, repo, prNumber, "TLM Review: CI Pending"
+    );
+    if (!alreadyPostedPending) {
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        body: [
+          "## TLM Review: CI Pending",
+          "",
+          "CI still running. Will review on check_suite completion.",
+          "",
+          "Pending checks:",
+          ...pendingChecks.map((c) => `- \`${c.name}\`: ${c.status}`),
+        ].join("\n"),
+        event: "COMMENT",
+      });
+    } else {
+      core.info("Skipping duplicate CI Pending comment (recent one exists).");
+    }
     return "pending";
   }
 
@@ -367,6 +404,30 @@ async function run(): Promise<void> {
 
     // Pipeline PRs from github-actions[bot] must be reviewed by TLM.
     // Bot-skip logic removed to allow TLM to review all non-draft PRs.
+
+    // Early exit: on check_suite, only proceed if ALL non-TLM checks have concluded
+    if (context.eventName === "check_suite") {
+      const { data: checkRuns } = await octokit.rest.checks.listForRef({
+        owner,
+        repo,
+        ref: pr.head.sha,
+      });
+
+      const ciChecks = checkRuns.check_runs.filter(
+        (cr) => !cr.name.toLowerCase().includes("tlm") && !cr.name.toLowerCase().includes("code review")
+      );
+
+      const stillRunning = ciChecks.filter(
+        (cr) => cr.status === "in_progress" || cr.status === "queued"
+      );
+
+      if (stillRunning.length > 0) {
+        core.info(
+          `check_suite event but ${stillRunning.length} CI check(s) still running: ${stillRunning.map((c) => c.name).join(", ")}. Skipping — will re-trigger on next suite completion.`
+        );
+        return;
+      }
+    }
 
     // Fetch the diff
     const { data: diffData } = await octokit.rest.pulls.get({
