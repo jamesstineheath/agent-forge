@@ -7,6 +7,10 @@ export type ComplexityHint = 'simple' | 'moderate';
 export const FAST_LANE_BUDGET_SIMPLE = 2;
 export const FAST_LANE_BUDGET_MODERATE = 4;
 
+// --- Failure categorization ---
+
+export type FailureCategory = 'transient' | 'execution' | 'structural' | 'unknown';
+
 // --- WorkItem ---
 
 export interface WorkItem {
@@ -58,6 +62,7 @@ export interface WorkItem {
   };
   triggeredBy?: string;
   complexityHint?: ComplexityHint;
+  failureCategory?: FailureCategory;
   createdAt: string;
   updatedAt: string;
 }
