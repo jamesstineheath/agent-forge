@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runATCCycle } from "@/lib/atc";
 
+export const maxDuration = 300; // Vercel Fluid Compute: 300s max for Hobby plan
+
 async function handleCron(req: NextRequest) {
   const authHeader = req.headers.get("Authorization");
   const cronSecret = process.env.CRON_SECRET;
