@@ -584,9 +584,23 @@ async function run(): Promise<void> {
     }
 
     // Apply the transition using resilient handler (handles out-of-order events)
+    const preTransitionState = lifecycle.state;
     try {
       lifecycle = applyTransitionResilient(lifecycle, event, details);
       core.info(`Transitioned to: ${lifecycle.state}`);
+
+      // Log fast-path merges where intermediate states were skipped
+      if (
+        event.type === "pr_merged" &&
+        lifecycle.state === HandoffState.Merged &&
+        preTransitionState !== HandoffState.CodeReviewComplete &&
+        preTransitionState !== HandoffState.NeedsHumanReview &&
+        preTransitionState !== HandoffState.CIPassed
+      ) {
+        core.warning(
+          `[orchestrator] Fast-path merge: ${preTransitionState} → Merged (skipped intermediate states)`
+        );
+      }
     } catch (error) {
       core.warning(`State transition failed: ${error}`);
       // Log but don't fail the workflow - the orchestrator is observational
