@@ -182,7 +182,7 @@ export default function WorkItemDetailPage({ params }: Props) {
             </div>
             <div>
               <dt className="text-muted-foreground">Source</dt>
-              <dd className="font-medium">{item.source.type}</dd>
+              <dd className="font-medium">{item.source?.type ?? "unknown"}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Created</dt>

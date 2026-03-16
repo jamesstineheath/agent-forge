@@ -105,7 +105,7 @@ export default function DashboardPage() {
     return (
       workItems?.filter(
         (wi) =>
-          wi.source.type === "project" && wi.source.sourceId === projectId
+          wi.source?.type === "project" && wi.source?.sourceId === projectId
       ) ?? []
     );
   };
