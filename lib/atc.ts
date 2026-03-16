@@ -353,6 +353,68 @@ async function _runATCCycleInner(): Promise<ATCState> {
         }
       }
     }
+
+    // --- Direct-source item dispatch ---
+    // Direct items (source='direct') have no project, no dependency graph.
+    // Pick up items in 'filed' or 'ready' status and dispatch if repo has capacity.
+    const [directFiledEntries, directReadyEntries] = await Promise.all([
+      listWorkItems({ status: "filed" }),
+      listWorkItems({ status: "ready" }),
+    ]);
+    const directCandidateEntries = [...directFiledEntries, ...directReadyEntries];
+
+    // Build repo config lookup by fullName for concurrency checks
+    const repoConfigByName = new Map<string, { concurrencyLimit: number }>();
+    for (const repoEntry of repoIndex) {
+      const repo = await getRepo(repoEntry.id);
+      if (repo) repoConfigByName.set(repo.fullName, repo);
+    }
+
+    for (const entry of directCandidateEntries) {
+      if (slotsRemaining <= 0) break;
+
+      const item = await getWorkItem(entry.id);
+      if (!item || item.source.type !== "direct") continue;
+
+      const activeForRepo = concurrencyMap.get(item.targetRepo) ?? 0;
+      const repoConfig = repoConfigByName.get(item.targetRepo);
+      const limit = repoConfig?.concurrencyLimit ?? 1;
+
+      if (activeForRepo >= limit) {
+        console.log(`[ATC] Repo ${item.targetRepo} at concurrency limit, skipping direct item: ${item.id}`);
+        continue;
+      }
+
+      // Transition filed items to ready (dispatchWorkItem requires ready status)
+      if (item.status === "filed") {
+        await updateWorkItem(item.id, { status: "ready" });
+      }
+
+      console.log(`[ATC] Dispatching direct item: ${item.id}`);
+      try {
+        const result = await dispatchWorkItem(item.id);
+        events.push(makeEvent(
+          "auto_dispatch", item.id, item.status, "executing",
+          `Auto-dispatched direct item to ${item.targetRepo} (branch: ${result.branch})`
+        ));
+        slotsRemaining--;
+        concurrencyMap.set(item.targetRepo, (concurrencyMap.get(item.targetRepo) ?? 0) + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        await updateWorkItem(item.id, {
+          status: "failed",
+          execution: {
+            ...item.execution,
+            completedAt: now.toISOString(),
+            outcome: "failed",
+          },
+        });
+        events.push(makeEvent(
+          "error", item.id, "ready", "failed",
+          `Direct item auto-dispatch failed: ${msg}`
+        ));
+      }
+    }
   }
 
   // 4.1: Dependency block detection
