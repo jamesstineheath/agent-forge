@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+// --- Fast-lane types & constants ---
+
+export type ComplexityHint = 'simple' | 'moderate';
+
+export const FAST_LANE_BUDGET_SIMPLE = 2;
+export const FAST_LANE_BUDGET_MODERATE = 4;
+
 // --- WorkItem ---
 
 export interface WorkItem {
@@ -8,7 +15,7 @@ export interface WorkItem {
   description: string;
   targetRepo: string;
   source: {
-    type: "pa-improvement" | "github-issue" | "manual" | "project";
+    type: "pa-improvement" | "github-issue" | "manual" | "project" | "direct";
     sourceId?: string;
     sourceUrl?: string;
   };
@@ -26,7 +33,8 @@ export interface WorkItem {
     | "failed"
     | "parked"
     | "blocked"
-    | "cancelled";
+    | "cancelled"
+    | "escalated";
   dependencies: string[];
   handoff: {
     content: string;
@@ -48,6 +56,8 @@ export interface WorkItem {
     reason: string;
     blockedAt: string;
   };
+  triggeredBy?: string;
+  complexityHint?: ComplexityHint;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,7 +76,7 @@ export const createWorkItemSchema = z.object({
   description: z.string().min(1),
   targetRepo: z.string().min(1),
   source: z.object({
-    type: z.enum(["pa-improvement", "github-issue", "manual", "project"]),
+    type: z.enum(["pa-improvement", "github-issue", "manual", "project", "direct"]),
     sourceId: z.string().optional(),
     sourceUrl: z.string().url().optional(),
   }),
@@ -82,7 +92,7 @@ export const updateWorkItemSchema = z.object({
   targetRepo: z.string().min(1).optional(),
   source: z
     .object({
-      type: z.enum(["pa-improvement", "github-issue", "manual", "project"]),
+      type: z.enum(["pa-improvement", "github-issue", "manual", "project", "direct"]),
       sourceId: z.string().optional(),
       sourceUrl: z.string().url().optional(),
     })
@@ -103,6 +113,7 @@ export const updateWorkItemSchema = z.object({
       "parked",
       "blocked",
       "cancelled",
+      "escalated",
     ])
     .optional(),
   dependencies: z.array(z.string()).optional(),
