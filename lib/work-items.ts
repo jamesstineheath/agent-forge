@@ -107,6 +107,7 @@ export async function createWorkItem(data: CreateWorkItemInput): Promise<WorkIte
     status: item.status,
     priority: item.priority,
     updatedAt: item.updatedAt,
+    source: item.source,
   });
   await saveIndex(index);
 
@@ -140,6 +141,7 @@ export async function updateWorkItem(
       status: updated.status,
       priority: updated.priority,
       updatedAt: updated.updatedAt,
+      source: updated.source,
     };
     await saveIndex(index);
   }
@@ -286,6 +288,7 @@ export async function rebuildIndex(): Promise<{ recovered: number; errors: numbe
           status: item.status,
           priority: item.priority,
           updatedAt: item.updatedAt,
+          source: item.source,
         });
       }
     } catch {
