@@ -18,6 +18,7 @@ const STATUS_COLORS: Record<WorkItem["status"], string> = {
   blocked: "bg-red-200 text-red-800",
   cancelled: "bg-gray-200 text-gray-500",
   escalated: "bg-orange-100 text-orange-700",
+  superseded: "bg-gray-200 text-gray-500",
 };
 
 const PRIORITY_COLORS: Record<WorkItem["priority"], string> = {
