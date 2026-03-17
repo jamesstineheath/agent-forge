@@ -86,6 +86,24 @@ export async function escalate(
     }
   } else if (projectId) {
     console.log(`[escalation] Project-level escalation for project ${projectId} (no work item to block)`);
+
+    // Send project-level escalation email
+    try {
+      const { sendProjectEscalationEmail } = await import("./gmail");
+      const projectTitle = (contextSnapshot.projectTitle as string) || projectId;
+      const context = Object.keys(contextSnapshot).length > 0
+        ? JSON.stringify(contextSnapshot, null, 2)
+        : undefined;
+      await sendProjectEscalationEmail({
+        projectId,
+        projectTitle,
+        reason,
+        context,
+        escalationType: "project",
+      });
+    } catch (error) {
+      console.warn(`[escalation] Failed to send project escalation email for ${projectId}:`, error);
+    }
   }
 
   console.log(`[escalation] Created escalation ${id} for work item ${workItemId}: ${reason}`);
