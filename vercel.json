@@ -1,4 +1,5 @@
 {
+  "ignoreCommand": "bash scripts/should-deploy.sh",
   "crons": [
     {
       "path": "/api/atc/cron",
