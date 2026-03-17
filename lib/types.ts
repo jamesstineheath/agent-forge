@@ -362,9 +362,9 @@ export interface PlanValidation {
 }
 
 export interface PlanValidationIssue {
-  section: string;
   severity: 'error' | 'warning';
   message: string;
+  section?: string;
 }
 
 export interface PMAgentConfig {
