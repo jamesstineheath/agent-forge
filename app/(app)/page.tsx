@@ -5,6 +5,7 @@ import { CheckCircle2, ArrowRight } from "lucide-react";
 import { QuickStats } from "@/components/quick-stats";
 import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
+import { ATCMetricsPanel } from "@/components/atc-metrics-panel";
 import {
   useWorkItems,
   useRepos,
@@ -149,6 +150,9 @@ export default function DashboardPage() {
       ) : (
         <QuickStats workItems={workItems ?? []} />
       )}
+
+      {/* ATC Performance Metrics */}
+      <ATCMetricsPanel />
 
       {/* Needs Attention (Escalations) */}
       {!escalationsLoading && escalations && escalations.length > 0 && (
