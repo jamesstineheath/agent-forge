@@ -7,6 +7,7 @@ import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, WorkItem } from "./types";
 import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject } from "./projects";
 import { decomposeProject } from "./decomposer";
+import { validatePlan } from "./plan-validator";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
 import { summarizeDailyCacheMetrics } from "./cache-metrics";
 import { reviewBacklog, assessProjectHealth, composeDigest } from "./pm-agent";
@@ -630,6 +631,33 @@ async function _runATCCycleInner(): Promise<ATCState> {
         "status_change", project.projectId, "Execute", "Executing",
         `Project "${project.title}" (${project.projectId}) transitioned to Executing`
       ));
+
+      // §4.5 Plan Quality Gate
+      const validation = await validatePlan(project.projectId);
+      if (!validation.valid) {
+        const issueList = validation.issues
+          .map((i) => `[${i.severity.toUpperCase()}]${i.section ? ` ${i.section}:` : ''} ${i.message}`)
+          .join('\n');
+
+        try {
+          const { sendProjectEscalationEmail } = await import('./gmail');
+          await sendProjectEscalationEmail({
+            projectId: project.projectId,
+            projectTitle: project.title,
+            reason: `Plan validation found ${validation.issues.length} issue(s):\n\n${issueList}\n\nPlease fix the plan and re-trigger.`,
+            escalationType: 'plan_validation_failed',
+          });
+        } catch (emailErr) {
+          console.error(`[ATC §4.5] Failed to send escalation email for ${project.title}:`, emailErr);
+        }
+
+        console.log(
+          `[ATC §4.5] Plan validation failed for ${project.title}: ${validation.issues.length} issues`
+        );
+        continue;
+      }
+
+      console.log(`[ATC §4.5] Plan validated for ${project.title}, proceeding to decomposition`);
 
       try {
         const result = await decomposeProject(project);
