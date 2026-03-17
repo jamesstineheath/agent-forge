@@ -225,7 +225,7 @@ export function ProjectCard({
             <>
               {/* Cost Summary */}
               {totalBudget > 0 && (
-                <div className="flex items-center gap-4 py-2 mb-1 text-xs border-b border-zinc-800">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 py-2 mb-1 text-xs border-b border-zinc-800">
                   <div className="text-zinc-400">
                     <span className="font-medium text-zinc-300">Total Budget:</span>{" "}
                     ${totalBudget.toFixed(2)}

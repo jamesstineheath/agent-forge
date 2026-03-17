@@ -17,7 +17,7 @@ export default async function AppLayout({
     <div className="flex flex-col md:flex-row h-screen bg-zinc-950">
       <Sidebar />
       <main className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto px-6 py-6 pb-16">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 pb-16">
           {children}
         </div>
       </main>
