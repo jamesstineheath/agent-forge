@@ -122,7 +122,7 @@ export async function bootstrapRepo(
       fullName: `${owner}/${repoName}`,
       shortName: repoName,
       claudeMdPath: 'CLAUDE.md',
-      handoffDir: 'handoffs/',
+      handoffDir: 'handoffs/awaiting_handoff/',
       executeWorkflow: 'execute-handoff.yml',
       concurrencyLimit: 1,
       defaultBudget: 8,

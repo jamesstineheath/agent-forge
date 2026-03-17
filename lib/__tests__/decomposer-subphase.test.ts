@@ -154,7 +154,7 @@ function setupStandardMocks(decomposedItemCount: number, itemOverrides: Record<s
     fullName: "jamesstineheath/agent-forge",
     shortName: "agent-forge",
     claudeMdPath: "CLAUDE.md",
-    handoffDir: "handoffs/",
+    handoffDir: "handoffs/awaiting_handoff/",
     executeWorkflow: "execute-handoff.yml",
     concurrencyLimit: 1,
     defaultBudget: 8,

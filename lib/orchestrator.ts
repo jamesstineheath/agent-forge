@@ -347,7 +347,7 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
     // 7. Create branch in target repo
     await createBranch(repoConfig.fullName, branchName);
 
-    // 8. Push handoff file to handoffs/ directory on the branch
+    // 8. Push handoff file to handoffs/awaiting_handoff/ directory on the branch
     const handoffDir = repoConfig.handoffDir.endsWith("/")
       ? repoConfig.handoffDir
       : `${repoConfig.handoffDir}/`;
