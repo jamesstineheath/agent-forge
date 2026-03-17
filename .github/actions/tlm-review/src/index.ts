@@ -709,6 +709,60 @@ async function run(): Promise<void> {
       autoMerge
     ) {
       core.info("Enabling auto-merge for approved PR...");
+
+      // Auto-rebase: ensure PR branch is up-to-date with base before merging
+      // This prevents merge conflicts from stale branches in the squash-merge workflow
+      try {
+        const { data: comparison } = await octokit.rest.repos.compareCommitsWithBasehead({
+          owner,
+          repo,
+          basehead: `${pr.head.ref}...${pr.base.ref}`,
+        });
+
+        if (comparison.ahead_by > 0) {
+          core.info(`PR branch is ${comparison.ahead_by} commit(s) behind ${pr.base.ref}. Updating branch...`);
+          try {
+            await octokit.rest.pulls.updateBranch({
+              owner,
+              repo,
+              pull_number: prNumber,
+              expected_head_sha: pr.head.sha,
+            });
+            core.info("Branch updated successfully. CI will re-run and TLM will re-review via check_suite trigger.");
+            core.setOutput("decision", "branch_updated");
+            core.setOutput("summary", "Branch was behind base; updated and deferring to CI re-run.");
+            return;
+          } catch (updateErr: unknown) {
+            const updateError = updateErr as { status?: number; message?: string };
+            if (updateError.status === 409 || updateError.status === 422) {
+              // Merge conflict — cannot auto-update
+              core.warning(`Branch update failed with conflict (${updateError.status}). Posting comment for manual resolution.`);
+              await octokit.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: [
+                  "## TLM Review: Merge Conflict Detected",
+                  "",
+                  `This PR's branch is behind \`${pr.base.ref}\` and cannot be automatically updated due to merge conflicts.`,
+                  "",
+                  "The PR has been approved but requires manual conflict resolution before it can be merged.",
+                  "",
+                  "<!-- MERGE_CONFLICT: true -->",
+                ].join("\n"),
+              });
+              core.setOutput("decision", "merge_conflict");
+              core.setOutput("summary", "PR approved but has merge conflicts requiring manual resolution.");
+              return;
+            }
+            // Other error — fall through to normal merge attempt
+            core.warning(`Branch update failed: ${updateError.message}. Attempting merge anyway.`);
+          }
+        }
+      } catch (compareErr) {
+        core.warning(`Could not check if branch is behind base: ${compareErr}. Attempting merge anyway.`);
+      }
+
       try {
         // Enable auto-merge (GitHub will merge once all required checks pass)
         await octokit.rest.pulls.merge({

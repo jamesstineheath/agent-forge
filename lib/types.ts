@@ -54,6 +54,8 @@ export interface WorkItem {
     completedAt?: string;
     outcome?: "merged" | "failed" | "parked" | "reverted";
     retryCount?: number;
+    /** Actual files modified by the PR (populated once PR exists, more accurate than estimated files) */
+    filesModified?: string[];
   } | null;
   escalation?: {
     id: string;
@@ -142,6 +144,7 @@ export const updateWorkItemSchema = z.object({
       completedAt: z.string().optional(),
       outcome: z.enum(["merged", "failed", "parked", "reverted"]).optional(),
       retryCount: z.number().optional(),
+      filesModified: z.array(z.string()).optional(),
     })
     .nullable()
     .optional(),

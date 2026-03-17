@@ -71,6 +71,13 @@ function hasFileOverlap(filesA: string[], filesB: string[]): boolean {
   return filesA.some(f => setB.has(f));
 }
 
+// High-churn files that should serialize all work items touching them.
+// Any item touching one of these files will be blocked from dispatch while
+// another item touching the same file is active (executing or reviewing).
+const HIGH_CHURN_FILES = new Set([
+  "lib/atc.ts",
+]);
+
 class CycleTimeoutError extends Error {
   constructor(ms: number) {
     super(`ATC cycle timed out after ${ms}ms`);
@@ -162,6 +169,14 @@ async function _runATCCycleInner(): Promise<ATCState> {
     let filesBeingModified: string[] = [];
     if (pr && item.execution?.prNumber) {
       filesBeingModified = await getPRFiles(item.targetRepo, item.execution.prNumber);
+      // Persist actual PR files on the work item for more accurate future conflict checks
+      if (filesBeingModified.length > 0 && !item.execution?.filesModified?.length) {
+        await updateWorkItem(item.id, {
+          execution: { ...item.execution, filesModified: filesBeingModified },
+        });
+      }
+    } else if (item.execution?.filesModified?.length) {
+      filesBeingModified = item.execution.filesModified;
     } else if (item.handoff?.content) {
       filesBeingModified = parseEstimatedFiles(item.handoff.content);
     }
@@ -409,6 +424,22 @@ async function _runATCCycleInner(): Promise<ATCState> {
             `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repo.fullName}`
           ));
           continue;
+        }
+
+        // High-churn file serialization: block dispatch if candidate and any active
+        // execution both touch a high-churn file, even across repos
+        const itemHighChurn = itemFiles.filter(f => HIGH_CHURN_FILES.has(f));
+        if (itemHighChurn.length > 0) {
+          const highChurnConflict = activeExecutions.find(e =>
+            e.filesBeingModified.some(f => itemHighChurn.includes(f))
+          );
+          if (highChurnConflict) {
+            events.push(makeEvent(
+              "conflict", item.id, undefined, undefined,
+              `Dispatch blocked: high-churn file(s) [${itemHighChurn.join(", ")}] overlap with active item ${highChurnConflict.workItemId}`
+            ));
+            continue;
+          }
         }
 
         try {
