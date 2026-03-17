@@ -5,7 +5,7 @@ import { fetchRepoContext, type RepoContext } from "./orchestrator";
 import { listRepos, getRepo } from "./repos";
 import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
-import type { Project, WorkItem, RepoConfig, DecomposerConfig, SubPhase } from "./types";
+import type { Project, WorkItem, RepoConfig, DecomposerConfig, SubPhase, PhaseBreakdown } from "./types";
 
 // --- Constants ---
 
@@ -116,6 +116,7 @@ export class SubPhaseEscalationError extends Error {
 export interface DecompositionResult {
   workItems: WorkItem[];
   phases: WorkItem[][] | null;
+  phaseBreakdown?: PhaseBreakdown;
 }
 
 interface DecomposedItem {
@@ -798,7 +799,26 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     );
   }
 
-  return { workItems: createdItems, phases: workItemPhases };
+  // Build PhaseBreakdown for email rendering when sub-phases exist
+  let phaseBreakdown: PhaseBreakdown | undefined;
+  if (subPhaseResult && subPhaseResult.phases.length > 1) {
+    phaseBreakdown = {
+      phases: subPhaseResult.phases.map((sp) => ({
+        id: sp.id,
+        name: sp.name,
+        itemCount: sp.items.length,
+        items: sp.items.map((wi) => ({
+          title: wi.title,
+          priority: wi.priority,
+        })),
+      })),
+      crossPhaseDeps: subPhaseResult.phases.flatMap((sp) =>
+        sp.dependencies.map((depId) => ({ from: sp.id, to: depId })),
+      ),
+    };
+  }
+
+  return { workItems: createdItems, phases: workItemPhases, phaseBreakdown };
 }
 
 // --- Configurable decomposer limits ---

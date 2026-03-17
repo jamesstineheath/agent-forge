@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 import type { Escalation } from './escalation';
-import type { Project, WorkItem } from './types';
+import type { Project, WorkItem, PhaseBreakdown } from './types';
 
 // Gmail client singleton with error handling
 let gmailClient: ReturnType<typeof google.gmail> | null = null;
@@ -176,6 +176,7 @@ export async function sendDecompositionSummary(
   project: Project,
   workItems: WorkItem[],
   phases?: WorkItem[][],
+  phaseBreakdown?: PhaseBreakdown,
 ): Promise<string | null> {
   const client = getGmailClient();
   if (!client) {
@@ -197,7 +198,10 @@ export async function sendDecompositionSummary(
       return `${idx + 1}. ${escapeHtml(item.title)} → depends on: ${escapeHtml(deps)}`;
     });
 
-    const subject = `[Agent Forge] Decomposition Complete: ${project.title} (${workItems.length} work items)`;
+    const numPhases = phaseBreakdown?.phases?.length ?? 0;
+    const subject = numPhases > 1
+      ? `[Agent Forge] Decomposition Complete: ${project.title} (${workItems.length} items across ${numPhases} phases)`
+      : `[Agent Forge] Decomposition Complete: ${project.title} (${workItems.length} work items)`;
 
     const htmlBody = `
 <!DOCTYPE html>
@@ -242,11 +246,45 @@ export async function sendDecompositionSummary(
       </div>
     </div>
 
-    ${phases && phases.length > 1 ? `
+    ${numPhases > 1 ? phaseBreakdown!.phases.map((phase, idx) => `
+    <div class="section">
+      <div class="section-title">Phase ${idx + 1}: ${escapeHtml(phase.name)} (${phase.itemCount} items)</div>
+      ${(() => {
+        const phaseDeps = phaseBreakdown!.crossPhaseDeps
+          .filter((d) => d.from === phase.id)
+          .map((d) => {
+            const target = phaseBreakdown!.phases.find((p) => p.id === d.to);
+            return target ? escapeHtml(target.name) : d.to;
+          });
+        return phaseDeps.length > 0
+          ? `<p style="color: #666; font-size: 13px; margin: 0 0 8px 0;">Depends on: ${phaseDeps.join(', ')}</p>`
+          : '';
+      })()}
+      <div class="section-content">
+        <ul style="margin: 0; padding-left: 20px;">
+          ${phase.items.map((item) => `<li>${escapeHtml(item.title)} (${escapeHtml(item.priority)} priority)</li>`).join('\n          ')}
+        </ul>
+      </div>
+    </div>`).join('') : phases && phases.length > 1 ? `
     <div class="section">
       <div class="section-title">Phase Structure</div>
       <div class="section-content dep-list">
         ${phases.map((phase, idx) => `<strong>Phase ${idx + 1}</strong> (${phase.length} items)<br>${phase.map((item) => `&nbsp;&nbsp;- ${escapeHtml(item.title)}`).join('<br>')}`).join('<br><br>')}
+      </div>
+    </div>
+    ` : ''}
+
+    ${numPhases > 1 && phaseBreakdown!.crossPhaseDeps.length > 0 ? `
+    <div class="section">
+      <div class="section-title">Cross-Phase Dependencies</div>
+      <div class="section-content">
+        <ul style="margin: 0; padding-left: 20px;">
+          ${phaseBreakdown!.crossPhaseDeps.map((dep) => {
+            const fromPhase = phaseBreakdown!.phases.find((p) => p.id === dep.from);
+            const toPhase = phaseBreakdown!.phases.find((p) => p.id === dep.to);
+            return `<li>${escapeHtml(fromPhase?.name ?? dep.from)} depends on ${escapeHtml(toPhase?.name ?? dep.to)}</li>`;
+          }).join('\n          ')}
+        </ul>
       </div>
     </div>
     ` : ''}
