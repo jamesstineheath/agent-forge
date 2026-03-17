@@ -106,10 +106,10 @@ export default function WorkItemsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="overflow-x-hidden space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Work Items</h1>
-        <Button onClick={() => setShowForm(!showForm)}>
+        <Button className="min-h-[44px]" onClick={() => setShowForm(!showForm)}>
           {showForm ? "Cancel" : "New Work Item"}
         </Button>
       </div>
@@ -249,12 +249,13 @@ export default function WorkItemsPage() {
                 <p className="text-sm text-red-600">{formError}</p>
               )}
               <div className="flex gap-2">
-                <Button type="submit" disabled={submitting}>
+                <Button type="submit" disabled={submitting} className="min-h-[44px]">
                   {submitting ? "Creating..." : "Create Work Item"}
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
+                  className="min-h-[44px]"
                   onClick={() => setShowForm(false)}
                 >
                   Cancel
@@ -266,9 +267,9 @@ export default function WorkItemsPage() {
       )}
 
       {/* Filter bar */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:gap-3">
         <select
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="w-full md:w-auto rounded-md border border-input bg-background px-3 py-2 text-sm"
           value={statusFilter}
           onChange={(e) =>
             setStatusFilter(e.target.value as WorkItem["status"] | "")
@@ -281,7 +282,7 @@ export default function WorkItemsPage() {
           ))}
         </select>
         <select
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="w-full md:w-auto rounded-md border border-input bg-background px-3 py-2 text-sm"
           value={priorityFilter}
           onChange={(e) =>
             setPriorityFilter(e.target.value as WorkItem["priority"] | "")
@@ -294,7 +295,7 @@ export default function WorkItemsPage() {
           ))}
         </select>
         <select
-          className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          className="w-full md:w-auto rounded-md border border-input bg-background px-3 py-2 text-sm"
           value={repoFilter}
           onChange={(e) => setRepoFilter(e.target.value)}
         >
@@ -306,7 +307,7 @@ export default function WorkItemsPage() {
           ))}
         </select>
         <button
-          className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+          className={`w-full md:w-auto rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
             sourceFilter === "direct"
               ? "border-green-500 bg-green-50 text-green-800"
               : "border-input bg-background text-muted-foreground hover:bg-accent"
@@ -330,7 +331,7 @@ export default function WorkItemsPage() {
               No work items match the current filters.
             </p>
             <Button
-              className="mt-4"
+              className="mt-4 min-h-[44px]"
               variant="outline"
               onClick={() => setShowForm(true)}
             >
