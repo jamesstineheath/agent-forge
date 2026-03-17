@@ -78,6 +78,7 @@ export interface WorkItemIndexEntry {
   status: WorkItem["status"];
   priority: WorkItem["priority"];
   updatedAt: string;
+  source: WorkItem["source"];
 }
 
 export const createWorkItemSchema = z.object({
