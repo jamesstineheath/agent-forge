@@ -222,25 +222,48 @@ export function ProjectCard({
       {expanded && (
         <div className="border-t border-zinc-800 px-4 py-2">
           {workItems.length > 0 ? (
-            workItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-2.5 py-1.5 text-sm"
-              >
-                <StatusIcon status={item.status} />
-                <span
-                  className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
+            <>
+              {/* Cost Summary */}
+              {totalBudget > 0 && (
+                <div className="flex items-center gap-4 py-2 mb-1 text-xs border-b border-zinc-800">
+                  <div className="text-zinc-400">
+                    <span className="font-medium text-zinc-300">Total Budget:</span>{" "}
+                    ${totalBudget.toFixed(2)}
+                  </div>
+                  <div className="text-emerald-400/80">
+                    Spent: ${spent.toFixed(2)}
+                  </div>
+                  <div className="text-zinc-400">
+                    Remaining: ${(totalBudget - spent).toFixed(2)}
+                  </div>
+                </div>
+              )}
+              {/* Work Items */}
+              {workItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center gap-2.5 py-1.5 text-sm"
                 >
-                  {item.title}
-                </span>
-                {item.handoff?.budget != null && item.execution && (
-                  <span className="text-[11px] text-zinc-500">
-                    ${item.handoff.budget.toFixed(2)}
+                  <StatusIcon status={item.status} />
+                  <span
+                    className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
+                  >
+                    {item.title}
                   </span>
-                )}
-                <WorkItemMeta item={item} />
-              </div>
-            ))
+                  {item.handoff?.budget != null ? (
+                    <span className="text-[11px] text-zinc-500">
+                      ${item.handoff.budget.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-zinc-600">&mdash;</span>
+                  )}
+                  <span className={`text-[10px] px-1 py-0.5 rounded ${statusBg(item.status)}`}>
+                    {item.status}
+                  </span>
+                  <WorkItemMeta item={item} />
+                </div>
+              ))}
+            </>
           ) : (
             <div className="py-2 text-xs text-zinc-500">
               No work items linked to this project yet. Work items with{" "}
