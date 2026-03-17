@@ -68,6 +68,7 @@ export interface WorkItem {
   failureCategory?: FailureCategory;
   createdAt: string;
   updatedAt: string;
+  reasoningMetrics?: ReasoningQualityAssessment;
 }
 
 export interface WorkItemIndexEntry {
@@ -438,3 +439,106 @@ export const DEFAULT_PR_SLA_CONFIG: PRSLAConfig = {
   hardCloseThresholdMs: 24 * 60 * 60 * 1000,  // 24 hours
   rebaseCommitThreshold: 5,
 };
+
+// --- Evaluation Metric Types ---
+
+export interface PlanQualityMetric {
+  /** Score from 0 to 1 representing how complete the plan is */
+  completeness: number;
+  /** Whether steps are in a logical order */
+  logicalOrdering: boolean;
+  /** Score from 0 to 1 representing accuracy of dependency declarations */
+  dependencyAccuracy: number;
+  /** Items that should have been included but were not */
+  missingItems: string[];
+  /** Items that were included but should not have been */
+  unnecessaryItems: string[];
+}
+
+export interface StepEfficiencyMetric {
+  /** Total number of steps in the plan */
+  totalSteps: number;
+  /** Number of steps deemed unnecessary */
+  unnecessarySteps: number;
+  /** Ratio from 0 to 1: (totalSteps - unnecessarySteps) / totalSteps */
+  efficiency: number;
+  /** IDs of steps identified as redundant */
+  redundantStepIds: string[];
+}
+
+export interface ToolCorrectnessMetric {
+  /** Number of tool selections that were correct */
+  correctSelections: number;
+  /** Number of tool selections that were incorrect */
+  incorrectSelections: number;
+  /** Ratio from 0 to 1: correctSelections / (correctSelections + incorrectSelections) */
+  accuracy: number;
+  /** Details of each incorrect tool selection */
+  misselections: {
+    expected: string;
+    actual: string;
+    stepId: string;
+  }[];
+}
+
+export interface ReasoningQualityAssessment {
+  planQuality: PlanQualityMetric;
+  stepEfficiency: StepEfficiencyMetric;
+  toolCorrectness: ToolCorrectnessMetric;
+  /** Overall combined score from 0 to 1 */
+  overallScore: number;
+  /** ISO 8601 timestamp of when this assessment was made */
+  assessedAt: string;
+}
+
+export type AgentComponent =
+  | 'decomposer'
+  | 'orchestrator'
+  | 'spec-reviewer'
+  | 'executor'
+  | 'code-reviewer'
+  | 'qa-agent'
+  | 'ci';
+
+export interface ComponentAttribution {
+  /** The agent component attributed to this result */
+  component: AgentComponent;
+  /** Confidence score from 0 to 1 */
+  confidence: number;
+  /** Evidence supporting this attribution */
+  evidence: string;
+  /** Description of the failure mode, if applicable */
+  failureMode: string;
+}
+
+export interface CostEntry {
+  /** ID of the work item this cost is associated with */
+  workItemId: string;
+  /** Type of agent that incurred this cost */
+  agentType: string;
+  /** Target repository */
+  repo: string;
+  /** Number of input tokens consumed */
+  inputTokens: number;
+  /** Number of output tokens produced */
+  outputTokens: number;
+  /** Estimated cost in USD */
+  estimatedCostUsd: number;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+}
+
+export interface DriftSnapshot {
+  /** Period label (e.g., "2024-W01") */
+  period: string;
+  /** Distribution of outcomes in this period */
+  outcomeDistribution: Record<string, number>;
+  /** Baseline distribution to compare against */
+  baselineDistribution: Record<string, number>;
+  /** Score indicating degree of drift (higher = more drift) */
+  driftScore: number;
+  /** Whether the system has degraded relative to baseline */
+  degraded: boolean;
+  /** ISO 8601 timestamp of when this snapshot was taken */
+  snapshotAt: string;
+}
