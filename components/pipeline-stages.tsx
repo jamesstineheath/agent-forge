@@ -43,21 +43,11 @@ const STAGES: StageConfig[] = [
   },
   {
     key: "merged",
-    label: "Merged today",
+    label: "Merged",
     countColor: "text-zinc-200",
     barColor: "bg-emerald-500",
-    filter: (i) => {
-      if (i.status !== "merged" && i.execution?.outcome !== "merged") return false;
-      const completedAt = i.execution?.completedAt;
-      if (!completedAt) return false;
-      const completed = new Date(completedAt);
-      const now = new Date();
-      return (
-        completed.getUTCFullYear() === now.getUTCFullYear() &&
-        completed.getUTCMonth() === now.getUTCMonth() &&
-        completed.getUTCDate() === now.getUTCDate()
-      );
-    },
+    filter: (i) =>
+      i.status === "merged" || i.execution?.outcome === "merged",
   },
   {
     key: "failed",

@@ -14,7 +14,7 @@ interface QuickStatsProps {
 
 export function QuickStats({ workItems }: QuickStatsProps) {
   const merged = workItems.filter(
-    (wi) => wi.execution?.outcome === "merged"
+    (wi) => wi.status === "merged" || wi.execution?.outcome === "merged"
   ).length;
   const failedOrReverted = workItems.filter(
     (wi) =>
