@@ -222,25 +222,49 @@ export function ProjectCard({
       {expanded && (
         <div className="border-t border-zinc-800 px-4 py-2">
           {workItems.length > 0 ? (
-            workItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-2.5 py-1.5 text-sm"
-              >
-                <StatusIcon status={item.status} />
-                <span
-                  className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
-                >
-                  {item.title}
-                </span>
-                {item.handoff?.budget != null && item.execution && (
-                  <span className="text-[11px] text-zinc-500">
-                    ${item.handoff.budget.toFixed(2)}
-                  </span>
-                )}
-                <WorkItemMeta item={item} />
-              </div>
-            ))
+            (() => {
+              const grouped: Record<string, WorkItem[]> = {};
+              for (const item of workItems) {
+                const s = item.status;
+                if (!grouped[s]) grouped[s] = [];
+                grouped[s].push(item);
+              }
+              const statusOrder: WorkItem["status"][] = [
+                "executing", "generating", "reviewing", "queued",
+                "ready", "filed", "merged", "failed", "blocked",
+                "escalated", "parked", "cancelled",
+              ];
+              const sortedStatuses = statusOrder.filter((s) => grouped[s]);
+              return sortedStatuses.map((status) => (
+                <div key={status} className="mt-1.5 first:mt-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <span className={`text-[10px] font-medium uppercase tracking-wider ${statusColor(status)}`}>
+                      {status}
+                    </span>
+                    <span className="text-[10px] text-zinc-600">{grouped[status].length}</span>
+                  </div>
+                  {grouped[status].map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2.5 py-1.5 text-sm pl-2"
+                    >
+                      <StatusIcon status={item.status} />
+                      <span
+                        className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
+                      >
+                        {item.title}
+                      </span>
+                      {item.handoff?.budget != null && item.execution && (
+                        <span className="text-[11px] text-zinc-500">
+                          ${item.handoff.budget.toFixed(2)}
+                        </span>
+                      )}
+                      <WorkItemMeta item={item} />
+                    </div>
+                  ))}
+                </div>
+              ));
+            })()
           ) : (
             <div className="py-2 text-xs text-zinc-500">
               No work items linked to this project yet. Work items with{" "}

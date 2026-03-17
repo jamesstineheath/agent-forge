@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateAuth } from "@/lib/api-auth";
 import {
   listWorkItems,
+  getWorkItem,
   createWorkItem,
   type WorkItemFilters,
 } from "@/lib/work-items";
@@ -23,7 +24,12 @@ export async function GET(req: NextRequest) {
   if (priority) filters.priority = priority as WorkItem["priority"];
 
   try {
-    const items = await listWorkItems(filters);
+    const index = await listWorkItems(filters);
+    // Hydrate index entries into full WorkItem objects so clients get
+    // source, execution, handoff, etc.
+    const items = (
+      await Promise.all(index.map((entry) => getWorkItem(entry.id)))
+    ).filter((item): item is WorkItem => item !== null);
     return NextResponse.json(items);
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
