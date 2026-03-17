@@ -530,16 +530,14 @@ export interface CostEntry {
 }
 
 export interface DriftSnapshot {
-  /** Period label (e.g., "2024-W01") */
-  period: string;
-  /** Distribution of outcomes in this period */
-  outcomeDistribution: Record<string, number>;
-  /** Baseline distribution to compare against */
-  baselineDistribution: Record<string, number>;
-  /** Score indicating degree of drift (higher = more drift) */
-  driftScore: number;
-  /** Whether the system has degraded relative to baseline */
-  degraded: boolean;
-  /** ISO 8601 timestamp of when this snapshot was taken */
-  snapshotAt: string;
+  date: string;                                    // ISO date string YYYY-MM-DD
+  baselinePeriodDays: number;                      // e.g., 30 (days 30-60 ago)
+  currentPeriodDays: number;                       // e.g., 30 (last 30 days)
+  baselineDistribution: Record<string, number>;    // outcome -> percentage
+  currentDistribution: Record<string, number>;     // outcome -> percentage
+  driftScore: number;                              // Jensen-Shannon divergence [0, 1]
+  degraded: boolean;                               // true if driftScore > threshold
+  threshold: number;                               // threshold used
+  baselineCount: number;                           // number of items in baseline period
+  currentCount: number;                            // number of items in current period
 }
