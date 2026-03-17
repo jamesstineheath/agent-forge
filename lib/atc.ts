@@ -9,6 +9,7 @@ import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkPro
 import { decomposeProject } from "./decomposer";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
 import { summarizeDailyCacheMetrics } from "./cache-metrics";
+import { reviewBacklog, assessProjectHealth, composeDigest } from "./pm-agent";
 
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
@@ -944,7 +945,58 @@ async function _runATCCycleInner(): Promise<ATCState> {
     console.error("[ATC] cache metrics summary failed:", err)
   );
 
+  // § 14 — PM Agent Daily Sweep
+  try {
+    await runPMAgentSweep();
+  } catch (error) {
+    console.error('[ATC §14] Unexpected error in PM Agent sweep:', error);
+  }
+
   return state;
+}
+
+// § 14 — PM Agent Daily Sweep
+// Only runs once per day (check last run timestamp in Vercel Blob)
+async function runPMAgentSweep() {
+  const SWEEP_KEY = 'pm-agent/last-sweep';
+  const lastSweep = await loadJson<{ timestamp: string }>(SWEEP_KEY);
+
+  if (lastSweep) {
+    const lastRun = new Date(lastSweep.timestamp);
+    const hoursSinceLastRun = (Date.now() - lastRun.getTime()) / (1000 * 60 * 60);
+    if (hoursSinceLastRun < 20) {
+      console.log(`[ATC §14] PM Agent sweep: skipped (last run ${hoursSinceLastRun.toFixed(1)}h ago)`);
+      return;
+    }
+  }
+
+  console.log('[ATC §14] PM Agent sweep: starting');
+
+  try {
+    // Run backlog review
+    const review = await reviewBacklog();
+    console.log(`[ATC §14] Backlog review complete: ${review.recommendations.length} recommendations`);
+
+    // Run health assessment for all projects
+    const healths = await assessProjectHealth();
+    const atRisk = healths.filter(h => h.status === 'at-risk' || h.status === 'stalling' || h.status === 'blocked');
+    console.log(`[ATC §14] Health assessment: ${healths.length} projects, ${atRisk.length} at risk`);
+
+    // Compose and send digest
+    await composeDigest({
+      includeHealth: true,
+      includeBacklog: true,
+      includeRecommendations: true,
+      recipientEmail: 'james.stine.heath@gmail.com',
+    });
+    console.log('[ATC §14] Digest sent');
+
+    // Record sweep timestamp
+    await saveJson(SWEEP_KEY, { timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error('[ATC §14] PM Agent sweep failed:', error);
+    // Don't throw — sweep failure shouldn't break the ATC cycle
+  }
 }
 
 export async function cleanupStaleBranches(): Promise<{ deletedCount: number; skipped: number; errors: number }> {
