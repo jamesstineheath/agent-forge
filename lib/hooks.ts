@@ -101,6 +101,15 @@ export function useATCMetrics() {
   return { data, error, isLoading, mutate };
 }
 
+export function useATCStatePanel() {
+  const { data, error, isLoading, mutate } = useSWR<ATCState & { recentEvents: ATCEvent[] }>(
+    "/api/atc/state",
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
 export function useATCEvents(limit = 50) {
   const { data, error, isLoading, mutate } = useSWR<ATCEvent[]>(
     `/api/atc/events?limit=${limit}`,
