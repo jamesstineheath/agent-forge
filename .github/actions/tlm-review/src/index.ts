@@ -498,38 +498,45 @@ async function run(): Promise<void> {
       return;
     }
 
-    // Risk escalation gate: flag sensitive paths for human review
-    const SENSITIVE_PATH_PATTERNS = [
-      // TLM actions (all three agents)
+    // Risk escalation gate: tiered sensitive path handling
+    // Tier 1: Always requires human review (core execution/review infrastructure)
+    const TIER1_ALWAYS_FLAG = [
+      '.github/workflows/execute-handoff.yml',
+      '.github/workflows/tlm-review.yml',
+      '.github/workflows/handoff-orchestrator.yml',
+      'lib/atc.ts',
+      'lib/orchestrator.ts',
+    ];
+    // Tier 2: Flag only if change is high-risk (agent prompts, action scripts)
+    // These proceed to normal Claude review which can approve if low-risk
+    const TIER2_REVIEW_AWARE = [
       '.github/actions/tlm-review/',
       '.github/actions/tlm-spec-review/',
       '.github/actions/tlm-outcome-tracker/',
-      // Pipeline workflows
-      '.github/workflows/tlm-review.yml',
+      '.github/actions/handoff-orchestrator/',
       '.github/workflows/tlm-spec-review.yml',
       '.github/workflows/tlm-outcome-tracker.yml',
-      '.github/workflows/execute-handoff.yml',
-      // Agent execution infrastructure
       'lib/claude-code/executor.ts',
       'lib/claude-code/pipeline.ts',
       'lib/claude-code/worktree.ts',
       'lib/claude-code/recovery.ts',
-      // Agent dispatch
       'lib/agents/executor.ts',
-      // Cron orchestration
       'lib/cron-config.ts',
       'lib/cron/job-executor.ts',
     ];
 
-    const sensitiveFiles = changedFiles.filter((f) =>
-      SENSITIVE_PATH_PATTERNS.some((pattern) =>
-        pattern.endsWith('/') ? f.startsWith(pattern) : f === pattern
-      )
-    );
+    const matchesPatterns = (file: string, patterns: string[]) =>
+      patterns.some((pattern) =>
+        pattern.endsWith('/') ? file.startsWith(pattern) : file === pattern
+      );
 
-    if (sensitiveFiles.length > 0) {
-      const fileList = sensitiveFiles.map((f) => `- \`${f}\``).join('\n');
-      core.info(`PR touches ${sensitiveFiles.length} sensitive path(s), flagging for human review.`);
+    const tier1Files = changedFiles.filter((f) => matchesPatterns(f, TIER1_ALWAYS_FLAG));
+    const tier2Files = changedFiles.filter((f) => matchesPatterns(f, TIER2_REVIEW_AWARE));
+
+    // Tier 1: always flag for human
+    if (tier1Files.length > 0) {
+      const fileList = tier1Files.map((f) => `- \`${f}\``).join('\n');
+      core.info(`PR touches ${tier1Files.length} Tier 1 sensitive path(s), flagging for human review.`);
       await octokit.rest.pulls.createReview({
         owner,
         repo,
@@ -537,9 +544,9 @@ async function run(): Promise<void> {
         body: [
           '## TLM Review: FLAG FOR HUMAN',
           '',
-          'This PR modifies pipeline-critical infrastructure that requires human review before merge.',
+          'This PR modifies core pipeline infrastructure that requires human review before merge.',
           '',
-          '### Sensitive files changed:',
+          '### Tier 1 sensitive files (always require human review):',
           fileList,
           '',
           'Auto-merge is disabled for this PR. A human must review and merge manually.',
@@ -549,8 +556,18 @@ async function run(): Promise<void> {
         event: 'COMMENT',
       });
       core.setOutput('decision', 'flag_for_human');
-      core.setOutput('summary', `PR modifies ${sensitiveFiles.length} sensitive path(s), requires human review`);
+      core.setOutput('summary', `PR modifies ${tier1Files.length} Tier 1 sensitive path(s), requires human review`);
       return;
+    }
+
+    // Tier 2: proceed to Claude review, but add context about sensitive files
+    // The review prompt will be aware of these files and can still flag_for_human
+    // if the changes are risky, but low-risk changes can be auto-merged
+    let sensitivePathContext = '';
+    if (tier2Files.length > 0) {
+      const fileList = tier2Files.map((f) => `- \`${f}\``).join('\n');
+      sensitivePathContext = `\n\nNOTE: This PR touches pipeline-adjacent files that warrant extra scrutiny:\n${fileList}\nIf these changes are risky or could break the pipeline, set decision to "flag_for_human". If they are straightforward and low-risk, you may approve.`;
+      core.info(`PR touches ${tier2Files.length} Tier 2 sensitive path(s), adding context for Claude review.`);
     }
 
     // Truncate very large diffs to avoid token limits (keep first 150k chars, ~37k tokens)
@@ -592,13 +609,18 @@ async function run(): Promise<void> {
       core.warning(stalenessWarning);
     }
 
-    const systemPrompt = buildSystemPrompt(
+    let systemPrompt = buildSystemPrompt(
       systemMap,
       adrSummaries,
       reviewMemory,
       specReviewContext,
       stalenessWarning
     );
+
+    // Append Tier 2 sensitive path context if present
+    if (sensitivePathContext) {
+      systemPrompt += sensitivePathContext;
+    }
 
     // Call Claude API for review
     const userPrompt = buildUserPrompt(

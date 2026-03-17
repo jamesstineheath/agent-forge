@@ -20,7 +20,13 @@ const ATC_LOCK_KEY = "atc/cycle-lock";
 const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const LOCK_HARD_CEILING_MS = 10 * 60 * 1000; // 10 minutes — force-clear zombie locks
 const CYCLE_TIMEOUT_MS = 240 * 1000; // 240s — abort before Vercel's 300s Fluid Compute limit
-const STALL_TIMEOUT_MINUTES = 30;
+// Stage-aware stall timeouts:
+// - Executing (no workflow run yet): GHA queue delays can be 5-15 min
+// - Executing (workflow running): 35 min from workflow start covers most handoffs
+// - Reviewing (no PR): something went wrong — shorter timeout
+const STALL_TIMEOUT_EXECUTING_NO_RUN_MINUTES = 20;
+const STALL_TIMEOUT_EXECUTING_WITH_RUN_MINUTES = 35;
+const STALL_TIMEOUT_REVIEWING_NO_PR_MINUTES = 30;
 const CONFLICT_CHECK_DELAY_MINUTES = 15; // Don't check mergeability until PR has been in "reviewing" for this long
 const MAX_EVENTS = 200;
 const CLEANUP_THROTTLE_MINUTES = 60;
@@ -144,13 +150,14 @@ async function _runATCCycleInner(): Promise<ATCState> {
       ? (now.getTime() - new Date(startedAt).getTime()) / 60_000
       : 0;
 
-    // Check for stall timeout (before fetching PR files to skip extra API calls).
-    // GUARD: Do NOT apply stall timeout to reviewing items that have an open PR.
-    // Reviewing items with a prNumber are waiting for code review/CI — this is
-    // normal and can take hours/days. The stall timeout only applies to genuinely
-    // stalled items (executing with no progress, or reviewing without a PR).
+    // Stage-aware stall timeout check.
+    // Reviewing items with an open PR are waiting for code review/CI — this is
+    // normal and can take hours/days. No timeout applies to them.
     const hasOpenPR = item.status === "reviewing" && item.execution?.prNumber != null;
-    if (elapsedMinutes >= STALL_TIMEOUT_MINUTES && !hasOpenPR) {
+    const stallTimeout = item.status === "reviewing"
+      ? STALL_TIMEOUT_REVIEWING_NO_PR_MINUTES
+      : STALL_TIMEOUT_EXECUTING_NO_RUN_MINUTES; // refined below for executing items with workflow runs
+    if (elapsedMinutes >= stallTimeout && !hasOpenPR) {
       const event = makeEvent("timeout", item.id, item.status, "failed",
         `Execution stalled: no progress for ${Math.round(elapsedMinutes)} minutes (reason: timeout)`);
       await updateWorkItem(item.id, {
@@ -256,7 +263,21 @@ async function _runATCCycleInner(): Promise<ATCState> {
           },
         });
         events.push(event);
-      } else if (!latestRun && elapsedMinutes >= STALL_TIMEOUT_MINUTES) {
+      } else if (latestRun && latestRun.status !== "completed" && elapsedMinutes >= STALL_TIMEOUT_EXECUTING_WITH_RUN_MINUTES) {
+        // Workflow run exists but has been in progress too long
+        const event = makeEvent("timeout", item.id, "executing", "failed",
+          `Workflow run ${latestRun.id} in progress for ${Math.round(elapsedMinutes)} minutes (reason: timeout)`);
+        await updateWorkItem(item.id, {
+          status: "failed",
+          execution: {
+            ...item.execution,
+            workflowRunId: latestRun.id,
+            completedAt: now.toISOString(),
+            outcome: "failed",
+          },
+        });
+        events.push(event);
+      } else if (!latestRun && elapsedMinutes >= STALL_TIMEOUT_EXECUTING_NO_RUN_MINUTES) {
         const event = makeEvent("timeout", item.id, "executing", "failed",
           `No workflow run found after ${Math.round(elapsedMinutes)} minutes (reason: timeout)`);
         await updateWorkItem(item.id, {
@@ -399,19 +420,13 @@ async function _runATCCycleInner(): Promise<ATCState> {
       } else if (!pr || (pr.state === "closed" && !pr.mergedAt)) {
         // PR is closed without merge or doesn't exist — genuinely failed, leave as-is
       } else if (pr.state === "open") {
-        // PR is still open — the work item might still be in progress, move back to reviewing
-        await updateWorkItem(item.id, {
-          status: "reviewing",
-          execution: {
-            ...item.execution,
-            prUrl: pr.htmlUrl,
-            outcome: undefined,
-            completedAt: undefined,
-          },
-        });
+        // PR is still open — leave as "failed" and let the Handoff Lifecycle
+        // Orchestrator (HLO) handle retries via GitHub Actions. Moving failed
+        // items back to "reviewing" causes re-dispatch loops where ATC picks
+        // them up again and burns retry attempts.
         events.push(makeEvent(
-          "work_item_reconciled", item.id, "failed", "reviewing",
-          `Reconciled: work item was "failed" but PR #${pr.number} is still open — moved to reviewing`
+          "work_item_reconciled", item.id, "failed", "failed",
+          `Work item "failed" but PR #${pr.number} is still open — deferring to HLO for retry/recovery`
         ));
       }
     } catch (err) {
