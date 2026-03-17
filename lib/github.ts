@@ -41,6 +41,8 @@ export interface PR {
   state: string;
   htmlUrl: string;
   mergedAt: string | null;
+  mergeable: boolean | null;
+  mergeableState: string | null;
 }
 
 export async function readRepoFile(
@@ -222,6 +224,8 @@ export async function getPRByNumber(repo: string, prNumber: number): Promise<PR 
     state: string;
     html_url: string;
     merged_at: string | null;
+    mergeable: boolean | null;
+    mergeable_state: string | null;
   };
   return {
     number: pr.number,
@@ -229,6 +233,8 @@ export async function getPRByNumber(repo: string, prNumber: number): Promise<PR 
     state: pr.state,
     htmlUrl: pr.html_url,
     mergedAt: pr.merged_at,
+    mergeable: pr.mergeable,
+    mergeableState: pr.mergeable_state,
   };
 }
 
@@ -244,6 +250,8 @@ export async function getPRByBranch(repo: string, branch: string): Promise<PR | 
     state: string;
     html_url: string;
     merged_at: string | null;
+    mergeable: boolean | null;
+    mergeable_state: string | null;
   }>;
   if (prs.length === 0) return null;
   const pr = prs[0];
@@ -253,6 +261,8 @@ export async function getPRByBranch(repo: string, branch: string): Promise<PR | 
     state: pr.state,
     htmlUrl: pr.html_url,
     mergedAt: pr.merged_at,
+    mergeable: pr.mergeable ?? null,
+    mergeableState: pr.mergeable_state ?? null,
   };
 }
 
@@ -459,5 +469,178 @@ export async function getPRLifecycleState(
     return null;
   } catch {
     return null;
+  }
+}
+
+// --- Merge conflict recovery utilities ---
+
+export interface MergeabilityResult {
+  mergeable: boolean | null;
+  mergeableState: string | null;
+}
+
+export async function getPRMergeability(
+  repo: string,
+  prNumber: number
+): Promise<MergeabilityResult> {
+  const pr = await getPRByNumber(repo, prNumber);
+  if (!pr) return { mergeable: null, mergeableState: null };
+
+  // GitHub computes mergeable lazily — if null, wait briefly and retry once
+  if (pr.mergeable === null) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const retry = await getPRByNumber(repo, prNumber);
+    if (!retry) return { mergeable: null, mergeableState: null };
+    return { mergeable: retry.mergeable, mergeableState: retry.mergeableState };
+  }
+
+  return { mergeable: pr.mergeable, mergeableState: pr.mergeableState };
+}
+
+export async function rebasePR(
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // GET the PR to obtain the current head SHA
+    const prRes = await ghFetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`
+    );
+
+    if (!prRes.ok) {
+      const text = await prRes.text();
+      return {
+        success: false,
+        error: `Failed to fetch PR #${prNumber}: ${prRes.status} ${text}`,
+      };
+    }
+
+    const prData = (await prRes.json()) as { head: { sha: string } };
+    const expectedHeadSha = prData.head.sha;
+
+    // PUT update-branch with expected_head_sha
+    const updateRes = await ghFetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/update-branch`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ expected_head_sha: expectedHeadSha }),
+      }
+    );
+
+    if (updateRes.status === 202) {
+      return { success: true };
+    }
+
+    if (updateRes.status === 409) {
+      const body = (await updateRes.json().catch(() => ({}))) as { message?: string };
+      return {
+        success: false,
+        error: `Merge conflict rebasing PR #${prNumber}: ${body.message ?? "conflict"}`,
+      };
+    }
+
+    const errText = await updateRes.text();
+    return {
+      success: false,
+      error: `Unexpected response rebasing PR #${prNumber}: ${updateRes.status} ${errText}`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: `rebasePR error: ${message}` };
+  }
+}
+
+const CLOSE_REASON_LABELS: Record<string, string> = {
+  sla_timeout: "SLA timeout (24h with no progress)",
+  superseded: "Superseded by a newer work item",
+  merge_conflicts: "Unresolvable merge conflicts",
+  stale: "Stale — no activity for an extended period",
+};
+
+export async function closePRWithReason(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reason: "sla_timeout" | "superseded" | "merge_conflicts" | "stale",
+  details: string,
+  supersededBy?: number
+): Promise<void> {
+  // Fetch PR details to get branch name
+  const prRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`
+  );
+  if (!prRes.ok) {
+    const err = await prRes.text();
+    throw new Error(`Failed to fetch PR #${prNumber}: ${prRes.status} ${err}`);
+  }
+  const pr = (await prRes.json()) as { head: { ref: string } };
+  const branchName = pr.head.ref;
+
+  // Build and post structured comment
+  const timestamp = new Date().toISOString();
+  const reasonLabel = CLOSE_REASON_LABELS[reason] ?? reason;
+  const supersededLine =
+    supersededBy != null ? `\n**Superseded by:** #${supersededBy}\n` : "";
+  const commentBody = [
+    "## PR Auto-Closed",
+    "",
+    `**Reason:** ${reasonLabel}`,
+    "",
+    details,
+    supersededLine,
+    `**Closed at:** ${timestamp}`,
+  ].join("\n");
+
+  const commentRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/issues/${prNumber}/comments`,
+    {
+      method: "POST",
+      body: JSON.stringify({ body: commentBody }),
+    }
+  );
+  if (!commentRes.ok) {
+    const err = await commentRes.text();
+    throw new Error(
+      `Failed to post comment on PR #${prNumber}: ${commentRes.status} ${err}`
+    );
+  }
+
+  // Close the PR
+  const closeRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ state: "closed" }),
+    }
+  );
+  if (!closeRes.ok) {
+    const err = await closeRes.text();
+    throw new Error(
+      `Failed to close PR #${prNumber}: ${closeRes.status} ${err}`
+    );
+  }
+
+  // Delete branch if no other open PRs reference it
+  const otherPRsRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls?head=${encodeURIComponent(`${owner}:${branchName}`)}&state=open`
+  );
+  if (otherPRsRes.ok) {
+    const otherPRs = (await otherPRsRes.json()) as Array<{ number: number }>;
+    if (Array.isArray(otherPRs) && otherPRs.length === 0) {
+      const deleteRes = await ghFetch(
+        `${GITHUB_API}/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branchName)}`,
+        { method: "DELETE" }
+      );
+      if (!deleteRes.ok && deleteRes.status !== 422) {
+        console.warn(
+          `[github] closePRWithReason: could not delete branch ${branchName}: ${deleteRes.status}`
+        );
+      }
+    }
+  } else {
+    console.warn(
+      `[github] closePRWithReason: could not check for other PRs on branch ${branchName}: ${otherPRsRes.status}`
+    );
   }
 }
