@@ -197,6 +197,147 @@ export async function fetchPageContent(pageId: string): Promise<string> {
   return lines.join("\n\n");
 }
 
+// --- Markdown-to-Notion block helpers (for appendPageContent) ---
+
+interface NotionRichText {
+  type: 'text';
+  text: { content: string };
+  annotations?: { bold?: boolean };
+}
+
+interface NotionBlock {
+  object: 'block';
+  type: 'heading_2' | 'heading_3' | 'bulleted_list_item' | 'paragraph';
+  heading_2?: { rich_text: NotionRichText[] };
+  heading_3?: { rich_text: NotionRichText[] };
+  bulleted_list_item?: { rich_text: NotionRichText[] };
+  paragraph?: { rich_text: NotionRichText[] };
+}
+
+function parseInlineMarkdown(text: string): NotionRichText[] {
+  const parts: NotionRichText[] = [];
+  const regex = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({
+        type: 'text',
+        text: { content: text.slice(lastIndex, match.index) },
+      });
+    }
+    parts.push({
+      type: 'text',
+      text: { content: match[1] },
+      annotations: { bold: true },
+    });
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push({
+      type: 'text',
+      text: { content: text.slice(lastIndex) },
+    });
+  }
+
+  if (parts.length === 0) {
+    parts.push({ type: 'text', text: { content: '' } });
+  }
+
+  return parts;
+}
+
+function markdownToNotionBlocks(markdown: string): NotionBlock[] {
+  const lines = markdown.split('\n');
+  const blocks: NotionBlock[] = [];
+
+  for (const line of lines) {
+    if (line.trim() === '') continue;
+
+    if (line.startsWith('## ')) {
+      const content = line.slice(3).trim();
+      blocks.push({
+        object: 'block',
+        type: 'heading_2',
+        heading_2: {
+          rich_text: [{ type: 'text', text: { content } }],
+        },
+      });
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      const content = line.slice(4).trim();
+      blocks.push({
+        object: 'block',
+        type: 'heading_3',
+        heading_3: {
+          rich_text: [{ type: 'text', text: { content } }],
+        },
+      });
+      continue;
+    }
+
+    if (line.startsWith('- ')) {
+      const content = line.slice(2).trim();
+      blocks.push({
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: parseInlineMarkdown(content),
+        },
+      });
+      continue;
+    }
+
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: {
+        rich_text: parseInlineMarkdown(line),
+      },
+    });
+  }
+
+  return blocks;
+}
+
+export async function appendPageContent(
+  pageId: string,
+  markdown: string,
+): Promise<void> {
+  const notionApiKey = process.env.NOTION_API_KEY;
+  if (!notionApiKey) {
+    throw new Error('NOTION_API_KEY environment variable is not set');
+  }
+
+  const blocks = markdownToNotionBlocks(markdown);
+
+  if (blocks.length === 0) {
+    return;
+  }
+
+  const url = `https://api.notion.com/v1/blocks/${pageId}/children`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${notionApiKey}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ children: blocks }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `Notion API error appending blocks to page ${pageId}: HTTP ${response.status} — ${body}`,
+    );
+  }
+}
+
 export async function updateProjectStatus(
   pageId: string,
   status: ProjectStatus,
