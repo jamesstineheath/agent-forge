@@ -6,6 +6,7 @@ import { QuickStats } from "@/components/quick-stats";
 import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
 import { ATCMetricsPanel } from "@/components/atc-metrics-panel";
+import { ActivityFeed } from "@/components/activity-feed";
 import {
   useWorkItems,
   useRepos,
@@ -212,6 +213,9 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Activity Feed */}
+      <ActivityFeed />
 
       {/* Merged Today */}
       {mergedToday.length > 0 && (

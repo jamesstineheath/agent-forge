@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { DispatchButton } from "@/components/dispatch-button";
-import { useWorkItem } from "@/lib/hooks";
+import { useWorkItem, useWorkItemEvents } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
 const LIFECYCLE: WorkItem["status"][] = [
@@ -49,6 +49,7 @@ export default function WorkItemDetailPage({ params }: Props) {
   const { id } = use(params);
   const router = useRouter();
   const { data: item, isLoading, error, mutate } = useWorkItem(id);
+  const { data: itemEvents } = useWorkItemEvents(id);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -377,6 +378,38 @@ export default function WorkItemDetailPage({ params }: Props) {
                 <dd>{formatDate(item.execution.completedAt)}</dd>
               </div>
             </dl>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* History */}
+      {itemEvents && itemEvents.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {itemEvents
+                .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                .map((evt) => (
+                  <div key={evt.id} className="flex items-start gap-3 text-sm">
+                    <div className="min-w-[140px] text-muted-foreground font-mono text-xs">
+                      {new Date(evt.timestamp).toLocaleString()}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {evt.previousStatus && evt.newStatus && (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="px-1.5 py-0.5 rounded bg-muted text-xs">{evt.previousStatus}</span>
+                          <span className="text-muted-foreground">&rarr;</span>
+                          <span className="px-1.5 py-0.5 rounded bg-muted text-xs">{evt.newStatus}</span>
+                        </span>
+                      )}
+                      <span className="text-muted-foreground">{evt.details}</span>
+                    </div>
+                  </div>
+                ))}
+            </div>
           </CardContent>
         </Card>
       )}

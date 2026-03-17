@@ -36,6 +36,7 @@ You are the last human-like review before an AI agent executes this spec autonom
 - Will the executing agent have enough context to succeed autonomously?
 - Are file paths and command examples accurate?
 - Is the Step Final (status reporting) properly structured?
+- **Estimated Files (REQUIRED):** The handoff MUST include an "Estimated files:" line in the Metadata section listing all files likely to be created or modified. If this is missing, ADD IT based on your analysis of the requirements and execution steps. This metadata is critical for the ATC's conflict detection system.
 
 ## Decision
 

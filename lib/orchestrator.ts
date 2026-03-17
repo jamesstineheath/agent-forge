@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { getWorkItem, updateWorkItem } from "./work-items";
+import { getWorkItem, updateWorkItem, listWorkItems } from "./work-items";
+import { parseEstimatedFiles } from "./atc";
 import { listRepos, getRepo } from "./repos";
 import {
   readRepoFile,
@@ -241,7 +242,8 @@ ${
 export async function generateHandoff(
   workItem: WorkItem,
   repoContext: RepoContext,
-  repoConfig: RepoConfig
+  repoConfig: RepoConfig,
+  siblingItems?: Array<{ title: string; branch: string; estimatedFiles: string[] }>
 ): Promise<string> {
   const repoContextBlock = buildRepoContextBlock(repoContext);
 
@@ -256,7 +258,12 @@ export async function generateHandoff(
 **Handoff Directory:** ${repoConfig.handoffDir}
 **Execute Workflow:** ${repoConfig.executeWorkflow}
 **Budget:** $${repoConfig.defaultBudget}
+${siblingItems && siblingItems.length > 0 ? `
+**Concurrent Work in Same Repo:**
+${siblingItems.map(s => `- "${s.title}" (branch: \`${s.branch}\`${s.estimatedFiles.length > 0 ? `, files: ${s.estimatedFiles.join(", ")}` : ""})`).join("\n")}
 
+IMPORTANT: Avoid modifying the same files as concurrent work items listed above. If overlap is unavoidable, note it in the handoff so the executor can coordinate.
+` : ""}
 Generate the complete handoff markdown file now.`;
 
   // Use buildCachedPrompt to organize the static/dynamic content split
@@ -333,8 +340,34 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
     // 4. Fetch repo context
     const repoContext = await fetchRepoContext(repoConfig);
 
+    // 4b. Fetch sibling items (executing/reviewing in same repo)
+    const [executingSiblings, reviewingSiblings] = await Promise.all([
+      listWorkItems({ status: "executing", targetRepo: workItem.targetRepo }),
+      listWorkItems({ status: "reviewing", targetRepo: workItem.targetRepo }),
+    ]);
+    const siblingItems = [...executingSiblings, ...reviewingSiblings]
+      .filter(s => s.id !== workItem.id)
+      .map(s => ({
+        title: s.title,
+        branch: "", // Will be populated below
+        estimatedFiles: [] as string[],
+      }));
+    // Enrich with handoff data
+    for (const sibling of siblingItems) {
+      const entry = [...executingSiblings, ...reviewingSiblings].find(e => e.title === sibling.title);
+      if (entry) {
+        const fullItem = await getWorkItem(entry.id);
+        if (fullItem) {
+          sibling.branch = fullItem.handoff?.branch ?? "";
+          sibling.estimatedFiles = fullItem.handoff?.content
+            ? parseEstimatedFiles(fullItem.handoff.content)
+            : fullItem.execution?.filesModified ?? [];
+        }
+      }
+    }
+
     // 5. Generate handoff via Claude
-    let handoffContent = await generateHandoff(workItem, repoContext, repoConfig);
+    let handoffContent = await generateHandoff(workItem, repoContext, repoConfig, siblingItems.length > 0 ? siblingItems : undefined);
 
     // 5a. Prepend source metadata for direct-source items
     if (workItem.source.type === 'direct') {
