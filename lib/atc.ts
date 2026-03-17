@@ -6,7 +6,7 @@ import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, WorkItem, HLOLifecycleState } from "./types";
 import type { PR } from "./github";
-import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject, writeOutcomeSummary } from "./projects";
+import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject, writeOutcomeSummary, getRetryProjects, clearRetryFlag, markProjectFailedFromRetry } from "./projects";
 import { decomposeProject } from "./decomposer";
 import { validatePlan } from "./plan-validator";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
@@ -689,6 +689,69 @@ async function _runATCCycleInner(): Promise<ATCState> {
         `Parked after ${retryCount} retries. Requires human attention.`
       ));
     }
+  }
+
+  // §4 — Project retry processing
+  // Process projects flagged for retry before decomposition picks them up
+  try {
+    const retryProjects = await getRetryProjects();
+    if (retryProjects.length > 0) {
+      console.log(`[atc] §4: found ${retryProjects.length} project(s) flagged for retry`);
+    }
+
+    for (const project of retryProjects) {
+      const retryCount = project.retryCount ?? 0;
+
+      // Check retry cap
+      if (retryCount >= 3) {
+        console.log(`[atc] §4: project ${project.projectId} has hit retry cap (retryCount=${retryCount}), marking failed`);
+        await markProjectFailedFromRetry(project.id);
+        events.push(makeEvent(
+          "project_retry", project.projectId, undefined, "Failed",
+          `Retry cap exceeded (retryCount=${retryCount}), marked Failed`
+        ));
+        continue;
+      }
+
+      // Clear the dedup guard so §4.5 will re-decompose this project
+      try {
+        await deleteJson(`atc/project-decomposed/${project.projectId}`);
+        console.log(`[atc] §4: cleared dedup guard for project ${project.projectId}`);
+      } catch {
+        // Guard may not exist; not an error
+        console.log(`[atc] §4: no dedup guard to clear for project ${project.projectId} (ok)`);
+      }
+
+      // Cancel stale work items from previous attempt
+      const staleStates: WorkItem["status"][] = ["failed", "parked", "blocked", "ready", "filed", "queued"];
+      const allEntries = await listWorkItems({});
+      const projectItems: WorkItem[] = [];
+      for (const entry of allEntries) {
+        const wi = await getWorkItem(entry.id);
+        if (wi && wi.source.type === "project" && wi.source.sourceId === project.projectId) {
+          projectItems.push(wi);
+        }
+      }
+      const itemsToCancel = projectItems.filter((item) => staleStates.includes(item.status));
+
+      for (const item of itemsToCancel) {
+        await updateWorkItem(item.id, { status: "cancelled" });
+      }
+      console.log(`[atc] §4: cancelled ${itemsToCancel.length} stale work items for project ${project.projectId}`);
+
+      // Reset retry flag, increment count, set status to Execute
+      await clearRetryFlag(project.id, retryCount);
+
+      // Log ATC event
+      events.push(makeEvent(
+        "project_retry", project.projectId, undefined, "Execute",
+        `Retry initiated (newRetryCount=${retryCount + 1}, cancelledItems=${itemsToCancel.length})`
+      ));
+
+      console.log(`[atc] §4: project ${project.projectId} reset for retry (attempt ${retryCount + 1})`);
+    }
+  } catch (err) {
+    console.error(`[atc] §4 error:`, err);
   }
 
   // 4.5: Detect Notion projects with Status = "Execute", transition, and decompose
