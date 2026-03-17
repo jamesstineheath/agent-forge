@@ -67,4 +67,4 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         QA_BYPASS_SECRET: ${{ inputs.qa-bypass-secret }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
-      run: npx ts-node run-qa.ts
+      run: npx tsx run-qa.ts
