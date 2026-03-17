@@ -157,6 +157,7 @@ export const updateWorkItemSchema = z.object({
       blockedAt: z.string(),
     })
     .optional(),
+  failureCategory: z.enum(["transient", "execution", "structural", "unknown"]).optional(),
 });
 
 export type CreateWorkItemInput = z.infer<typeof createWorkItemSchema>;

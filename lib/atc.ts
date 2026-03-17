@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { loadJson, saveJson, deleteJson } from "./storage";
 import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
-import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate, getPRLifecycleState } from "./github";
+import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate, getPRLifecycleState, getPRMergeability, rebasePR, closePRWithReason } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, WorkItem, HLOLifecycleState } from "./types";
 import type { PR } from "./github";
@@ -21,6 +21,7 @@ const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const LOCK_HARD_CEILING_MS = 10 * 60 * 1000; // 10 minutes — force-clear zombie locks
 const CYCLE_TIMEOUT_MS = 240 * 1000; // 240s — abort before Vercel's 300s Fluid Compute limit
 const STALL_TIMEOUT_MINUTES = 30;
+const CONFLICT_CHECK_DELAY_MINUTES = 15; // Don't check mergeability until PR has been in "reviewing" for this long
 const MAX_EVENTS = 200;
 const CLEANUP_THROTTLE_MINUTES = 60;
 const STALE_BRANCH_HOURS = 48;
@@ -292,6 +293,52 @@ async function _runATCCycleInner(): Promise<ATCState> {
           },
         });
         events.push(event);
+      } else if (pr?.state === "open" && elapsedMinutes >= CONFLICT_CHECK_DELAY_MINUTES) {
+        // §2.7: Merge conflict detection for open PRs in "reviewing" status
+        const prNumber = item.execution?.prNumber ?? pr.number;
+        const mergeability = await getPRMergeability(item.targetRepo, prNumber);
+
+        if (mergeability.mergeable === false && mergeability.mergeableState === "dirty") {
+          // Actual merge conflict — attempt auto-rebase
+          const [owner, repoName] = item.targetRepo.split("/");
+          const rebaseResult = await rebasePR(owner, repoName, prNumber);
+
+          if (rebaseResult.success) {
+            events.push(makeEvent("conflict", item.id, "reviewing", "reviewing",
+              `PR #${prNumber} had merge conflict, auto-rebased successfully`));
+          } else {
+            // Rebase failed — close PR and fail for re-dispatch
+            try {
+              await closePRWithReason(owner, repoName, prNumber, "merge_conflicts",
+                `Auto-rebase failed: ${rebaseResult.error}. Work item will be re-dispatched.`);
+            } catch (closeErr) {
+              console.warn(`[atc] Failed to close conflicted PR #${prNumber}:`, closeErr);
+            }
+            const event = makeEvent("conflict", item.id, "reviewing", "failed",
+              `PR #${prNumber} merge conflict unresolvable (${rebaseResult.error}), closed for re-dispatch`);
+            await updateWorkItem(item.id, {
+              status: "failed",
+              failureCategory: "transient",
+              execution: {
+                ...item.execution,
+                prNumber,
+                prUrl: pr.htmlUrl,
+                completedAt: now.toISOString(),
+                outcome: "failed",
+              },
+            });
+            events.push(event);
+          }
+        } else if (mergeability.mergeableState === "behind") {
+          // No conflict but behind main — proactively rebase
+          const [owner, repoName] = item.targetRepo.split("/");
+          const rebaseResult = await rebasePR(owner, repoName, prNumber);
+          if (rebaseResult.success) {
+            events.push(makeEvent("conflict", item.id, "reviewing", "reviewing",
+              `PR #${prNumber} was behind base, auto-rebased`));
+          }
+          // If rebase fails here, skip — will be caught as "dirty" on next cycle
+        }
       }
     }
   }

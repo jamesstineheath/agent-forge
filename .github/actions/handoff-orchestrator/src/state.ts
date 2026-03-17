@@ -12,6 +12,7 @@ export enum HandoffState {
   CodeReviewComplete = "CodeReviewComplete",
   RequestedChanges = "RequestedChanges",
   NeedsHumanReview = "NeedsHumanReview",
+  ConflictDetected = "ConflictDetected",
   Merged = "Merged",
   Failed = "Failed",
 }
@@ -42,7 +43,8 @@ export type TriggerEvent =
   | { type: "code_review_completed"; decision: "approve" | "request_changes" | "flag_for_human" }
   | { type: "pr_merged" }
   | { type: "pr_closed" }
-  | { type: "retry_triggered" };
+  | { type: "retry_triggered" }
+  | { type: "conflict_detected"; resolution: "rebased" | "closed" | "escalated" };
 
 const TERMINAL_STATES = new Set([
   HandoffState.Merged,
@@ -257,6 +259,21 @@ function getNextState(
       }
       return null;
 
+    case "conflict_detected":
+      if (!isTerminal(current)) {
+        if (event.resolution === "rebased") {
+          // Rebase succeeded — stay in current state, CI will re-run
+          return current === HandoffState.CodeReview ||
+            current === HandoffState.CodeReviewComplete ||
+            current === HandoffState.CIPassed
+            ? HandoffState.CIRunning
+            : current;
+        }
+        // Closed or escalated — transition through ConflictDetected to Failed
+        return HandoffState.ConflictDetected;
+      }
+      return null;
+
     default:
       return null;
   }
@@ -276,6 +293,7 @@ const STATE_LABELS: Record<HandoffState, string> = {
   [HandoffState.CodeReviewComplete]: "Code Review Complete",
   [HandoffState.RequestedChanges]: "Requested Changes",
   [HandoffState.NeedsHumanReview]: "Needs Human Review",
+  [HandoffState.ConflictDetected]: "Conflict Detected",
   [HandoffState.Merged]: "Merged",
   [HandoffState.Failed]: "Failed",
 };

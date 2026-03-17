@@ -78,3 +78,45 @@ jobs:
           done
 
           echo "Stuck PR check complete."
+
+          # --- Merge conflict detection ---
+          CONFLICT_MARKER="<!-- CONFLICT-DETECTED -->"
+          echo ""
+          echo "Checking for PRs with merge conflicts in $REPO..."
+
+          for PR_B64 in $PRS; do
+            PR_JSON=$(echo "$PR_B64" | base64 --decode)
+            PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number')
+
+            # Check mergeable state via API
+            MERGEABLE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable // "null"' 2>/dev/null || echo "null")
+            MERGEABLE_STATE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.mergeable_state // "unknown"' 2>/dev/null || echo "unknown")
+
+            if [ "$MERGEABLE" != "false" ] || [ "$MERGEABLE_STATE" != "dirty" ]; then
+              continue
+            fi
+
+            echo "PR #$PR_NUMBER has merge conflicts (mergeable=$MERGEABLE, state=$MERGEABLE_STATE)."
+
+            # Check if we already posted the conflict comment (dedup)
+            EXISTING_CONFLICT=$(gh pr view "$PR_NUMBER" --repo "$REPO" --comments --json comments --jq ".comments[].body" 2>/dev/null | grep -c "$CONFLICT_MARKER" || true)
+            EXISTING_CONFLICT=${EXISTING_CONFLICT:-0}
+            if [ "$EXISTING_CONFLICT" -gt 0 ]; then
+              echo "PR #$PR_NUMBER already has a conflict comment, skipping."
+              continue
+            fi
+
+            CONFLICT_BODY="${CONFLICT_MARKER}
+          ## Merge Conflict Detected
+
+          This PR has merge conflicts with the base branch. The ATC should auto-rebase or re-dispatch this work item.
+
+          If this persists, manual intervention may be needed.
+
+          cc @jamesstineheath"
+
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "$CONFLICT_BODY"
+            echo "Posted conflict comment on PR #$PR_NUMBER."
+          done
+
+          echo "Conflict check complete."
