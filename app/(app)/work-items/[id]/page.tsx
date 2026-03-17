@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { DispatchButton } from "@/components/dispatch-button";
-import { useWorkItem } from "@/lib/hooks";
+import { useWorkItem, useWorkItemEvents } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
 const LIFECYCLE: WorkItem["status"][] = [
@@ -49,6 +49,7 @@ export default function WorkItemDetailPage({ params }: Props) {
   const { id } = use(params);
   const router = useRouter();
   const { data: item, isLoading, error, mutate } = useWorkItem(id);
+  const { data: itemEvents } = useWorkItemEvents(id);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -92,6 +93,44 @@ export default function WorkItemDetailPage({ params }: Props) {
   }
 
   const lifecycleIndex = LIFECYCLE.indexOf(item.status);
+  const isTerminalFailure = item.status === "failed" || item.status === "parked";
+  const isCancelled = item.status === "cancelled" || item.status === "superseded";
+
+  // For failed/parked items, figure out which lifecycle stage they failed at
+  // by looking at execution state (has PR? has workflow run? etc.)
+  const failedAtIndex = isTerminalFailure
+    ? item.execution?.prNumber
+      ? 4 // reviewing (had a PR)
+      : item.execution?.workflowRunId || item.execution?.startedAt
+      ? 3 // executing (had a workflow run)
+      : item.handoff
+      ? 2 // generating (had a handoff)
+      : 1 // ready
+    : -1;
+
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  async function handleResetToReady() {
+    setResetting(true);
+    setResetError(null);
+    try {
+      const res = await fetch(`/api/work-items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ready" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Reset failed");
+      }
+      mutate();
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setResetting(false);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -111,22 +150,78 @@ export default function WorkItemDetailPage({ params }: Props) {
         </div>
       </div>
 
+      {/* Failure/parked banner */}
+      {isTerminalFailure && (
+        <Card className="border-red-800/50 bg-red-950/30">
+          <CardContent className="py-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-sm font-medium text-red-400">
+                  {item.status === "parked"
+                    ? "Parked after exhausting retries"
+                    : "Execution failed"}
+                </div>
+                <div className="text-xs text-red-400/70 space-y-0.5">
+                  {item.execution?.retryCount != null && item.execution.retryCount > 0 && (
+                    <div>Retried {item.execution.retryCount} time{item.execution.retryCount > 1 ? "s" : ""}</div>
+                  )}
+                  {item.execution?.completedAt && (
+                    <div>Failed at {formatDate(item.execution.completedAt)}</div>
+                  )}
+                  {item.execution?.outcome && item.execution.outcome !== item.status && (
+                    <div>Last outcome: {item.execution.outcome}</div>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleResetToReady}
+                  disabled={resetting}
+                  className="border-red-800/50 text-red-400 hover:bg-red-950 hover:text-red-300"
+                >
+                  {resetting ? "Resetting..." : "Reset to Ready"}
+                </Button>
+                {resetError && (
+                  <span className="text-xs text-red-400">{resetError}</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cancelled/superseded banner */}
+      {isCancelled && (
+        <Card className="border-zinc-700/50 bg-zinc-900/50">
+          <CardContent className="py-4">
+            <div className="text-sm text-zinc-400">
+              This work item was {item.status}.
+              {item.status === "cancelled" && " The work may have been completed under a different item."}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Status timeline */}
       <Card>
         <CardContent className="py-4">
           <div className="flex items-center gap-1">
             {LIFECYCLE.map((s, i) => {
-              const isPast = lifecycleIndex > i;
-              const isCurrent = lifecycleIndex === i;
-              const isFailed =
-                (item.status === "failed" || item.status === "parked") &&
-                i === LIFECYCLE.length - 1;
+              const isPast = isTerminalFailure
+                ? i < failedAtIndex
+                : lifecycleIndex > i;
+              const isCurrent = isTerminalFailure
+                ? i === failedAtIndex
+                : lifecycleIndex === i;
+              const isFailPoint = isTerminalFailure && i === failedAtIndex;
               return (
                 <div key={s} className="flex items-center flex-1 last:flex-none">
                   <div
                     className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
-                      isFailed
-                        ? "bg-red-400"
+                      isFailPoint
+                        ? "bg-red-400 ring-2 ring-red-300/50"
                         : isCurrent
                         ? "bg-blue-500 ring-2 ring-blue-200"
                         : isPast
@@ -136,19 +231,25 @@ export default function WorkItemDetailPage({ params }: Props) {
                   />
                   <span
                     className={`mx-1 text-xs hidden sm:block ${
-                      isCurrent
+                      isFailPoint
+                        ? "font-medium text-red-400"
+                        : isCurrent
                         ? "font-medium text-blue-600"
                         : isPast
                         ? "text-green-600"
                         : "text-muted-foreground"
                     }`}
                   >
-                    {s}
+                    {isFailPoint ? `${s} (failed)` : s}
                   </span>
                   {i < LIFECYCLE.length - 1 && (
                     <div
                       className={`flex-1 h-px ${
-                        isPast ? "bg-green-300" : "bg-gray-200"
+                        isFailPoint
+                          ? "bg-red-400/50"
+                          : isPast
+                          ? "bg-green-300"
+                          : "bg-gray-200"
                       }`}
                     />
                   )}
@@ -277,6 +378,38 @@ export default function WorkItemDetailPage({ params }: Props) {
                 <dd>{formatDate(item.execution.completedAt)}</dd>
               </div>
             </dl>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* History */}
+      {itemEvents && itemEvents.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>History</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {itemEvents
+                .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+                .map((evt) => (
+                  <div key={evt.id} className="flex items-start gap-3 text-sm">
+                    <div className="min-w-[140px] text-muted-foreground font-mono text-xs">
+                      {new Date(evt.timestamp).toLocaleString()}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {evt.previousStatus && evt.newStatus && (
+                        <span className="inline-flex items-center gap-1">
+                          <span className="px-1.5 py-0.5 rounded bg-muted text-xs">{evt.previousStatus}</span>
+                          <span className="text-muted-foreground">&rarr;</span>
+                          <span className="px-1.5 py-0.5 rounded bg-muted text-xs">{evt.newStatus}</span>
+                        </span>
+                      )}
+                      <span className="text-muted-foreground">{evt.details}</span>
+                    </div>
+                  </div>
+                ))}
+            </div>
           </CardContent>
         </Card>
       )}

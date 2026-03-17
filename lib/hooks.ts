@@ -119,6 +119,15 @@ export function useFeedbackCompiler() {
   return { data, error, isLoading, mutate };
 }
 
+export function useWorkItemEvents(workItemId: string | null) {
+  const { data, error, isLoading, mutate } = useSWR<ATCEvent[]>(
+    workItemId ? `/api/work-items/${workItemId}/events` : null,
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
 export function useATCEvents(limit = 50) {
   const { data, error, isLoading, mutate } = useSWR<ATCEvent[]>(
     `/api/atc/events?limit=${limit}`,

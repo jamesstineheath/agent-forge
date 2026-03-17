@@ -46,8 +46,7 @@ const STAGES: StageConfig[] = [
     label: "Merged",
     countColor: "text-zinc-200",
     barColor: "bg-emerald-500",
-    filter: (i) =>
-      i.status === "merged" || i.execution?.outcome === "merged",
+    filter: (i) => i.status === "merged",
   },
   {
     key: "failed",

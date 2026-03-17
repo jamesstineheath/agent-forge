@@ -6,6 +6,7 @@ import { QuickStats } from "@/components/quick-stats";
 import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
 import { ATCMetricsPanel } from "@/components/atc-metrics-panel";
+import { ActivityFeed } from "@/components/activity-feed";
 import {
   useWorkItems,
   useRepos,
@@ -125,8 +126,7 @@ export default function DashboardPage() {
   const now = new Date();
   const mergedToday =
     workItems?.filter((wi) => {
-      if (wi.status !== "merged" && wi.execution?.outcome !== "merged")
-        return false;
+      if (wi.status !== "merged") return false;
       const ts = wi.execution?.completedAt ?? wi.updatedAt;
       const completed = new Date(ts);
       return (
@@ -213,6 +213,9 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Activity Feed */}
+      <ActivityFeed />
 
       {/* Merged Today */}
       {mergedToday.length > 0 && (
