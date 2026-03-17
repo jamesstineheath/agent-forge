@@ -136,7 +136,7 @@ jobs:
             dependencies are installed via npm ci. Skip Step 0 entirely.
           - Start from the Pre-flight Self-Check, then execute each numbered
             implementation step in order.
-          - Do NOT skip verification steps (tsc, build, lint).
+          - Do NOT skip verification steps (tsc, build, lint, test). Run `npm test` before pushing — CI will reject code with failing tests.
           - If build fails after 3 attempts, follow the Session Abort Protocol in the
             handoff file.
           - After implementation and verification pass, commit all changes and push to
