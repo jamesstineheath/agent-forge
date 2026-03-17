@@ -1,7 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useWorkItems, useTLMMemory, useATCMetrics } from "@/lib/hooks";
+import { useWorkItems, useTLMMemory, useATCMetrics, useFeedbackCompiler } from "@/lib/hooks";
 import { CostSummary } from "@/components/cost-summary";
 import { TLMAgentCard } from "@/components/tlm-agent-card";
 import { ATCAgentCard } from "@/components/atc-agent-card";
@@ -22,6 +22,7 @@ export default function AgentsPage() {
   const { data: workItems, isLoading: workItemsLoading } = useWorkItems();
   const { data: tlmMemory, isLoading: tlmLoading, error: tlmError } = useTLMMemory();
   const { data: atcMetrics, isLoading: atcLoading, error: atcError } = useATCMetrics();
+  const { data: feedbackCompiler } = useFeedbackCompiler();
 
   const codeReviewerRate =
     tlmMemory && tlmMemory.stats.totalAssessed > 0
@@ -163,8 +164,13 @@ export default function AgentsPage() {
                 hotPatterns={[]}
                 recentOutcomes={[]}
                 successRate={null}
-                lastRun={null}
-                status="in-pipeline"
+                lastRun={feedbackCompiler?.lastRun ?? null}
+                status={feedbackCompiler?.status ?? "idle"}
+                subtitle={
+                  feedbackCompiler?.lastRun
+                    ? `${feedbackCompiler.patternsDetected} patterns detected · ${feedbackCompiler.changesProposed} changes proposed · last run ${new Date(feedbackCompiler.lastRun).toLocaleDateString()}`
+                    : "No runs yet"
+                }
               />
             </div>
           </>
@@ -205,11 +211,10 @@ export default function AgentsPage() {
           </span>
         </div>
         <div className="text-xs text-zinc-500">
-          The Feedback Compiler (ADR-009) will analyze outcome patterns weekly
-          and propose prompt changes via PR. Currently in pipeline. Once
-          deployed, it will close the loop between observation (Outcome Tracker)
-          and adaptation (prompt/config changes), with human approval as the
-          gate.
+          The Feedback Compiler (ADR-009) analyzes outcome patterns weekly
+          and proposes prompt changes via PR, closing the loop between
+          observation (Outcome Tracker) and adaptation (prompt/config changes),
+          with human approval as the gate.
         </div>
       </div>
     </div>

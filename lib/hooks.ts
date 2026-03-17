@@ -110,6 +110,15 @@ export function useATCStatePanel() {
   return { data, error, isLoading, mutate };
 }
 
+export function useFeedbackCompiler() {
+  const { data, error, isLoading, mutate } = useSWR<import("@/app/api/agents/feedback-compiler/route").FeedbackCompilerData>(
+    "/api/agents/feedback-compiler",
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
 export function useATCEvents(limit = 50) {
   const { data, error, isLoading, mutate } = useSWR<ATCEvent[]>(
     `/api/atc/events?limit=${limit}`,
