@@ -175,10 +175,12 @@ export async function getNextDispatchable(targetRepo: string): Promise<WorkItem 
       dispatchable.push(item);
       continue;
     }
-    // Check all dependencies are merged
+    // Check all dependencies are resolved (merged or cancelled)
+    // Cancelled deps are treated as resolved: the work was either completed under
+    // a different item ID or is no longer needed — either way, the dependent item can proceed.
     const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
-    const allMerged = depItems.every((dep) => dep !== null && dep.status === "merged");
-    if (allMerged) {
+    const allResolved = depItems.every((dep) => dep !== null && (dep.status === "merged" || dep.status === "cancelled"));
+    if (allResolved) {
       dispatchable.push(item);
     }
   }
@@ -213,8 +215,8 @@ export async function getAllDispatchable(targetRepo: string): Promise<WorkItem[]
       continue;
     }
     const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
-    const allMerged = depItems.every((dep) => dep !== null && dep.status === "merged");
-    if (allMerged) {
+    const allResolved = depItems.every((dep) => dep !== null && (dep.status === "merged" || dep.status === "cancelled"));
+    if (allResolved) {
       dispatchable.push(item);
     }
   }
@@ -238,8 +240,8 @@ export async function getBlockedByDependencies(targetRepo: string): Promise<Work
   for (const item of valid) {
     if (item.dependencies.length === 0) continue;
     const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
-    const allMerged = depItems.every((dep) => dep !== null && dep.status === "merged");
-    if (!allMerged) {
+    const allResolved = depItems.every((dep) => dep !== null && (dep.status === "merged" || dep.status === "cancelled"));
+    if (!allResolved) {
       blocked.push(item);
     }
   }
