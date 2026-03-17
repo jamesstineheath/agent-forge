@@ -22,6 +22,7 @@ const EVENT_COLORS: Record<ATCEvent["type"], string> = {
   escalation_resolved: "bg-green-100 text-green-700",
   dependency_block: "bg-purple-100 text-purple-700",
   auto_cancel: "bg-rose-100 text-rose-700",
+  project_retry: "bg-amber-200 text-amber-800",
 };
 
 const ALL_TYPES = Object.keys(EVENT_COLORS) as ATCEvent["type"][];
