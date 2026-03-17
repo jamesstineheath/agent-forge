@@ -148,6 +148,16 @@ export default function AgentsPage() {
                 status="active"
               />
               <TLMAgentCard
+                name="QA Agent"
+                stats={null}
+                hotPatterns={[]}
+                recentOutcomes={[]}
+                successRate={null}
+                lastRun={null}
+                status="active"
+                subtitle="Post-deployment verification — advisory mode"
+              />
+              <TLMAgentCard
                 name="Feedback Compiler"
                 stats={null}
                 hotPatterns={[]}

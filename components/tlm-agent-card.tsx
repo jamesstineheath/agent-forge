@@ -21,6 +21,7 @@ interface TLMAgentCardProps {
   successRate: number | null;
   lastRun: string | null;
   status: "active" | "in-pipeline" | "idle";
+  subtitle?: string;
 }
 
 function OutcomeIcon({ outcome }: { outcome: string }) {
@@ -42,6 +43,7 @@ export function TLMAgentCard({
   successRate,
   lastRun,
   status,
+  subtitle,
 }: TLMAgentCardProps) {
   const [expanded, setExpanded] = useState(false);
   const isDeployed = status !== "in-pipeline";
@@ -78,6 +80,8 @@ export function TLMAgentCard({
                 &middot; {stats.causedIssues} issues
                 {lastRun && <> &middot; last run {lastRun}</>}
               </span>
+            ) : isDeployed ? (
+              <span>{subtitle ?? "Awaiting first run"}</span>
             ) : (
               <span>Handoff filed, awaiting deployment</span>
             )}
