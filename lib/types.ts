@@ -66,6 +66,7 @@ export interface WorkItem {
   triggeredBy?: string;
   complexityHint?: ComplexityHint;
   failureCategory?: FailureCategory;
+  attribution?: ComponentAttribution[];
   createdAt: string;
   updatedAt: string;
   reasoningMetrics?: ReasoningQualityAssessment;
