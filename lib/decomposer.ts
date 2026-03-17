@@ -5,7 +5,7 @@ import { fetchRepoContext, type RepoContext } from "./orchestrator";
 import { listRepos, getRepo } from "./repos";
 import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
-import type { Project, WorkItem, RepoConfig, DecomposerConfig } from "./types";
+import type { Project, WorkItem, RepoConfig, DecomposerConfig, SubPhase } from "./types";
 
 // --- Constants ---
 
@@ -675,4 +675,223 @@ export function getDecomposerConfig(): DecomposerConfig {
     hardLimit: isNaN(hardLimit) ? 30 : hardLimit,
     maxRecursionDepth: isNaN(maxRecursionDepth) ? 1 : maxRecursionDepth,
   };
+}
+
+// ─── Union-Find helpers ───────────────────────────────────────────────────────
+
+function makeUnionFind(ids: string[]): { parent: Map<string, string>; rank: Map<string, number> } {
+  const parent = new Map(ids.map(id => [id, id]));
+  const rank = new Map(ids.map(id => [id, 0]));
+  return { parent, rank };
+}
+
+function ufFind(parent: Map<string, string>, x: string): string {
+  if (parent.get(x) !== x) {
+    parent.set(x, ufFind(parent, parent.get(x)!));
+  }
+  return parent.get(x)!;
+}
+
+function ufUnion(parent: Map<string, string>, rank: Map<string, number>, a: string, b: string): void {
+  const ra = ufFind(parent, a);
+  const rb = ufFind(parent, b);
+  if (ra === rb) return;
+  if ((rank.get(ra) ?? 0) < (rank.get(rb) ?? 0)) {
+    parent.set(ra, rb);
+  } else if ((rank.get(ra) ?? 0) > (rank.get(rb) ?? 0)) {
+    parent.set(rb, ra);
+  } else {
+    parent.set(rb, ra);
+    rank.set(ra, (rank.get(ra) ?? 0) + 1);
+  }
+}
+
+// ─── Subsystem keyword extraction ────────────────────────────────────────────
+
+function extractSubsystemKeywords(item: WorkItem): Set<string> {
+  const text = `${item.title} ${item.description}`.toLowerCase();
+  const keywords = new Set<string>();
+  const pathPattern = /\b(lib|app|components|api|hooks|actions|pages|utils|types|storage|github|atc|orchestrat|decompos|escalat|gmail|notion|repos|work.?items)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = pathPattern.exec(text)) !== null) {
+    keywords.add(m[1]);
+  }
+  return keywords;
+}
+
+// ─── Main grouping function ───────────────────────────────────────────────────
+
+export function groupIntoSubPhases(
+  items: WorkItem[],
+  targetPhaseCount?: number
+): SubPhase[] {
+  if (items.length === 0) return [];
+
+  // Determine target phase count
+  const count = targetPhaseCount ?? (items.length >= 23 ? 3 : 2);
+  const phaseCount = Math.max(1, Math.min(count, items.length));
+
+  const ids = items.map(item => item.id);
+  const itemById = new Map(items.map(item => [item.id, item]));
+
+  // ── Step 1: Dependency clustering via union-find ──────────────────────────
+  const { parent, rank } = makeUnionFind(ids);
+
+  for (const item of items) {
+    for (const dep of item.dependencies) {
+      if (itemById.has(dep)) {
+        ufUnion(parent, rank, item.id, dep);
+      }
+    }
+  }
+
+  // Build clusters: root → [item ids]
+  const clusters = new Map<string, string[]>();
+  for (const id of ids) {
+    const root = ufFind(parent, id);
+    if (!clusters.has(root)) clusters.set(root, []);
+    clusters.get(root)!.push(id);
+  }
+
+  let clusterList: string[][] = Array.from(clusters.values());
+
+  // ── Step 2: Split oversized clusters by subsystem overlap ─────────────────
+  const targetSize = Math.ceil(items.length / phaseCount);
+
+  const splitClusters: string[][] = [];
+  for (const cluster of clusterList) {
+    if (cluster.length <= targetSize * 1.5) {
+      splitClusters.push(cluster);
+      continue;
+    }
+    // Split by subsystem keyword grouping
+    const subsystemGroups = new Map<string, string[]>();
+    const noKeyword: string[] = [];
+    for (const id of cluster) {
+      const item = itemById.get(id)!;
+      const kws = Array.from(extractSubsystemKeywords(item));
+      if (kws.length === 0) {
+        noKeyword.push(id);
+      } else {
+        const primary = kws[0];
+        if (!subsystemGroups.has(primary)) subsystemGroups.set(primary, []);
+        subsystemGroups.get(primary)!.push(id);
+      }
+    }
+    // Merge small subsystem groups until each chunk >= targetSize/2
+    const chunks: string[][] = [];
+    let current: string[] = [];
+    for (const group of subsystemGroups.values()) {
+      current.push(...group);
+      if (current.length >= targetSize / 2) {
+        chunks.push(current);
+        current = [];
+      }
+    }
+    if (noKeyword.length > 0) current.push(...noKeyword);
+    if (current.length > 0) {
+      if (chunks.length === 0) chunks.push(current);
+      else chunks[chunks.length - 1].push(...current);
+    }
+    splitClusters.push(...(chunks.length > 0 ? chunks : [cluster]));
+  }
+  clusterList = splitClusters;
+
+  // ── Step 3 & 4: Merge clusters into phaseCount phases ─────────────────────
+  clusterList.sort((a, b) => b.length - a.length);
+
+  const phases: string[][] = Array.from({ length: phaseCount }, () => []);
+  for (const cluster of clusterList) {
+    const smallest = phases.reduce((min, p, i) => p.length < phases[min].length ? i : min, 0);
+    phases[smallest].push(...cluster);
+  }
+
+  // ── Risk tier balancing ───────────────────────────────────────────────────
+  const phaseItemSets = phases.map(phaseIds => new Set(phaseIds));
+
+  const highRiskIds = ids.filter(id => itemById.get(id)!.riskLevel === 'high');
+  if (highRiskIds.length > 1 && phases.length > 1) {
+    const highRiskInPhase0 = highRiskIds.filter(id => phaseItemSets[0].has(id));
+    if (highRiskInPhase0.length === highRiskIds.length && highRiskIds.length >= 2) {
+      const toMove = highRiskInPhase0.slice(Math.floor(highRiskInPhase0.length / 2));
+      for (const id of toMove) {
+        const idx = phases[0].indexOf(id);
+        if (idx !== -1) phases[0].splice(idx, 1);
+        const target = phases.slice(1).reduce((min, p, i) => p.length < phases.slice(1)[min].length ? i : min, 0);
+        phases[target + 1].push(id);
+      }
+    }
+  }
+
+  // ── Build SubPhase objects ─────────────────────────────────────────────────
+  const phaseIdList = phases.map((_, i) => `phase-${String.fromCharCode(97 + i)}`);
+  const itemToPhase = new Map<string, string>();
+  phases.forEach((phaseItems, i) => {
+    for (const id of phaseItems) {
+      itemToPhase.set(id, phaseIdList[i]);
+    }
+  });
+
+  // ── Cross-phase dependency stitching ──────────────────────────────────────
+  const phaseDepsMap = new Map<string, Set<string>>();
+  for (const phaseId of phaseIdList) phaseDepsMap.set(phaseId, new Set());
+
+  for (const item of items) {
+    const itemPhase = itemToPhase.get(item.id);
+    if (!itemPhase) continue;
+    for (const dep of item.dependencies) {
+      const depPhase = itemToPhase.get(dep);
+      if (depPhase && depPhase !== itemPhase) {
+        phaseDepsMap.get(itemPhase)!.add(depPhase);
+      }
+    }
+  }
+
+  // ── Circular cross-phase dependency detection and merging ─────────────────
+  let merged = true;
+  while (merged) {
+    merged = false;
+    const currentPhaseIds = Array.from(phaseDepsMap.keys());
+    outerLoop: for (let i = 0; i < currentPhaseIds.length; i++) {
+      for (let j = i + 1; j < currentPhaseIds.length; j++) {
+        const pa = currentPhaseIds[i];
+        const pb = currentPhaseIds[j];
+        if (phaseDepsMap.get(pa)?.has(pb) && phaseDepsMap.get(pb)?.has(pa)) {
+          const aIdx = phaseIdList.indexOf(pa);
+          const bIdx = phaseIdList.indexOf(pb);
+          if (aIdx === -1 || bIdx === -1) continue;
+          phases[aIdx].push(...phases[bIdx]);
+          phases.splice(bIdx, 1);
+          phaseIdList.splice(bIdx, 1);
+          itemToPhase.clear();
+          phases.forEach((phaseItems, pi) => {
+            for (const id of phaseItems) itemToPhase.set(id, phaseIdList[pi]);
+          });
+          phaseDepsMap.clear();
+          for (const phaseId of phaseIdList) phaseDepsMap.set(phaseId, new Set());
+          for (const item of items) {
+            const itemPhase = itemToPhase.get(item.id);
+            if (!itemPhase) continue;
+            for (const dep of item.dependencies) {
+              const depPhase = itemToPhase.get(dep);
+              if (depPhase && depPhase !== itemPhase) {
+                phaseDepsMap.get(itemPhase)!.add(depPhase);
+              }
+            }
+          }
+          merged = true;
+          break outerLoop;
+        }
+      }
+    }
+  }
+
+  // ── Assemble final SubPhase array ─────────────────────────────────────────
+  return phaseIdList.map((phaseId, i) => ({
+    id: phaseId,
+    parentProjectId: '',
+    name: phaseId,
+    items: phases[i].map(id => itemById.get(id)!).filter(Boolean),
+    dependencies: Array.from(phaseDepsMap.get(phaseId) ?? []),
+  }));
 }
