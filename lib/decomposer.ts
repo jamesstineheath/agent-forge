@@ -28,6 +28,7 @@ interface DecomposedItem {
   complexity: "simple" | "moderate" | "complex";
   dependencies: number[];
   acceptanceCriteria: string[];
+  estimatedFiles: string[];
 }
 
 // --- Helpers ---
@@ -108,6 +109,8 @@ function validateDecomposition(items: DecomposedItem[]): string | null {
     if (item.acceptanceCriteria.length < 3 || item.acceptanceCriteria.length > 5) {
       return `Item ${i}: acceptanceCriteria must have 3-5 items (got ${item.acceptanceCriteria.length})`;
     }
+    if (!Array.isArray(item.estimatedFiles)) return `Item ${i}: estimatedFiles is not an array`;
+    if (item.estimatedFiles.length === 0) return `Item ${i}: estimatedFiles must list at least one file`;
 
     // Validate dependency indices
     for (const dep of item.dependencies) {
@@ -153,6 +156,76 @@ function detectCircularDependencies(items: DecomposedItem[]): string | null {
   return null;
 }
 
+// Files that are commonly touched by many items (e.g., shared type files, config).
+// Overlaps on these files won't auto-inject dependency edges to avoid over-serialization.
+const SHARED_FILES_ALLOWLIST = new Set([
+  "lib/types.ts",
+  "package.json",
+  "package-lock.json",
+  "tsconfig.json",
+]);
+
+/**
+ * Post-processing pass: inject dependency edges between items that share estimated files.
+ * For each file touched by multiple items, creates a chain (lowest index -> next -> next)
+ * so they execute sequentially. Skips files in the shared allowlist.
+ * Only adds edges that don't already exist and don't create cycles.
+ */
+function injectFileOverlapDependencies(items: DecomposedItem[]): number {
+  // Build map: file -> sorted list of item indices that touch it
+  const fileToItems = new Map<string, number[]>();
+  for (let i = 0; i < items.length; i++) {
+    for (const file of items[i].estimatedFiles) {
+      if (SHARED_FILES_ALLOWLIST.has(file)) continue;
+      if (!fileToItems.has(file)) fileToItems.set(file, []);
+      fileToItems.get(file)!.push(i);
+    }
+  }
+
+  let injectedCount = 0;
+
+  for (const [, indices] of fileToItems) {
+    if (indices.length < 2) continue;
+
+    // Chain items: each item depends on the previous one touching this file
+    for (let j = 1; j < indices.length; j++) {
+      const depIdx = indices[j - 1];
+      const itemIdx = indices[j];
+
+      // Skip if dependency already exists
+      if (items[itemIdx].dependencies.includes(depIdx)) continue;
+
+      // Skip if adding this edge would create a cycle
+      // (check if depIdx is reachable from itemIdx via existing deps)
+      if (isReachable(items, itemIdx, depIdx)) continue;
+
+      items[itemIdx].dependencies.push(depIdx);
+      injectedCount++;
+    }
+  }
+
+  return injectedCount;
+}
+
+/**
+ * Check if `target` is reachable from `start` via the dependency graph.
+ * Used to prevent cycle creation when injecting new edges.
+ */
+function isReachable(items: DecomposedItem[], start: number, target: number): boolean {
+  const visited = new Set<number>();
+  const queue = [start];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current === target) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    for (const dep of items[current].dependencies) {
+      queue.push(dep);
+    }
+  }
+  return false;
+}
+
 // --- Decomposition Prompt ---
 
 const SYSTEM_PROMPT = `You are a Plan Decomposer for an autonomous dev pipeline. Your job is to read an architecture
@@ -185,8 +258,11 @@ Return a JSON array (no markdown fencing, no explanation) where each element is:
   "acceptanceCriteria": [
     "Specific testable criterion 1",
     "Specific testable criterion 2"
-  ]
-}`;
+  ],
+  "estimatedFiles": ["lib/foo.ts", "lib/bar.ts"]
+}
+
+IMPORTANT: estimatedFiles must list ALL files this work item will create or modify. The pipeline uses this to detect file-level conflicts and automatically add dependency edges between items that touch the same files. Accurate file estimates prevent merge conflicts.`;
 
 /**
  * Build the repo context string (semi-static: changes per repo, not per call).
@@ -472,6 +548,26 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     return { workItems: [], phases: null };
   }
 
+  // 4.5. Inject file-overlap dependency edges (post-processing pass)
+  const injectedDeps = injectFileOverlapDependencies(decomposedItems);
+  if (injectedDeps > 0) {
+    console.log(`[decomposer] Injected ${injectedDeps} file-overlap dependency edge(s)`);
+    // Re-validate after injection (should not create cycles, but safety check)
+    const postInjectError = detectCircularDependencies(decomposedItems);
+    if (postInjectError) {
+      console.error(`[decomposer] File-overlap injection created a cycle: ${postInjectError}. Reverting to original.`);
+      // This shouldn't happen due to isReachable checks, but if it does, escalate
+      await escalate(
+        `project:${project.projectId}`,
+        `File-overlap dependency injection created a circular dependency: ${postInjectError}`,
+        0.6,
+        { projectId: project.projectId, injectedDeps },
+        project.projectId,
+      );
+      return { workItems: [], phases: null };
+    }
+  }
+
   // 5. Check item count limits and route accordingly
   if (decomposedItems.length > DECOMPOSER_HARD_LIMIT) {
     await escalate(
@@ -522,8 +618,8 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   for (let i = 0; i < decomposedItems.length; i++) {
     const item = decomposedItems[i];
 
-    // Embed acceptance criteria in description
-    const descriptionWithCriteria = `${item.description}\n\n## Acceptance Criteria\n${item.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}`;
+    // Embed acceptance criteria and estimated files in description
+    const descriptionWithCriteria = `${item.description}\n\n## Acceptance Criteria\n${item.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}\n\n**Estimated files:** ${item.estimatedFiles.join(", ")}`;
 
     // Resolve dependency indices to work item IDs
     const resolvedDeps = item.dependencies
