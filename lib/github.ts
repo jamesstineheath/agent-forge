@@ -1,3 +1,5 @@
+import type { HLOLifecycleState } from "./types";
+
 const GITHUB_API = "https://api.github.com";
 
 function headers(): HeadersInit {
@@ -409,5 +411,53 @@ export async function setDefaultWorkflowPermissions(
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Failed to set workflow permissions: ${res.status} ${err}`);
+  }
+}
+
+export async function getPRLifecycleState(
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<HLOLifecycleState | null> {
+  try {
+    const url = `${GITHUB_API}/repos/${owner}/${repo}/issues/${prNumber}/comments?per_page=100`;
+    const res = await ghFetch(url);
+
+    if (!res.ok) {
+      return null;
+    }
+
+    const comments = (await res.json()) as Array<{ body: string }>;
+
+    // Iterate in reverse to find the most recent lifecycle comment
+    for (let i = comments.length - 1; i >= 0; i--) {
+      const body = comments[i].body ?? "";
+      const startMarker = "<!-- LIFECYCLE-JSON:";
+      const endMarker = ":LIFECYCLE-JSON -->";
+
+      const startIdx = body.indexOf(startMarker);
+      if (startIdx === -1) continue;
+
+      const jsonStart = startIdx + startMarker.length;
+      const endIdx = body.indexOf(endMarker, jsonStart);
+      if (endIdx === -1) continue;
+
+      const jsonStr = body.slice(jsonStart, endIdx).trim();
+
+      try {
+        const parsed = JSON.parse(jsonStr) as HLOLifecycleState;
+        // Basic validation: ensure it has at least a 'currentState' field
+        if (parsed && typeof parsed.currentState === "string") {
+          return parsed;
+        }
+      } catch {
+        // Malformed JSON — keep looking at older comments
+        continue;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
   }
 }
