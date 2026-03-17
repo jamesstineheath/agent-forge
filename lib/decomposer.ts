@@ -12,6 +12,105 @@ import type { Project, WorkItem, RepoConfig, DecomposerConfig, SubPhase } from "
 const DECOMPOSER_SOFT_LIMIT = parseInt(process.env.DECOMPOSER_SOFT_LIMIT || "15");
 const DECOMPOSER_HARD_LIMIT = parseInt(process.env.DECOMPOSER_HARD_LIMIT || "30");
 
+// --- Sub-phase decomposition helpers ---
+
+/** Generate alphabetic suffix for phase index (0→'a', 1→'b', ..., 25→'z'). */
+export function phaseLabel(index: number): string {
+  if (index < 26) return String.fromCharCode(97 + index);
+  // Beyond 26: 'aa', 'ab', etc.
+  const first = Math.floor(index / 26) - 1;
+  const second = index % 26;
+  return String.fromCharCode(97 + first) + String.fromCharCode(97 + second);
+}
+
+/**
+ * Stitch cross-phase dependencies: validate all dependency IDs exist in the
+ * flattened item set. Returns the flattened WorkItem array.
+ */
+export function stitchCrossPhaseDeps(allItems: WorkItem[]): WorkItem[] {
+  const allItemIds = new Set(allItems.map((item) => item.id));
+  // Filter out any dangling dependency references
+  return allItems.map((item) => ({
+    ...item,
+    dependencies: item.dependencies.filter((dep) => allItemIds.has(dep)),
+  }));
+}
+
+/**
+ * Recursively decompose items into sub-phases when count is in the
+ * softLimit < N <= hardLimit range. Each sub-phase is validated against
+ * the soft limit; oversized sub-phases are recursively re-decomposed
+ * up to maxRecursionDepth.
+ */
+async function decomposeSubPhases(
+  items: WorkItem[],
+  targetPhaseCount: number,
+  projectId: string,
+  softLimit: number,
+  maxRecursionDepth: number,
+  depth: number,
+): Promise<{ items: WorkItem[]; phases: SubPhase[] }> {
+  const phases = groupIntoSubPhases(items, targetPhaseCount);
+  const totalItemCount = items.length;
+  const resultItems: WorkItem[] = [];
+  const resultPhases: SubPhase[] = [];
+
+  for (let i = 0; i < phases.length; i++) {
+    const phase = phases[i];
+    const phaseId = `${projectId}-${phaseLabel(i)}`;
+
+    // Tag items with phase context
+    const phasedItems = phase.items.map((item) => ({
+      ...item,
+    }));
+
+    if (phasedItems.length <= softLimit) {
+      resultItems.push(...phasedItems);
+      resultPhases.push({
+        ...phase,
+        id: phaseId,
+        parentProjectId: projectId,
+        name: phaseId,
+      });
+    } else if (depth >= maxRecursionDepth) {
+      // Escalate: sub-phase still too large after max recursion
+      throw new SubPhaseEscalationError(
+        `Sub-phase '${phase.name}' still has ${phasedItems.length} items after recursive decomposition. Manual intervention needed.`,
+        phase.name,
+        phasedItems.length,
+      );
+    } else {
+      // Recurse once
+      const recursed = await decomposeSubPhases(
+        phasedItems,
+        Math.ceil(phasedItems.length / softLimit),
+        phaseId,
+        softLimit,
+        maxRecursionDepth,
+        depth + 1,
+      );
+      resultItems.push(...recursed.items);
+      resultPhases.push(...recursed.phases);
+    }
+  }
+
+  // Stitch cross-phase dependencies (validate all dep IDs exist)
+  const stitched = stitchCrossPhaseDeps(resultItems);
+  return { items: stitched, phases: resultPhases };
+}
+
+/** Error thrown when a sub-phase exceeds soft limit after max recursion depth. */
+export class SubPhaseEscalationError extends Error {
+  constructor(
+    message: string,
+    public phaseName: string,
+    public phaseSize: number,
+  ) {
+    super(message);
+    this.name = "SubPhaseEscalationError";
+  }
+}
+
 // --- Types ---
 
 export interface DecompositionResult {
@@ -561,10 +660,13 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   }
 
   // 5. Check item count limits and route accordingly
-  if (decomposedItems.length > DECOMPOSER_HARD_LIMIT) {
+  const config = getDecomposerConfig();
+  const { softLimit, hardLimit, maxRecursionDepth } = config;
+
+  if (decomposedItems.length > hardLimit) {
     await escalate(
       `project:${project.projectId}`,
-      `Decomposition produced ${decomposedItems.length} items (max ${DECOMPOSER_HARD_LIMIT}). The plan should be split into smaller phases.`,
+      `Decomposition produced ${decomposedItems.length} items (max ${hardLimit}). The plan should be split into smaller phases.`,
       0.7,
       { projectId: project.projectId, itemCount: decomposedItems.length },
       project.projectId,
@@ -572,35 +674,71 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     return { workItems: [], phases: null };
   }
 
-  // 6. If above soft limit, split into sub-phases
+  // 6. If above soft limit, use recursive sub-phase decomposition
   let phases: DecomposedItem[][] | null = null;
+  let subPhaseResult: { items: WorkItem[]; phases: SubPhase[] } | null = null;
 
-  if (decomposedItems.length > DECOMPOSER_SOFT_LIMIT) {
-    phases = splitIntoSubPhases(decomposedItems);
+  if (decomposedItems.length > softLimit) {
+    // Convert DecomposedItems to temporary WorkItems for groupIntoSubPhases
+    const tempWorkItems: WorkItem[] = decomposedItems.map((item, i) => ({
+      id: `temp-${i}`,
+      title: item.title,
+      description: item.description,
+      targetRepo: item.targetRepo,
+      source: { type: "project" as const, sourceId: project.projectId },
+      priority: item.priority,
+      riskLevel: item.riskLevel,
+      complexity: item.complexity,
+      status: "filed" as const,
+      dependencies: item.dependencies.map((dep) => `temp-${dep}`),
+      handoff: null,
+      execution: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
 
-    // Validate each sub-phase against soft limit
-    for (let p = 0; p < phases.length; p++) {
-      if (phases[p].length > DECOMPOSER_SOFT_LIMIT) {
+    const targetPhaseCount = Math.ceil(decomposedItems.length / softLimit);
+    const projectId = project.projectId || "phase";
+
+    try {
+      subPhaseResult = await decomposeSubPhases(
+        tempWorkItems,
+        targetPhaseCount,
+        projectId,
+        softLimit,
+        maxRecursionDepth,
+        0,
+      );
+
+      // Convert back: build DecomposedItem phases from SubPhase results
+      phases = subPhaseResult.phases.map((sp) =>
+        sp.items.map((wi) => {
+          const origIdx = parseInt(wi.id.replace("temp-", ""), 10);
+          return decomposedItems[isNaN(origIdx) ? 0 : origIdx];
+        }).filter(Boolean),
+      );
+
+      console.log(
+        `[decomposer] Split into ${subPhaseResult.phases.length} phases: ${subPhaseResult.phases.map((p) => p.items.length + " items").join(", ")}`,
+      );
+    } catch (err) {
+      if (err instanceof SubPhaseEscalationError) {
         await escalate(
           `project:${project.projectId}`,
-          `Decomposition sub-phase ${p + 1} has ${phases[p].length} items (max ${DECOMPOSER_SOFT_LIMIT}). Phase contains too many tightly-coupled items to split further.`,
+          err.message,
           0.7,
           {
             projectId: project.projectId,
             totalItems: decomposedItems.length,
-            phaseIndex: p,
-            phaseSize: phases[p].length,
-            phaseSizes: phases.map((ph) => ph.length),
+            phaseName: err.phaseName,
+            phaseSize: err.phaseSize,
           },
           project.projectId,
         );
         return { workItems: [], phases: null };
       }
+      throw err;
     }
-
-    console.log(
-      `[decomposer] Split into ${phases.length} phases: ${phases.map((p) => p.length + " items").join(", ")}`,
-    );
   }
 
   // 7. Create work items, mapping original indices to actual IDs
