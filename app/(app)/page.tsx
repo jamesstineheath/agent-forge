@@ -122,15 +122,19 @@ export default function DashboardPage() {
     }
   };
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  const now = new Date();
   const mergedToday =
-    workItems?.filter(
-      (wi) =>
-        wi.execution?.outcome === "merged" &&
-        wi.execution?.completedAt &&
-        new Date(wi.execution.completedAt) >= todayStart
-    ) ?? [];
+    workItems?.filter((wi) => {
+      if (wi.status !== "merged" && wi.execution?.outcome !== "merged")
+        return false;
+      const ts = wi.execution?.completedAt ?? wi.updatedAt;
+      const completed = new Date(ts);
+      return (
+        completed.getUTCFullYear() === now.getUTCFullYear() &&
+        completed.getUTCMonth() === now.getUTCMonth() &&
+        completed.getUTCDate() === now.getUTCDate()
+      );
+    }) ?? [];
 
   return (
     <div className="space-y-6">
@@ -225,7 +229,7 @@ export default function DashboardPage() {
               <span>{item.title}</span>
               <span className="text-xs text-zinc-500 ml-auto">
                 {item.targetRepo} &middot;{" "}
-                {formatRelativeTime(item.execution?.completedAt)}
+                {formatRelativeTime(item.execution?.completedAt ?? item.updatedAt)}
               </span>
             </div>
           ))}
