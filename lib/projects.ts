@@ -2,7 +2,7 @@ import { appendPageContent, queryProjects, updateProjectStatus } from "./notion"
 import type { Project, ProjectStatus, WorkItem } from "./types";
 import { getWorkItem, listWorkItems } from "./work-items";
 
-export const TERMINAL_STATES = ['merged', 'parked', 'cancelled', 'failed'] as const;
+export const TERMINAL_STATES = ['merged', 'parked', 'cancelled', 'failed', 'superseded'] as const;
 type TerminalState = typeof TERMINAL_STATES[number];
 
 function isTerminalState(status: string): status is TerminalState {

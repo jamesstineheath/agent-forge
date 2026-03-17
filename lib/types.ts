@@ -38,7 +38,8 @@ export interface WorkItem {
     | "parked"
     | "blocked"
     | "cancelled"
-    | "escalated";
+    | "escalated"
+    | "superseded";
   dependencies: string[];
   handoff: {
     content: string;
@@ -123,6 +124,7 @@ export const updateWorkItemSchema = z.object({
       "blocked",
       "cancelled",
       "escalated",
+      "superseded",
     ])
     .optional(),
   dependencies: z.array(z.string()).optional(),
@@ -402,3 +404,36 @@ export interface ProjectHealthReport {
   generatedAt: string;
   overallSummary: string;
 }
+
+// ---------------------------------------------------------------------------
+// HLO (Handoff Lifecycle Orchestrator) Types
+// ---------------------------------------------------------------------------
+
+export interface HLOLifecycleState {
+  branch: string;
+  prNumber: number;
+  currentState: 'spec-review' | 'executing' | 'ci-wait' | 'code-review' | 'approved' | 'merged' | 'failed';
+  stateEnteredAt: string; // ISO timestamp
+  retryCount: number;
+  lastTransition: string;
+}
+
+export interface PRSLAConfig {
+  alertThresholdMs: number;       // default 2h
+  remediationThresholdMs: number; // default 4h
+  hardCloseThresholdMs: number;   // default 24h
+  rebaseCommitThreshold: number;  // default 5
+}
+
+export interface SupersededInfo {
+  supersededBy: number;
+  reason: string;
+  closedAt: string;
+}
+
+export const DEFAULT_PR_SLA_CONFIG: PRSLAConfig = {
+  alertThresholdMs: 2 * 60 * 60 * 1000,       // 2 hours
+  remediationThresholdMs: 4 * 60 * 60 * 1000, // 4 hours
+  hardCloseThresholdMs: 24 * 60 * 60 * 1000,  // 24 hours
+  rebaseCommitThreshold: 5,
+};
