@@ -376,6 +376,22 @@ export async function setActionsPermissions(
   }
 }
 
+export async function getCommitsBehindMain(
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<number> {
+  try {
+    const url = `${GITHUB_API}/repos/${owner}/${repo}/compare/${encodeURIComponent(branch)}...main`;
+    const res = await ghFetch(url);
+    if (!res.ok) return 0;
+    const data = (await res.json()) as { behind_by?: number };
+    return typeof data.behind_by === "number" ? data.behind_by : 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function setDefaultWorkflowPermissions(
   owner: string,
   repo: string
