@@ -1,4 +1,4 @@
-import { appendPageContent, queryProjects, updateProjectStatus } from "./notion";
+import { appendPageContent, queryProjects, queryRetryProjects, updateProjectProperties, updateProjectStatus } from "./notion";
 import type { Project, ProjectStatus, WorkItem } from "./types";
 import { getWorkItem, listWorkItems } from "./work-items";
 
@@ -256,4 +256,28 @@ export async function writeOutcomeSummary(
   }
 
   await appendPageContent(notionPageId, lines.join("\n"));
+}
+
+export async function getRetryProjects(): Promise<Project[]> {
+  return queryRetryProjects();
+}
+
+export async function clearRetryFlag(
+  projectId: string,
+  currentRetryCount: number,
+): Promise<void> {
+  await updateProjectProperties(projectId, {
+    Retry: { checkbox: false },
+    RetryCount: { number: currentRetryCount + 1 },
+    Status: { select: { name: "Execute" } },
+  });
+}
+
+export async function markProjectFailedFromRetry(
+  projectId: string,
+): Promise<void> {
+  await updateProjectProperties(projectId, {
+    Retry: { checkbox: false },
+    Status: { select: { name: "Failed" } },
+  });
 }
