@@ -414,18 +414,10 @@ function splitIntoSubPhases(items: DecomposedItem[]): DecomposedItem[][] {
 
 export async function decomposeProject(project: Project): Promise<DecompositionResult> {
   // 1. Extract page ID and fetch plan content
-  if (!project.planUrl) {
-    await escalate(
-      `project:${project.projectId}`,
-      "Project has no plan URL",
-      0.9,
-      { projectId: project.projectId, title: project.title },
-      project.projectId,
-    );
-    return { workItems: [], phases: null };
-  }
-
-  const pageId = extractPageId(project.planUrl);
+  // If planUrl is set, extract its page ID; otherwise fall back to reading the project page body
+  const pageId = project.planUrl
+    ? extractPageId(project.planUrl)
+    : project.id;
   const planContent = await fetchPageContent(pageId);
 
   if (!planContent || planContent.trim().length < 50) {
