@@ -543,3 +543,36 @@ export interface DriftSnapshot {
   baselineCount: number;                           // number of items in baseline period
   currentCount: number;                            // number of items in current period
 }
+
+// --- Sub-phase decomposition types ---
+
+export interface SubPhase {
+  id: string;
+  parentProjectId: string;
+  name: string;
+  items: WorkItem[];
+  dependencies: string[]; // cross-phase dependency IDs
+  budget?: number; // optional proportional budget allocation
+}
+
+export interface DecomposerConfig {
+  softLimit: number;
+  hardLimit: number;
+  maxRecursionDepth: number;
+}
+
+export type PhaseBreakdown = {
+  phases: {
+    id: string;
+    name: string;
+    itemCount: number;
+    items: {
+      title: string;
+      priority: string;
+    }[];
+  }[];
+  crossPhaseDeps: {
+    from: string;
+    to: string;
+  }[];
+};

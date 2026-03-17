@@ -5,7 +5,7 @@ import { fetchRepoContext, type RepoContext } from "./orchestrator";
 import { listRepos, getRepo } from "./repos";
 import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
-import type { Project, WorkItem, RepoConfig } from "./types";
+import type { Project, WorkItem, RepoConfig, DecomposerConfig } from "./types";
 
 // --- Constants ---
 
@@ -661,4 +661,18 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   }
 
   return { workItems: createdItems, phases: workItemPhases };
+}
+
+// --- Configurable decomposer limits ---
+
+export function getDecomposerConfig(): DecomposerConfig {
+  const softLimit = parseInt(process.env.DECOMPOSER_SOFT_LIMIT ?? '', 10);
+  const hardLimit = parseInt(process.env.DECOMPOSER_HARD_LIMIT ?? '', 10);
+  const maxRecursionDepth = parseInt(process.env.DECOMPOSER_MAX_RECURSION_DEPTH ?? '', 10);
+
+  return {
+    softLimit: isNaN(softLimit) ? 15 : softLimit,
+    hardLimit: isNaN(hardLimit) ? 30 : hardLimit,
+    maxRecursionDepth: isNaN(maxRecursionDepth) ? 1 : maxRecursionDepth,
+  };
 }
