@@ -243,7 +243,7 @@ jobs:
 
           echo "Found PR #$PR_NUMBER, waiting for CI checks (10 min timeout)..."
 
-          if timeout 600 gh pr checks "$PR_NUMBER" --watch --fail-on-failure; then
+          if timeout 600 gh pr checks "$PR_NUMBER" --watch; then
             echo "All CI checks passed."
           else
             echo "CI checks failed for PR #$PR_NUMBER"
