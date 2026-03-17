@@ -2,11 +2,14 @@
   "name": "tlm-qa-agent",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "TLM QA Agent — Playwright-based QA automation",
   "scripts": {
     "qa": "ts-node run-qa.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@octokit/rest": "^21.1.1",
     "@playwright/test": "^1.41.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
