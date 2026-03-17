@@ -44,6 +44,18 @@ function extractUrl(page: PageObjectResponse, prop: string): string | null {
   return null;
 }
 
+function extractCheckbox(page: PageObjectResponse, prop: string): boolean {
+  const p = page.properties[prop];
+  if (p?.type === "checkbox") return p.checkbox === true;
+  return false;
+}
+
+function extractNumber(page: PageObjectResponse, prop: string): number {
+  const p = page.properties[prop];
+  if (p?.type === "number" && p.number !== null && p.number !== undefined) return p.number;
+  return 0;
+}
+
 function extractUniqueId(page: PageObjectResponse, prop: string): string {
   const p = page.properties[prop];
   if (p?.type === "unique_id" && p.unique_id) {
@@ -64,6 +76,8 @@ function pageToProject(page: PageObjectResponse): Project {
     priority: extractSelect<ProjectPriority>(page, "Priority"),
     complexity: extractSelect<ProjectComplexity>(page, "Complexity"),
     riskLevel: extractSelect<ProjectRiskLevel>(page, "Risk Level"),
+    retry: extractCheckbox(page, "Retry"),
+    retryCount: extractNumber(page, "RetryCount"),
     createdAt: page.created_time,
   };
 }
@@ -99,6 +113,53 @@ export async function queryProjects(statusFilter?: ProjectStatus): Promise<Proje
     console.error("[notion] Failed to query projects:", err);
     return [];
   }
+}
+
+export async function queryRetryProjects(): Promise<Project[]> {
+  const dsId = getDatabaseId();
+  if (!dsId || !process.env.NOTION_API_KEY) return [];
+
+  try {
+    const response = await fetch(`https://api.notion.com/v1/databases/${dsId}/query`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.NOTION_API_KEY}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filter: {
+          property: "Retry",
+          checkbox: {
+            equals: true,
+          },
+        },
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message ?? `Notion query failed: ${response.status}`);
+
+    return (data.results as PageObjectResponse[])
+      .filter((p): p is PageObjectResponse => "properties" in p)
+      .map(pageToProject);
+  } catch (err) {
+    console.error("[notion] Failed to query retry projects:", err);
+    return [];
+  }
+}
+
+export async function updateProjectProperties(
+  pageId: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  properties: Record<string, any>,
+): Promise<void> {
+  const client = getClient();
+  if (!client) throw new Error("Notion client not configured (missing NOTION_API_KEY)");
+
+  await client.pages.update({
+    page_id: pageId,
+    properties,
+  });
 }
 
 // --- Block-to-markdown helpers ---
