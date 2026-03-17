@@ -73,7 +73,7 @@ export function PipelineStages({ workItems }: PipelineStagesProps) {
   return (
     <div>
       {/* Stage columns */}
-      <div className="grid grid-cols-6 gap-2">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
         {stageCounts.map((stage) => (
           <button
             key={stage.key}
@@ -96,7 +96,7 @@ export function PipelineStages({ workItems }: PipelineStagesProps) {
         const stage = stageCounts.find((s) => s.key === expandedStage);
         if (!stage || stage.items.length === 0) return null;
         return (
-          <div className="grid grid-cols-2 gap-3 mt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
             <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
               <div className="text-xs font-medium text-zinc-400 mb-2">
                 {stage.label} ({stage.count})

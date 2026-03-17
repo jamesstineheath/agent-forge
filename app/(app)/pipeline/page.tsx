@@ -49,11 +49,11 @@ export default function PipelinePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="px-4 md:px-6 py-6 space-y-6">
       {/* Header + system health strip */}
       <div>
         <h1 className="text-lg font-semibold text-zinc-100 mb-1">Pipeline</h1>
-        <div className="flex items-center gap-4 text-xs text-zinc-500 px-1 py-2">
+        <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs text-zinc-500 px-1 py-2">
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             <span>ATC: {atcState ? "healthy" : "unknown"}</span>
@@ -94,7 +94,7 @@ export default function PipelinePage() {
           <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
             Active Executions
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {activeExecutions.map((exec) => {
               const workItem = (workItems ?? []).find((i) => i.id === exec.workItemId);
               return (
@@ -103,8 +103,8 @@ export default function PipelinePage() {
                   className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-400/10 text-amber-400 border-amber-400/20">
+                    <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-400/10 text-amber-400 border-amber-400/20 flex-shrink-0">
                       {exec.status}
                     </span>
                   </div>
@@ -120,8 +120,8 @@ export default function PipelinePage() {
                       {exec.workItemId.slice(0, 8)}
                     </span>
                   )}
-                  <div className="text-xs text-zinc-600 mt-1">{exec.targetRepo}</div>
-                  <div className="flex items-center justify-between text-xs text-zinc-500 mt-2">
+                  <div className="text-xs text-zinc-600 mt-1 truncate">{exec.targetRepo}</div>
+                  <div className="flex flex-wrap items-center justify-between text-xs text-zinc-500 mt-2 gap-1">
                     <span>{exec.elapsedMinutes}m elapsed</span>
                     {workItem?.execution?.prUrl && (
                       <a
@@ -149,7 +149,7 @@ export default function PipelinePage() {
           </div>
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
             {queueItems.map((item) => (
-              <div key={item.id} className="flex items-center justify-between py-1.5">
+              <div key={item.id} className="flex flex-wrap items-center justify-between py-1.5 gap-1">
                 <Link
                   href={`/work-items/${item.id}`}
                   className="text-sm text-zinc-300 hover:text-zinc-100 truncate"
