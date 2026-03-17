@@ -127,4 +127,30 @@
   html {
     @apply font-sans;
   }
+
+  /* Mobile touch target & typography safety net */
+  @media (max-width: 767px) {
+    /* Prevent iOS auto-zoom on input focus */
+    input,
+    select,
+    textarea {
+      font-size: 16px;
+    }
+
+    /* Minimum body text size for readability */
+    body {
+      font-size: 16px;
+    }
+
+    /* Touch target safety net for interactive block-level elements */
+    button,
+    [role="button"],
+    a[href],
+    input,
+    select,
+    textarea,
+    summary {
+      min-height: 44px;
+    }
+  }
 }
