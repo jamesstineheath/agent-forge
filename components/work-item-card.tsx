@@ -67,10 +67,10 @@ export function WorkItemCard({ item }: WorkItemCardProps) {
         <CardContent>
           <div className="flex flex-wrap gap-1.5">
             <Badge className={STATUS_COLORS[item.status]}>{item.status}</Badge>
-            <Badge className={PRIORITY_COLORS[item.priority]}>
+            <Badge className={`hidden md:inline-flex ${PRIORITY_COLORS[item.priority]}`}>
               {item.priority}
             </Badge>
-            <Badge className={COMPLEXITY_COLORS[item.complexity]}>
+            <Badge className={`hidden md:inline-flex ${COMPLEXITY_COLORS[item.complexity]}`}>
               {item.complexity}
             </Badge>
             {item.source?.type && SOURCE_COLORS[item.source.type] && (
