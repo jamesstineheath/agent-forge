@@ -35,10 +35,10 @@ export default function ReposPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Registered Repos</h1>
-        <Link href="/repos/new" className={buttonVariants()}>
+    <div className="space-y-6 px-4 md:px-6">
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl md:text-3xl font-bold">Registered Repos</h1>
+        <Link href="/repos/new" className={buttonVariants() + " min-h-[44px]"}>
           Add Repo
         </Link>
       </div>
@@ -67,34 +67,35 @@ export default function ReposPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {repos.map((repo) => (
             <Card key={repo.id}>
               <CardHeader className="pb-2">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-base">{repo.fullName}</CardTitle>
-                    <p className="text-sm text-muted-foreground">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <CardTitle className="text-base leading-tight break-all">{repo.fullName}</CardTitle>
+                    <p className="text-sm text-muted-foreground break-all">
                       {repo.shortName}
                     </p>
                   </div>
-                  <Badge variant="outline">
+                  <Badge variant="outline" className="shrink-0 text-xs">
                     concurrency: {repo.concurrencyLimit}
                   </Badge>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2">
-                <div className="grid grid-cols-2 gap-1 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span>Budget: ${repo.defaultBudget}</span>
                   <span>Handoffs: {repo.handoffDir}</span>
-                  <span className="col-span-2 truncate">
+                  <span className="break-all">
                     Workflow: {repo.executeWorkflow}
                   </span>
                 </div>
-                <div className="flex gap-2 pt-1">
+                <div className="flex flex-wrap gap-2 pt-1">
                   <Button
                     size="sm"
                     variant="outline"
+                    className="min-h-[44px]"
                     onClick={() => setEditing(repo)}
                   >
                     Edit
@@ -104,6 +105,7 @@ export default function ReposPage() {
                       <Button
                         size="sm"
                         variant="destructive"
+                        className="min-h-[44px]"
                         onClick={() => handleDelete(repo.id)}
                         disabled={deleting}
                       >
@@ -112,6 +114,7 @@ export default function ReposPage() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        className="min-h-[44px]"
                         onClick={() => setConfirmDelete(null)}
                       >
                         Cancel
@@ -121,6 +124,7 @@ export default function ReposPage() {
                     <Button
                       size="sm"
                       variant="outline"
+                      className="min-h-[44px]"
                       onClick={() => setConfirmDelete(repo.id)}
                     >
                       Delete
