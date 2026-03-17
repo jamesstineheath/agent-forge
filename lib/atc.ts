@@ -2,9 +2,10 @@ import { randomUUID } from "crypto";
 import { loadJson, saveJson, deleteJson } from "./storage";
 import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable } from "./work-items";
 import { listRepos, getRepo } from "./repos";
-import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
+import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate, getPRLifecycleState } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
-import type { ATCEvent, ATCState, WorkItem } from "./types";
+import type { ATCEvent, ATCState, WorkItem, HLOLifecycleState } from "./types";
+import type { PR } from "./github";
 import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject, writeOutcomeSummary } from "./projects";
 import { decomposeProject } from "./decomposer";
 import { validatePlan } from "./plan-validator";
@@ -1007,6 +1008,21 @@ async function _runATCCycleInner(): Promise<ATCState> {
     await saveJson(ATC_EVENTS_KEY, updated);
   }
 
+  // §15: Poll HLO Lifecycle State from Open PRs
+  try {
+    const reviewingForHLO = await listWorkItems({ status: "reviewing" });
+    const reviewingWorkItems: WorkItem[] = [];
+    for (const entry of reviewingForHLO) {
+      const wi = await getWorkItem(entry.id);
+      if (wi) reviewingWorkItems.push(wi);
+    }
+    const hloStateMap = await pollHLOStateFromOpenPRs(reviewingWorkItems);
+    // hloStateMap is available for downstream sections in this same cycle
+    void hloStateMap; // Will be consumed by future SLA/remediation sections
+  } catch (err) {
+    console.error("[ATC §15] HLO state polling failed:", err);
+  }
+
   // Cache metrics summary (observability)
   await summarizeDailyCacheMetrics().catch((err) =>
     console.error("[ATC] cache metrics summary failed:", err)
@@ -1064,6 +1080,65 @@ async function runPMAgentSweep() {
     console.error('[ATC §14] PM Agent sweep failed:', error);
     // Don't throw — sweep failure shouldn't break the ATC cycle
   }
+}
+
+// === §15: Poll HLO Lifecycle State from Open PRs ===
+// Reads HLO lifecycle state for all work items in 'reviewing' status.
+// Returns a map for downstream sections (SLA tracking, remediation, etc.)
+
+export interface HLOStateEntry {
+  workItem: WorkItem;
+  hloState: HLOLifecycleState | null;
+  prInfo: PR | null;
+}
+
+async function pollHLOStateFromOpenPRs(
+  workItems: WorkItem[]
+): Promise<Map<number, HLOStateEntry>> {
+  const reviewingItems = workItems.filter(
+    (wi) => wi.status === 'reviewing' && wi.execution?.prNumber != null
+  );
+
+  const resultMap = new Map<number, HLOStateEntry>();
+
+  await Promise.all(
+    reviewingItems.map(async (wi) => {
+      const prNumber = wi.execution!.prNumber!;
+      const targetRepo = wi.targetRepo; // "owner/repo" format
+      const [owner, repo] = targetRepo.split('/');
+
+      if (!owner || !repo) {
+        console.warn(`ATC §15: Work item ${wi.id} missing owner/repo, skipping`);
+        return;
+      }
+
+      let hloState: HLOLifecycleState | null = null;
+      let prInfo: PR | null = null;
+
+      try {
+        hloState = await getPRLifecycleState(owner, repo, prNumber);
+      } catch (err) {
+        console.warn(`ATC §15: Failed to get HLO state for PR #${prNumber}:`, err);
+      }
+
+      try {
+        prInfo = await getPRByNumber(targetRepo, prNumber);
+      } catch (err) {
+        console.warn(`ATC §15: Failed to get PR info for PR #${prNumber}:`, err);
+      }
+
+      resultMap.set(prNumber, { workItem: wi, hloState, prInfo });
+    })
+  );
+
+  const withLifecycle = [...resultMap.values()].filter((e) => e.hloState !== null).length;
+  const withoutLifecycle = resultMap.size - withLifecycle;
+
+  console.log(
+    `ATC §15: Polled HLO state for ${resultMap.size} PRs (${withLifecycle} with lifecycle data, ${withoutLifecycle} without)`
+  );
+
+  return resultMap;
 }
 
 export async function cleanupStaleBranches(): Promise<{ deletedCount: number; skipped: number; errors: number }> {
