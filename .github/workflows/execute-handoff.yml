@@ -12,6 +12,10 @@ on:
       handoff_file:
         description: 'Path to handoff file (e.g. handoffs/awaiting_handoff/my-handoff.md)'
         required: true
+      review_feedback:
+        description: 'Feedback from Code Review or CI failures to address on retry (optional)'
+        required: false
+        default: ''
 
 # Per-branch concurrency so parallel handoffs don't cancel each other
 concurrency:
@@ -122,6 +126,8 @@ jobs:
 
       - name: Write execution prompt
         run: |
+          REVIEW_FEEDBACK="${{ github.event.inputs.review_feedback }}"
+
           cat > /tmp/execute-prompt.txt <<'ENDPROMPT'
           You are executing a handoff file for the agent-forge project.
 
@@ -148,6 +154,20 @@ jobs:
             gh pr merge --auto --squash
           ENDPROMPT
 
+          # Append review/CI feedback for retry runs
+          if [ -n "$REVIEW_FEEDBACK" ]; then
+            cat >> /tmp/execute-prompt.txt <<FEEDBACK_EOF
+
+          IMPORTANT — RETRY CONTEXT:
+          A previous attempt on this branch produced code that was reviewed or tested.
+          The following feedback MUST be addressed in this run. Fix all issues mentioned
+          below before committing and pushing:
+
+          $REVIEW_FEEDBACK
+          FEEDBACK_EOF
+            echo "Review feedback appended to execution prompt (${#REVIEW_FEEDBACK} chars)"
+          fi
+
       - name: Execute handoff with Claude Code
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -173,11 +193,20 @@ jobs:
         run: |
           BRANCH="${{ steps.params.outputs.branch }}"
 
-          # Check if Claude Code already created a PR
+          # Check if Claude Code already created a PR (open)
           PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
 
           if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
             echo "PR #$PR_NUMBER already exists for branch $BRANCH"
+            exit 0
+          fi
+
+          # Check if a PR was already merged for this branch (fast auto-merge case).
+          # If a PR was created and merged before this fallback runs, creating
+          # another PR produces an orphan that blocks the pipeline.
+          MERGED_COUNT=$(gh pr list --head "$BRANCH" --state merged --json number --jq 'length' 2>/dev/null || echo "0")
+          if [ "$MERGED_COUNT" -gt 0 ]; then
+            echo "A PR for branch $BRANCH was already merged. Skipping fallback PR creation."
             exit 0
           fi
 

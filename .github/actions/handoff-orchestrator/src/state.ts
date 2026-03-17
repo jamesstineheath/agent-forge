@@ -257,6 +257,9 @@ function getNextState(
       if (current === HandoffState.ExecutionFailed) {
         return HandoffState.RetryingExecution;
       }
+      if (current === HandoffState.RequestedChanges) {
+        return HandoffState.RetryingExecution;
+      }
       return null;
 
     case "conflict_detected":

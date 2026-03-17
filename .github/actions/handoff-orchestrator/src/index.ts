@@ -475,19 +475,51 @@ async function parseCodeReviewDecision(
   return null;
 }
 
-async function triggerRetry(
+/**
+ * Extract review feedback from Code Review comments on a PR.
+ * Returns the review body text from the most recent TLM review with request_changes.
+ */
+async function extractReviewFeedback(
   octokit: Octokit,
   owner: string,
   repo: string,
-  lifecycle: HandoffLifecycle
-): Promise<void> {
-  core.info(`Triggering retry for branch ${lifecycle.branch}...`);
+  prNumber: number
+): Promise<string> {
+  try {
+    const { data: reviews } = await octokit.rest.pulls.listReviews({
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 20,
+    });
 
+    // Find the most recent REQUEST_CHANGES review
+    for (let i = reviews.length - 1; i >= 0; i--) {
+      if (reviews[i].state === "CHANGES_REQUESTED" && reviews[i].body) {
+        return reviews[i].body!.substring(0, 3000); // Cap at 3k chars for prompt budget
+      }
+    }
+  } catch (error) {
+    core.warning(`Could not extract review feedback: ${error}`);
+  }
+  return "";
+}
+
+/**
+ * Extract CI failure logs from check runs on a branch.
+ * Returns a summary of failed checks for diagnostic context.
+ */
+async function extractCIFailureLogs(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<string> {
   try {
     const { data: checkRuns } = await octokit.rest.checks.listForRef({
       owner,
       repo,
-      ref: lifecycle.branch,
+      ref: branch,
       status: "completed",
       per_page: 10,
     });
@@ -496,11 +528,44 @@ async function triggerRetry(
       (r) => r.conclusion === "failure"
     );
 
-    for (const run of failedRuns.slice(0, 3)) {
-      core.info(`Failed check: ${run.name} - ${run.output?.summary || "No summary"}`);
-    }
+    if (failedRuns.length === 0) return "";
+
+    const summaries = failedRuns.slice(0, 3).map((run) => {
+      const summary = run.output?.summary || "No summary";
+      const text = run.output?.text || "";
+      // Cap each check's output to keep total prompt size reasonable
+      const truncatedText = text.length > 1500
+        ? text.substring(0, 1500) + "\n[TRUNCATED]"
+        : text;
+      return `### ${run.name}: FAILED\n${summary}\n${truncatedText}`;
+    });
+
+    return summaries.join("\n\n");
   } catch (error) {
     core.warning(`Could not fetch CI failure logs: ${error}`);
+    return "";
+  }
+}
+
+async function triggerRetry(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  lifecycle: HandoffLifecycle,
+  reviewFeedback?: string
+): Promise<void> {
+  core.info(`Triggering retry for branch ${lifecycle.branch}...`);
+
+  // Build feedback context for the retry run
+  let feedback = reviewFeedback || "";
+
+  // If no review feedback provided, check for CI failure logs
+  if (!feedback) {
+    feedback = await extractCIFailureLogs(octokit, owner, repo, lifecycle.branch);
+  }
+
+  if (feedback) {
+    core.info(`Passing ${feedback.length} chars of feedback to retry execution`);
   }
 
   await octokit.rest.actions.createWorkflowDispatch({
@@ -511,6 +576,7 @@ async function triggerRetry(
     inputs: {
       branch: lifecycle.branch,
       handoff_file: lifecycle.handoffFile,
+      review_feedback: feedback.substring(0, 5000), // GitHub API input limit
     },
   });
 
@@ -645,6 +711,35 @@ async function run(): Promise<void> {
       }
     } catch (error) {
       core.warning(`Execution retry handling failed: ${error}`);
+    }
+
+    // Handle request_changes retry (revise & resubmit)
+    try {
+      if (lifecycle.state === HandoffState.RequestedChanges && lifecycle.retryCount < 1) {
+        // Extract review feedback and pass it to the retry execution
+        let reviewFeedback = "";
+        if (prNumber) {
+          reviewFeedback = await extractReviewFeedback(octokit, owner, repo, prNumber);
+        }
+        if (reviewFeedback) {
+          lifecycle = applyTransitionResilient(
+            lifecycle,
+            { type: "retry_triggered" },
+            "Auto-retry with review feedback (revise & resubmit)"
+          );
+          await triggerRetry(octokit, owner, repo, lifecycle, reviewFeedback);
+        } else {
+          core.info("RequestedChanges but no review feedback found — skipping auto-retry");
+        }
+      } else if (lifecycle.state === HandoffState.RequestedChanges && lifecycle.retryCount >= 1) {
+        lifecycle = applyTransitionResilient(
+          lifecycle,
+          { type: "pr_closed" },
+          "Code review requested changes after retry, max retries reached"
+        );
+      }
+    } catch (error) {
+      core.warning(`RequestedChanges retry handling failed: ${error}`);
     }
 
     // Parse execution cost from PR comments if available
