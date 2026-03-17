@@ -144,8 +144,13 @@ async function _runATCCycleInner(): Promise<ATCState> {
       ? (now.getTime() - new Date(startedAt).getTime()) / 60_000
       : 0;
 
-    // Check for stall timeout (before fetching PR files to skip extra API calls)
-    if (elapsedMinutes >= STALL_TIMEOUT_MINUTES) {
+    // Check for stall timeout (before fetching PR files to skip extra API calls).
+    // GUARD: Do NOT apply stall timeout to reviewing items that have an open PR.
+    // Reviewing items with a prNumber are waiting for code review/CI — this is
+    // normal and can take hours/days. The stall timeout only applies to genuinely
+    // stalled items (executing with no progress, or reviewing without a PR).
+    const hasOpenPR = item.status === "reviewing" && item.execution?.prNumber != null;
+    if (elapsedMinutes >= STALL_TIMEOUT_MINUTES && !hasOpenPR) {
       const event = makeEvent("timeout", item.id, item.status, "failed",
         `Execution stalled: no progress for ${Math.round(elapsedMinutes)} minutes (reason: timeout)`);
       await updateWorkItem(item.id, {
