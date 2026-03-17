@@ -108,9 +108,9 @@ export function ATCMetricsPanel() {
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
       {/* Health Indicator + Last Run */}
-      <div className="px-4 py-3 flex items-center gap-3 border-b border-zinc-800/50">
+      <div className="px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-3 border-b border-zinc-800/50">
         <div
-          className={`h-2.5 w-2.5 rounded-full ${
+          className={`h-2.5 w-2.5 rounded-full shrink-0 ${
             healthy ? "bg-emerald-400" : "bg-red-400"
           }`}
         />
@@ -129,14 +129,14 @@ export function ATCMetricsPanel() {
         >
           {healthy ? "healthy" : "stale"}
         </span>
-        <span className="text-xs text-zinc-500 ml-auto flex items-center gap-1">
+        <span className="text-xs text-zinc-500 sm:ml-auto flex items-center gap-1">
           <Clock size={10} />
           Last sweep {formatRelativeTime(data.lastRunAt)}
         </span>
       </div>
 
       {/* Queue Depth + Active Executions */}
-      <div className="px-4 py-3 flex items-center gap-6 border-b border-zinc-800/50">
+      <div className="px-4 py-3 flex flex-wrap items-center gap-4 sm:gap-6 border-b border-zinc-800/50">
         <div className="flex items-center gap-2">
           <Radio
             size={12}

@@ -57,18 +57,18 @@ function SystemHealth({
     : `Concurrency: 0 active`;
 
   return (
-    <div className="flex items-center gap-4 text-xs text-zinc-400 px-1 py-2">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-xs text-zinc-400 px-1 py-2">
       <div className="flex items-center gap-1.5">
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
         <span>ATC: {atcState ? "healthy" : "unknown"}</span>
         <span className="text-zinc-600">
           &middot; last sweep {formatRelativeTime(atcState?.lastRunAt)}
         </span>
       </div>
-      <div className="border-l border-zinc-800 pl-4 flex items-center gap-1.5">
+      <div className="sm:border-l sm:border-zinc-800 sm:pl-4 flex items-center gap-1.5">
         <span>{concurrencyStr}</span>
       </div>
-      <div className="border-l border-zinc-800 pl-4 flex items-center gap-1.5">
+      <div className="sm:border-l sm:border-zinc-800 sm:pl-4 flex items-center gap-1.5">
         <span>{queued} queued across all repos</span>
       </div>
     </div>
@@ -223,11 +223,11 @@ export default function DashboardPage() {
           {mergedToday.map((item) => (
             <div
               key={item.id}
-              className="flex items-center gap-2 text-sm text-zinc-300 py-1"
+              className="flex items-center gap-2 text-sm text-zinc-300 py-1 min-w-0"
             >
-              <CheckCircle2 size={14} className="text-emerald-400" />
-              <span>{item.title}</span>
-              <span className="text-xs text-zinc-500 ml-auto">
+              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+              <span className="truncate">{item.title}</span>
+              <span className="text-xs text-zinc-500 ml-auto shrink-0">
                 {item.targetRepo} &middot;{" "}
                 {formatRelativeTime(item.execution?.completedAt ?? item.updatedAt)}
               </span>
