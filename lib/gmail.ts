@@ -252,6 +252,26 @@ export async function sendDecompositionSummary(
     ` : ''}
 
     <div class="section">
+      <div class="section-title">Cost Breakdown</div>
+      <div class="section-content">
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+          <tr style="border-bottom:1px solid #e0e0e0;">
+            <th style="text-align:left; padding:4px 0;">Work Item</th>
+            <th style="text-align:right; padding:4px 0;">Budget</th>
+          </tr>
+          ${workItems.map((item) => `<tr style="border-bottom:1px solid #f0f0f0;">
+            <td style="padding:4px 0;">${escapeHtml(item.title)}</td>
+            <td style="text-align:right; padding:4px 0;">${item.handoff?.budget != null ? '$' + item.handoff.budget.toFixed(2) : '\u2014'}</td>
+          </tr>`).join('')}
+          <tr style="font-weight:600;">
+            <td style="padding:6px 0 0;">Total</td>
+            <td style="text-align:right; padding:6px 0 0;">$${totalBudget.toFixed(2)}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="section">
       <div class="section-title">Dashboard</div>
       <div class="section-content">
         View project status on the <a href="https://agent-forge.vercel.app/pipeline">Agent Forge Dashboard</a>.
