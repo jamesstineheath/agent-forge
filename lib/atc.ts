@@ -845,7 +845,7 @@ async function _runATCCycleInner(): Promise<ATCState> {
         // Send decomposition summary email
         try {
           const { sendDecompositionSummary } = await import("./gmail");
-          await sendDecompositionSummary(project, workItems, result.phases ?? undefined);
+          await sendDecompositionSummary(project, workItems, result.phases ?? undefined, result.phaseBreakdown);
         } catch (emailErr) {
           console.error("[atc] Decomposition summary email failed:", emailErr);
         }
