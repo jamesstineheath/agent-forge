@@ -1,9 +1,10 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { useWorkItems, useTLMMemory } from "@/lib/hooks";
+import { useWorkItems, useTLMMemory, useATCMetrics } from "@/lib/hooks";
 import { CostSummary } from "@/components/cost-summary";
 import { TLMAgentCard } from "@/components/tlm-agent-card";
+import { ATCAgentCard } from "@/components/atc-agent-card";
 import { PAAgentRow } from "@/components/pa-agent-row";
 
 const PA_AGENTS = [
@@ -20,6 +21,7 @@ const PA_AGENTS = [
 export default function AgentsPage() {
   const { data: workItems, isLoading: workItemsLoading } = useWorkItems();
   const { data: tlmMemory, isLoading: tlmLoading, error: tlmError } = useTLMMemory();
+  const { data: atcMetrics, isLoading: atcLoading, error: atcError } = useATCMetrics();
 
   const codeReviewerRate =
     tlmMemory && tlmMemory.stats.totalAssessed > 0
@@ -59,6 +61,21 @@ export default function AgentsPage() {
           <CostSummary workItems={workItems ?? []} />
         )}
       </section>
+
+      {/* Control Plane */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+            Control Plane
+          </div>
+          <div className="text-[10px] text-zinc-600">(orchestration)</div>
+        </div>
+        <ATCAgentCard
+          metrics={atcMetrics ?? null}
+          isLoading={atcLoading}
+          error={atcError}
+        />
+      </div>
 
       {/* TLM Agents */}
       <div className="space-y-2">

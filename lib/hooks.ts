@@ -92,6 +92,15 @@ export function useTLMMemory() {
   return { data, error, isLoading, mutate };
 }
 
+export function useATCMetrics() {
+  const { data, error, isLoading, mutate } = useSWR<import("@/app/api/agents/atc-metrics/route").ATCMetrics>(
+    "/api/agents/atc-metrics",
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
 export function useATCEvents(limit = 50) {
   const { data, error, isLoading, mutate } = useSWR<ATCEvent[]>(
     `/api/atc/events?limit=${limit}`,
