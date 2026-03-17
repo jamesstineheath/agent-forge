@@ -125,8 +125,7 @@ export default function DashboardPage() {
   const now = new Date();
   const mergedToday =
     workItems?.filter((wi) => {
-      if (wi.status !== "merged" && wi.execution?.outcome !== "merged")
-        return false;
+      if (wi.status !== "merged") return false;
       const ts = wi.execution?.completedAt ?? wi.updatedAt;
       const completed = new Date(ts);
       return (
