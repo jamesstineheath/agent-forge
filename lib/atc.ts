@@ -127,6 +127,10 @@ async function _runATCCycleInner(): Promise<ATCState> {
   const now = new Date();
   const events: ATCEvent[] = [];
 
+  // === PHASE 1: DISPATCH (runs first to avoid timeout starvation) ===
+  // Build lightweight active state from work item data (no GitHub API calls)
+  // so we can check concurrency and dispatch ASAP.
+
   // 1. Load active work items (executing or reviewing)
   const [executingEntries, reviewingEntries] = await Promise.all([
     listWorkItems({ status: "executing" }),
@@ -134,7 +138,210 @@ async function _runATCCycleInner(): Promise<ATCState> {
   ]);
   const activeEntries = [...executingEntries, ...reviewingEntries];
 
+  // 1.1: Build lightweight activeExecutions for dispatch (no GitHub API)
   const activeExecutions: ATCState["activeExecutions"] = [];
+  for (const entry of activeEntries) {
+    const item = await getWorkItem(entry.id);
+    if (!item) continue;
+    const branch = item.handoff?.branch;
+    if (!branch) continue;
+    const startedAt = item.execution?.startedAt;
+    const elapsedMinutes = startedAt
+      ? (now.getTime() - new Date(startedAt).getTime()) / 60_000
+      : 0;
+    // Use stored files or parse from handoff — no GitHub API call needed
+    let filesBeingModified: string[] = [];
+    if (item.execution?.filesModified?.length) {
+      filesBeingModified = item.execution.filesModified;
+    } else if (item.handoff?.content) {
+      filesBeingModified = parseEstimatedFiles(item.handoff.content);
+    }
+    activeExecutions.push({
+      workItemId: item.id,
+      targetRepo: item.targetRepo,
+      branch,
+      status: item.status,
+      startedAt: startedAt ?? now.toISOString(),
+      elapsedMinutes: Math.round(elapsedMinutes),
+      filesBeingModified,
+    });
+  }
+
+  // 1.2: Check concurrency per repo
+  const repoIndex = await listRepos();
+  const concurrencyMap = new Map<string, number>();
+  for (const exec of activeExecutions) {
+    concurrencyMap.set(exec.targetRepo, (concurrencyMap.get(exec.targetRepo) ?? 0) + 1);
+  }
+  for (const repoEntry of repoIndex) {
+    const repo = await getRepo(repoEntry.id);
+    if (!repo) continue;
+    const activeCount = concurrencyMap.get(repo.fullName) ?? 0;
+    if (activeCount >= repo.concurrencyLimit) {
+      const queuedForRepo = await listWorkItems({ status: "ready", targetRepo: repo.fullName });
+      if (queuedForRepo.length > 0) {
+        events.push(makeEvent(
+          "concurrency_block",
+          queuedForRepo[0].id,
+          undefined,
+          undefined,
+          `Repo ${repo.fullName} at concurrency limit (${activeCount}/${repo.concurrencyLimit}); ${queuedForRepo.length} item(s) queued`
+        ));
+      }
+    }
+  }
+
+  // 1.3: Auto-dispatch (previously Section 4)
+  const GLOBAL_CONCURRENCY_LIMIT = 5;
+  const totalActive = activeExecutions.filter(
+    (e) => e.status === "executing" || e.status === "reviewing"
+  ).length;
+
+  if (totalActive < GLOBAL_CONCURRENCY_LIMIT) {
+    let slotsRemaining = GLOBAL_CONCURRENCY_LIMIT - totalActive;
+
+    for (const repoEntry of repoIndex) {
+      if (slotsRemaining <= 0) break;
+      const repo = await getRepo(repoEntry.id);
+      if (!repo) continue;
+      const activeCount = concurrencyMap.get(repo.fullName) ?? 0;
+      const repoSlotsAvailable = repo.concurrencyLimit - activeCount;
+      if (repoSlotsAvailable <= 0) continue;
+
+      const candidates = await getAllDispatchable(repo.fullName);
+      if (candidates.length === 0) {
+        // Observability: log when ready items exist but none are dispatchable
+        const readyForRepo = await listWorkItems({ status: "ready", targetRepo: repo.fullName });
+        if (readyForRepo.length > 0) {
+          console.log(`[ATC dispatch] ${repo.fullName}: ${readyForRepo.length} ready items, 0 dispatchable (all blocked by deps or conflicts)`);
+        }
+        continue;
+      }
+
+      console.log(`[ATC dispatch] ${repo.fullName}: ${candidates.length} dispatchable candidate(s), ${slotsRemaining} slot(s) available`);
+
+      const toDispatch = candidates.slice(0, Math.min(slotsRemaining, repoSlotsAvailable));
+
+      for (const item of toDispatch) {
+        // Conflict check: skip if any active execution in this repo touches overlapping files
+        const itemFiles = item.handoff?.content
+          ? parseEstimatedFiles(item.handoff.content)
+          : [];
+        const repoActiveExecs = activeExecutions.filter(e => e.targetRepo === repo.fullName);
+        const conflicting = repoActiveExecs.find(e => hasFileOverlap(itemFiles, e.filesBeingModified));
+        if (conflicting) {
+          events.push(makeEvent(
+            "conflict", item.id, undefined, undefined,
+            `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repo.fullName}`
+          ));
+          continue;
+        }
+
+        // High-churn file serialization
+        const itemHighChurn = itemFiles.filter(f => HIGH_CHURN_FILES.has(f));
+        if (itemHighChurn.length > 0) {
+          const highChurnConflict = activeExecutions.find(e =>
+            e.filesBeingModified.some(f => itemHighChurn.includes(f))
+          );
+          if (highChurnConflict) {
+            events.push(makeEvent(
+              "conflict", item.id, undefined, undefined,
+              `Dispatch blocked: high-churn file(s) [${itemHighChurn.join(", ")}] overlap with active item ${highChurnConflict.workItemId}`
+            ));
+            continue;
+          }
+        }
+
+        try {
+          const result = await dispatchWorkItem(item.id);
+          events.push(makeEvent(
+            "auto_dispatch", item.id, "ready", "executing",
+            `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`
+          ));
+          slotsRemaining--;
+          concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Unknown error";
+          await updateWorkItem(item.id, {
+            status: "failed",
+            execution: {
+              ...item.execution,
+              completedAt: now.toISOString(),
+              outcome: "failed",
+            },
+          });
+          events.push(makeEvent(
+            "error", item.id, "ready", "failed",
+            `Auto-dispatch failed: ${msg}`
+          ));
+        }
+      }
+    }
+
+    // Direct-source item dispatch
+    const [directFiledEntries, directReadyEntries] = await Promise.all([
+      listWorkItems({ status: "filed" }),
+      listWorkItems({ status: "ready" }),
+    ]);
+    const directCandidateEntries = [...directFiledEntries, ...directReadyEntries];
+
+    const repoConfigByName = new Map<string, { concurrencyLimit: number }>();
+    for (const repoEntry of repoIndex) {
+      const repo = await getRepo(repoEntry.id);
+      if (repo) repoConfigByName.set(repo.fullName, repo);
+    }
+
+    for (const entry of directCandidateEntries) {
+      if (slotsRemaining <= 0) break;
+
+      const item = await getWorkItem(entry.id);
+      if (!item || item.source.type !== "direct") continue;
+
+      const activeForRepo = concurrencyMap.get(item.targetRepo) ?? 0;
+      const repoConfig = repoConfigByName.get(item.targetRepo);
+      const limit = repoConfig?.concurrencyLimit ?? 1;
+
+      if (activeForRepo >= limit) {
+        console.log(`[ATC] Repo ${item.targetRepo} at concurrency limit, skipping direct item: ${item.id}`);
+        continue;
+      }
+
+      if (item.status === "filed") {
+        await updateWorkItem(item.id, { status: "ready" });
+      }
+
+      console.log(`[ATC] Dispatching direct item: ${item.id}`);
+      try {
+        const result = await dispatchWorkItem(item.id);
+        events.push(makeEvent(
+          "auto_dispatch", item.id, item.status, "executing",
+          `Auto-dispatched direct item to ${item.targetRepo} (branch: ${result.branch})`
+        ));
+        slotsRemaining--;
+        concurrencyMap.set(item.targetRepo, (concurrencyMap.get(item.targetRepo) ?? 0) + 1);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        await updateWorkItem(item.id, {
+          status: "failed",
+          execution: {
+            ...item.execution,
+            completedAt: now.toISOString(),
+            outcome: "failed",
+          },
+        });
+        events.push(makeEvent(
+          "error", item.id, "ready", "failed",
+          `Direct item auto-dispatch failed: ${msg}`
+        ));
+      }
+    }
+  } else {
+    console.log(`[ATC dispatch] Global concurrency limit reached (${totalActive}/${GLOBAL_CONCURRENCY_LIMIT}), skipping dispatch`);
+  }
+
+  // === PHASE 2: MONITORING (process active items with GitHub API calls) ===
+  // Clear and rebuild activeExecutions with enriched data from GitHub
+  activeExecutions.length = 0;
 
   // 2. Process each active item
   for (const entry of activeEntries) {
@@ -434,175 +641,7 @@ async function _runATCCycleInner(): Promise<ATCState> {
     }
   }
 
-  // 3. Check concurrency per repo (log concurrency_block events for awareness)
-  const repoIndex = await listRepos();
-  const concurrencyMap = new Map<string, number>();
-  for (const exec of activeExecutions) {
-    concurrencyMap.set(exec.targetRepo, (concurrencyMap.get(exec.targetRepo) ?? 0) + 1);
-  }
-  for (const repoEntry of repoIndex) {
-    const repo = await getRepo(repoEntry.id);
-    if (!repo) continue;
-    const activeCount = concurrencyMap.get(repo.fullName) ?? 0;
-    if (activeCount >= repo.concurrencyLimit) {
-      const queuedForRepo = await listWorkItems({ status: "ready", targetRepo: repo.fullName });
-      if (queuedForRepo.length > 0) {
-        events.push(makeEvent(
-          "concurrency_block",
-          queuedForRepo[0].id,
-          undefined,
-          undefined,
-          `Repo ${repo.fullName} at concurrency limit (${activeCount}/${repo.concurrencyLimit}); ${queuedForRepo.length} item(s) queued`
-        ));
-      }
-    }
-  }
-
-  // 4. Auto-dispatch: for repos with available capacity, dispatch next ready item
-  const GLOBAL_CONCURRENCY_LIMIT = 5;
-  const totalActive = activeExecutions.filter(
-    (e) => e.status === "executing" || e.status === "reviewing"
-  ).length;
-
-  if (totalActive < GLOBAL_CONCURRENCY_LIMIT) {
-    let slotsRemaining = GLOBAL_CONCURRENCY_LIMIT - totalActive;
-
-    for (const repoEntry of repoIndex) {
-      if (slotsRemaining <= 0) break;
-      const repo = await getRepo(repoEntry.id);
-      if (!repo) continue;
-      const activeCount = concurrencyMap.get(repo.fullName) ?? 0;
-      const repoSlotsAvailable = repo.concurrencyLimit - activeCount;
-      if (repoSlotsAvailable <= 0) continue;
-
-      const candidates = await getAllDispatchable(repo.fullName);
-      if (candidates.length === 0) continue;
-
-      const toDispatch = candidates.slice(0, Math.min(slotsRemaining, repoSlotsAvailable));
-
-      for (const item of toDispatch) {
-        // Conflict check: skip if any active execution in this repo touches overlapping files
-        const itemFiles = item.handoff?.content
-          ? parseEstimatedFiles(item.handoff.content)
-          : [];
-        const repoActiveExecs = activeExecutions.filter(e => e.targetRepo === repo.fullName);
-        const conflicting = repoActiveExecs.find(e => hasFileOverlap(itemFiles, e.filesBeingModified));
-        if (conflicting) {
-          events.push(makeEvent(
-            "conflict", item.id, undefined, undefined,
-            `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repo.fullName}`
-          ));
-          continue;
-        }
-
-        // High-churn file serialization: block dispatch if candidate and any active
-        // execution both touch a high-churn file, even across repos
-        const itemHighChurn = itemFiles.filter(f => HIGH_CHURN_FILES.has(f));
-        if (itemHighChurn.length > 0) {
-          const highChurnConflict = activeExecutions.find(e =>
-            e.filesBeingModified.some(f => itemHighChurn.includes(f))
-          );
-          if (highChurnConflict) {
-            events.push(makeEvent(
-              "conflict", item.id, undefined, undefined,
-              `Dispatch blocked: high-churn file(s) [${itemHighChurn.join(", ")}] overlap with active item ${highChurnConflict.workItemId}`
-            ));
-            continue;
-          }
-        }
-
-        try {
-          const result = await dispatchWorkItem(item.id);
-          events.push(makeEvent(
-            "auto_dispatch", item.id, "ready", "executing",
-            `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`
-          ));
-          slotsRemaining--;
-          // Update concurrency map for subsequent iterations this cycle
-          concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Unknown error";
-          // Transition to failed so retry logic (section 3.5) handles it
-          await updateWorkItem(item.id, {
-            status: "failed",
-            execution: {
-              ...item.execution,
-              completedAt: now.toISOString(),
-              outcome: "failed",
-            },
-          });
-          events.push(makeEvent(
-            "error", item.id, "ready", "failed",
-            `Auto-dispatch failed: ${msg}`
-          ));
-        }
-      }
-    }
-
-    // --- Direct-source item dispatch ---
-    // Direct items (source='direct') have no project, no dependency graph.
-    // Pick up items in 'filed' or 'ready' status and dispatch if repo has capacity.
-    const [directFiledEntries, directReadyEntries] = await Promise.all([
-      listWorkItems({ status: "filed" }),
-      listWorkItems({ status: "ready" }),
-    ]);
-    const directCandidateEntries = [...directFiledEntries, ...directReadyEntries];
-
-    // Build repo config lookup by fullName for concurrency checks
-    const repoConfigByName = new Map<string, { concurrencyLimit: number }>();
-    for (const repoEntry of repoIndex) {
-      const repo = await getRepo(repoEntry.id);
-      if (repo) repoConfigByName.set(repo.fullName, repo);
-    }
-
-    for (const entry of directCandidateEntries) {
-      if (slotsRemaining <= 0) break;
-
-      const item = await getWorkItem(entry.id);
-      if (!item || item.source.type !== "direct") continue;
-
-      const activeForRepo = concurrencyMap.get(item.targetRepo) ?? 0;
-      const repoConfig = repoConfigByName.get(item.targetRepo);
-      const limit = repoConfig?.concurrencyLimit ?? 1;
-
-      if (activeForRepo >= limit) {
-        console.log(`[ATC] Repo ${item.targetRepo} at concurrency limit, skipping direct item: ${item.id}`);
-        continue;
-      }
-
-      // Transition filed items to ready (dispatchWorkItem requires ready status)
-      if (item.status === "filed") {
-        await updateWorkItem(item.id, { status: "ready" });
-      }
-
-      console.log(`[ATC] Dispatching direct item: ${item.id}`);
-      try {
-        const result = await dispatchWorkItem(item.id);
-        events.push(makeEvent(
-          "auto_dispatch", item.id, item.status, "executing",
-          `Auto-dispatched direct item to ${item.targetRepo} (branch: ${result.branch})`
-        ));
-        slotsRemaining--;
-        concurrencyMap.set(item.targetRepo, (concurrencyMap.get(item.targetRepo) ?? 0) + 1);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
-        await updateWorkItem(item.id, {
-          status: "failed",
-          execution: {
-            ...item.execution,
-            completedAt: now.toISOString(),
-            outcome: "failed",
-          },
-        });
-        events.push(makeEvent(
-          "error", item.id, "ready", "failed",
-          `Direct item auto-dispatch failed: ${msg}`
-        ));
-      }
-    }
-  }
-
-  // 4.1: Dependency block detection
+  // 4.1: Dependency block detection (uses repoIndex from Phase 1)
   for (const repoEntry of repoIndex) {
     const repo = await getRepo(repoEntry.id);
     if (!repo) continue;
@@ -626,7 +665,9 @@ async function _runATCCycleInner(): Promise<ATCState> {
     }
 
     // Dead dependency auto-cancellation: cancel items whose deps are permanently unresolvable
-    const TERMINAL_FAILURE_STATUSES = ["failed", "parked", "cancelled"];
+    // Note: "cancelled" is NOT a dead state — cancelled deps are treated as resolved
+    // (the work was either done under a different item ID or is no longer needed).
+    const DEAD_DEP_STATUSES = ["failed", "parked"];
     for (const item of blocked) {
       const deadDeps: string[] = [];
       for (const depId of item.dependencies) {
@@ -635,8 +676,8 @@ async function _runATCCycleInner(): Promise<ATCState> {
           // Dep blob missing — could be transient. Do NOT auto-cancel.
           console.warn(`[atc] Dead-dep check: dependency ${depId} for item ${item.id} returned null. Skipping (possible transient failure).`);
           continue; // Skip, don't treat as dead
-        } else if (TERMINAL_FAILURE_STATUSES.includes(dep.status)) {
-          // Dependency failed/parked/cancelled - will never reach "merged"
+        } else if (DEAD_DEP_STATUSES.includes(dep.status)) {
+          // Dependency failed/parked - will never reach "merged"
           deadDeps.push(depId);
         }
       }
