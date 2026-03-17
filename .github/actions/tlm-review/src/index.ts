@@ -228,13 +228,13 @@ async function hasRecentTLMComment(
   repo: string,
   prNumber: number,
   marker: string,
-  withinMinutes: number = 10
+  withinMinutes: number = 30
 ): Promise<boolean> {
   const { data: reviews } = await octokit.rest.pulls.listReviews({
     owner,
     repo,
     pull_number: prNumber,
-    per_page: 20,
+    per_page: 100,
   });
 
   const cutoff = Date.now() - withinMinutes * 60 * 1000;
@@ -425,6 +425,27 @@ async function run(): Promise<void> {
         core.info(
           `check_suite event but ${stillRunning.length} CI check(s) still running: ${stillRunning.map((c) => c.name).join(", ")}. Skipping — will re-trigger on next suite completion.`
         );
+        return;
+      }
+    }
+
+    // Dedup: skip if TLM already posted a full review for this commit
+    if (context.eventName === "check_suite") {
+      const { data: existingReviews } = await octokit.rest.pulls.listReviews({
+        owner,
+        repo,
+        pull_number: prNumber,
+        per_page: 100,
+      });
+      const hasFullReview = existingReviews.some(
+        (r) =>
+          r.body?.includes("## TLM Review:") &&
+          !r.body?.includes("CI Failing") &&
+          !r.body?.includes("CI Pending") &&
+          r.commit_id === pr.head.sha
+      );
+      if (hasFullReview) {
+        core.info(`TLM already posted a full review for commit ${pr.head.sha}, skipping.`);
         return;
       }
     }
