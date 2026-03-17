@@ -411,3 +411,57 @@ export async function setDefaultWorkflowPermissions(
     throw new Error(`Failed to set workflow permissions: ${res.status} ${err}`);
   }
 }
+
+export async function rebasePR(
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // GET the PR to obtain the current head SHA
+    const prRes = await ghFetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`
+    );
+
+    if (!prRes.ok) {
+      const text = await prRes.text();
+      return {
+        success: false,
+        error: `Failed to fetch PR #${prNumber}: ${prRes.status} ${text}`,
+      };
+    }
+
+    const prData = (await prRes.json()) as { head: { sha: string } };
+    const expectedHeadSha = prData.head.sha;
+
+    // PUT update-branch with expected_head_sha
+    const updateRes = await ghFetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/update-branch`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ expected_head_sha: expectedHeadSha }),
+      }
+    );
+
+    if (updateRes.status === 202) {
+      return { success: true };
+    }
+
+    if (updateRes.status === 409) {
+      const body = (await updateRes.json().catch(() => ({}))) as { message?: string };
+      return {
+        success: false,
+        error: `Merge conflict rebasing PR #${prNumber}: ${body.message ?? "conflict"}`,
+      };
+    }
+
+    const errText = await updateRes.text();
+    return {
+      success: false,
+      error: `Unexpected response rebasing PR #${prNumber}: ${updateRes.status} ${errText}`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: `rebasePR error: ${message}` };
+  }
+}
