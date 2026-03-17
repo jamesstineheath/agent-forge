@@ -196,7 +196,7 @@ export const createRepoSchema = z.object({
   claudeMdPath: z.string().default("CLAUDE.md"),
   systemMapPath: z.string().optional(),
   adrPath: z.string().optional(),
-  handoffDir: z.string().default("handoffs/"),
+  handoffDir: z.string().default("handoffs/awaiting_handoff/"),
   executeWorkflow: z.string().default("execute-handoff.yml"),
   concurrencyLimit: z.number().int().min(1).default(1),
   defaultBudget: z.number().positive().default(8),
