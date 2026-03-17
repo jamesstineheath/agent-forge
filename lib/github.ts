@@ -411,3 +411,98 @@ export async function setDefaultWorkflowPermissions(
     throw new Error(`Failed to set workflow permissions: ${res.status} ${err}`);
   }
 }
+
+const CLOSE_REASON_LABELS: Record<string, string> = {
+  sla_timeout: "SLA timeout (24h with no progress)",
+  superseded: "Superseded by a newer work item",
+  merge_conflicts: "Unresolvable merge conflicts",
+  stale: "Stale — no activity for an extended period",
+};
+
+export async function closePRWithReason(
+  owner: string,
+  repo: string,
+  prNumber: number,
+  reason: "sla_timeout" | "superseded" | "merge_conflicts" | "stale",
+  details: string,
+  supersededBy?: number
+): Promise<void> {
+  // Fetch PR details to get branch name
+  const prRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`
+  );
+  if (!prRes.ok) {
+    const err = await prRes.text();
+    throw new Error(`Failed to fetch PR #${prNumber}: ${prRes.status} ${err}`);
+  }
+  const pr = (await prRes.json()) as { head: { ref: string } };
+  const branchName = pr.head.ref;
+
+  // Build and post structured comment
+  const timestamp = new Date().toISOString();
+  const reasonLabel = CLOSE_REASON_LABELS[reason] ?? reason;
+  const supersededLine =
+    supersededBy != null ? `\n**Superseded by:** #${supersededBy}\n` : "";
+  const commentBody = [
+    "## 🤖 PR Auto-Closed",
+    "",
+    `**Reason:** ${reasonLabel}`,
+    "",
+    details,
+    supersededLine,
+    `**Closed at:** ${timestamp}`,
+  ].join("\n");
+
+  const commentRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/issues/${prNumber}/comments`,
+    {
+      method: "POST",
+      body: JSON.stringify({ body: commentBody }),
+    }
+  );
+  if (!commentRes.ok) {
+    const err = await commentRes.text();
+    throw new Error(
+      `Failed to post comment on PR #${prNumber}: ${commentRes.status} ${err}`
+    );
+  }
+
+  // Close the PR
+  const closeRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ state: "closed" }),
+    }
+  );
+  if (!closeRes.ok) {
+    const err = await closeRes.text();
+    throw new Error(
+      `Failed to close PR #${prNumber}: ${closeRes.status} ${err}`
+    );
+  }
+
+  // Check if other open PRs reference this branch, delete if none do
+  const otherPRsRes = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls?head=${encodeURIComponent(`${owner}:${branchName}`)}&state=open`
+  );
+  if (otherPRsRes.ok) {
+    const otherPRs = (await otherPRsRes.json()) as Array<{ number: number }>;
+    if (Array.isArray(otherPRs) && otherPRs.length === 0) {
+      const deleteRes = await ghFetch(
+        `${GITHUB_API}/repos/${owner}/${repo}/git/refs/heads/${encodeURIComponent(branchName)}`,
+        { method: "DELETE" }
+      );
+      // 422 means ref doesn't exist; both 204 and 422 are acceptable
+      if (!deleteRes.ok && deleteRes.status !== 422) {
+        console.warn(
+          `[github] closePRWithReason: could not delete branch ${branchName}: ${deleteRes.status}`
+        );
+      }
+    }
+  } else {
+    console.warn(
+      `[github] closePRWithReason: could not check for other PRs on branch ${branchName}: ${otherPRsRes.status}`
+    );
+  }
+}
