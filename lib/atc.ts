@@ -5,7 +5,7 @@ import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
 import type { ATCEvent, ATCState, WorkItem } from "./types";
-import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject } from "./projects";
+import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject, writeOutcomeSummary } from "./projects";
 import { decomposeProject } from "./decomposer";
 import { validatePlan } from "./plan-validator";
 import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
@@ -983,6 +983,14 @@ async function _runATCCycleInner(): Promise<ATCState> {
         console.log(
           `[ATC §13b] Project ${project.projectId} transitioned to ${result.status}: ${result.summary}`
         );
+
+        // Write outcome summary to Notion (non-blocking)
+        try {
+          await writeOutcomeSummary(project.projectId, result.status);
+          console.log(`[ATC §13b] Outcome summary written for project ${project.projectId} → ${result.status}`);
+        } catch (summaryErr) {
+          console.error(`[ATC §13b] Failed to write outcome summary for project ${project.projectId}: ${summaryErr}`);
+        }
       }
     }
   } catch (err) {
