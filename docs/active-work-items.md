@@ -4,16 +4,6 @@
 
 ## Currently Executing
 
-- **Add risk level detection utility for PRs** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-risk-level-detection-utility-for-prs`
-  - Files: lib/debate/risk-detector.ts, lib/__tests__/debate-risk-detector.test.ts
-  - Started: 2026-03-18T14:44:02.045Z
-
-- **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
-  - Branch: `fix/update-personal-assistant-systemmap-and-claudemd-f`
-  - Files: docs/SYSTEM_MAP.md, CLAUDE.md
-  - Started: 2026-03-18T14:41:38.588Z
-
 - **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
   - Branch: `feat/add-atc-auto-indexing-trigger-on-pr-merge`
   - Files: lib/atc.ts
