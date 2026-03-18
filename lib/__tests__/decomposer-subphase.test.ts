@@ -233,6 +233,27 @@ describe("Recursive sub-phase decomposition", () => {
     });
   });
 
+  // ── Test 1b: Self-reference sanitization ─────────────────────────────────
+
+  describe("Test 1b: Self-reference dependency sanitization", () => {
+    it("strips self-referencing dependencies and succeeds without retry", async () => {
+      // Item 4 depends on itself (LLM artifact) — should be sanitized out
+      const overrides = Array.from({ length: 8 }, (_, i) => {
+        if (i === 4) return { dependencies: [2, 4] }; // 4 references itself
+        return {};
+      });
+      setupStandardMocks(8, overrides);
+
+      const result = await decomposeProject(buildProject());
+
+      // Should succeed (no escalation)
+      expect(getEscalateMock()).not.toHaveBeenCalled();
+      expect(result.workItems).toHaveLength(8);
+      // generateText should only be called once (no retry needed)
+      expect(getGenerateTextMock()).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // ── Test 2: Auto-split — 2 phases (16–22 items) ──────────────────────────
 
   describe("Test 2: Auto-split — 2 phases (16–22 items)", () => {
