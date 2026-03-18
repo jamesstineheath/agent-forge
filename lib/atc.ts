@@ -29,6 +29,13 @@ export function parseEstimatedFiles(content: string): string[] {
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
 const ATC_BRANCH_CLEANUP_KEY = "atc/last-branch-cleanup";
+
+// Projects with human-authored plans that predate the PM quality gate.
+// These bypass the plan quality gate check in §4.5.
+// Remove entries once they have a proper PM-agent plan or are completed.
+const QUALITY_GATE_EXEMPT_PROJECTS = new Set([
+  "PRJ-9",  // PA Real Estate Agent v2 — human-authored plan
+]);
 const ATC_LOCK_KEY = "atc/cycle-lock";
 const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const LOCK_HARD_CEILING_MS = 10 * 60 * 1000; // 10 minutes — force-clear zombie locks
@@ -1062,28 +1069,64 @@ async function _runATCCycleInner(): Promise<ATCState> {
       ));
 
       // §4.5 Plan Quality Gate
-      const validation = await validatePlan(project.id);
-      if (!validation.valid) {
-        const issueList = validation.issues
-          .map((i) => `[${i.severity.toUpperCase()}]${i.section ? ` ${i.section}:` : ''} ${i.message}`)
-          .join('\n');
+      // Loop-detection guard: count decomposition attempts per project
+      const loopGuardKey = `atc/decomp-attempts/${project.projectId}`;
+      const loopGuard = await loadJson<{ attempts: number }>(loopGuardKey);
+      const currentAttempts = (loopGuard?.attempts ?? 0) + 1;
+      await saveJson(loopGuardKey, { attempts: currentAttempts });
 
-        try {
-          const { sendProjectEscalationEmail } = await import('./gmail');
-          await sendProjectEscalationEmail({
-            projectId: project.projectId,
-            projectTitle: project.title,
-            reason: `Plan validation found ${validation.issues.length} issue(s):\n\n${issueList}\n\nPlease fix the plan and re-trigger.`,
-            escalationType: 'plan_validation_failed',
-          });
-        } catch (emailErr) {
-          console.error(`[ATC §4.5] Failed to send escalation email for ${project.title}:`, emailErr);
-        }
-
-        console.log(
-          `[ATC §4.5] Plan validation failed for ${project.title}: ${validation.issues.length} issues`
+      if (currentAttempts > 3) {
+        console.error(
+          `[ATC §4.5 Loop Guard] Project "${project.title}" (${project.projectId}) has attempted decomposition ${currentAttempts} times without success. Forcing to Failed.`
         );
+        await transitionToFailed(project);
+        await deleteJson(loopGuardKey);
+        events.push(makeEvent(
+          "error", project.projectId, "Executing", "Failed",
+          `Decomposition loop detected after ${currentAttempts} attempts for "${project.title}". Forced to Failed.`
+        ));
         continue;
+      }
+
+      // Bypass quality gate for exempt projects (human-authored plans)
+      const isExempt = QUALITY_GATE_EXEMPT_PROJECTS.has(project.projectId);
+      if (isExempt) {
+        console.log(`[ATC §4.5] Project "${project.title}" (${project.projectId}) is exempt from quality gate — proceeding to decomposition.`);
+      }
+
+      if (!isExempt) {
+        const validation = await validatePlan(project.id);
+        if (!validation.valid) {
+          const failedChecks = validation.issues
+            .map((i) => `[${i.severity.toUpperCase()}]${i.section ? ` ${i.section}:` : ''} ${i.message}`);
+          const issueList = failedChecks.join('\n');
+
+          const rejectionReason =
+            `Plan quality gate rejected project "${project.title}" (${project.projectId}). ` +
+            `Checks failed: ${failedChecks.join("; ")}. ` +
+            `Project will be transitioned to Failed to prevent infinite loop. ` +
+            `If this project has a human-authored plan, add its projectId to QUALITY_GATE_EXEMPT_PROJECTS in lib/atc.ts to bypass.`;
+          console.error(`[ATC §4.5 Quality Gate] ${rejectionReason}`);
+
+          try {
+            const { sendProjectEscalationEmail } = await import('./gmail');
+            await sendProjectEscalationEmail({
+              projectId: project.projectId,
+              projectTitle: project.title,
+              reason: `Plan validation found ${validation.issues.length} issue(s):\n\n${issueList}\n\nProject transitioned to Failed. Fix the plan and re-trigger, or add to QUALITY_GATE_EXEMPT_PROJECTS if this is a human-authored plan.`,
+              escalationType: 'plan_validation_failed',
+            });
+          } catch (emailErr) {
+            console.error(`[ATC §4.5] Failed to send escalation email for ${project.title}:`, emailErr);
+          }
+
+          await transitionToFailed(project);
+          events.push(makeEvent(
+            "error", project.projectId, "Executing", "Failed",
+            `Plan quality gate rejected "${project.title}": ${validation.issues.length} issue(s). Transitioned to Failed.`
+          ));
+          continue;
+        }
       }
 
       console.log(`[ATC §4.5] Plan validated for ${project.title}, proceeding to decomposition`);
@@ -1107,6 +1150,9 @@ async function _runATCCycleInner(): Promise<ATCState> {
 
         // Save dedup key after successful decomposition
         await saveJson(dedupKey, { decomposedAt: now.toISOString(), workItemCount: workItems.length });
+
+        // Clear loop-detection counter on success
+        await deleteJson(loopGuardKey);
 
         events.push(makeEvent(
           "project_trigger", project.projectId, undefined, undefined,
