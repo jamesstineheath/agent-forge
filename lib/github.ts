@@ -127,16 +127,25 @@ export async function pushFile(
   branch: string,
   path: string,
   content: string,
-  message: string
-): Promise<void> {
-  // Check if file exists to get its SHA
+  message: string,
+  options?: { skipIfUnchanged?: boolean }
+): Promise<{ pushed: boolean }> {
+  // Check if file exists to get its SHA and content
   const existingRes = await ghFetch(
     `${GITHUB_API}/repos/${repo}/contents/${path}?ref=${branch}`
   );
   let sha: string | undefined;
   if (existingRes.ok) {
-    const existing = (await existingRes.json()) as { sha: string };
+    const existing = (await existingRes.json()) as { sha: string; content?: string; encoding?: string };
     sha = existing.sha;
+
+    // Skip push if content is unchanged
+    if (options?.skipIfUnchanged && existing.encoding === "base64" && existing.content) {
+      const existingContent = Buffer.from(existing.content.replace(/\n/g, ""), "base64").toString("utf-8");
+      if (existingContent === content) {
+        return { pushed: false };
+      }
+    }
   }
 
   const body: Record<string, unknown> = {
@@ -154,6 +163,7 @@ export async function pushFile(
     const err = await res.text();
     throw new Error(`Failed to push file: ${res.status} ${err}`);
   }
+  return { pushed: true };
 }
 
 export async function triggerWorkflow(
