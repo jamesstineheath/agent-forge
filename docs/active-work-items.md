@@ -4,19 +4,10 @@
 
 ## In Review
 
-- **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
-  - Branch: `fix/coach-chat-interface-locks-up-after-filing-a-bug-v`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/308
-  - Files: handoffs/coach-chat-interface-locks-up-after-filing-a-bug-v.md
-
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
   - Files: handoffs/pa-auth-bypass-middleware-for-qa-agent-smoke-tests.md, proxy.ts
-
-- **Add risk level detection utility for PRs** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-risk-level-detection-utility-for-prs`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/254
 
 - **Bootstrap rez-sniper: push execute-handoff.yml via GitHub API** (jamesstineheath/agent-forge)
   - Branch: `fix/bootstrap-rez-sniper-push-execute-handoffyml-via-g`
@@ -26,3 +17,4 @@
 - **Daily email digest of pipeline activity** (jamesstineheath/agent-forge)
   - Branch: `fix/daily-email-digest-of-pipeline-activity`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/278
+  - Files: app/api/agents/digest/cron/route.ts, handoffs/daily-email-digest-of-pipeline-activity.md, lib/digest.ts, lib/gmail.ts, vercel.json
