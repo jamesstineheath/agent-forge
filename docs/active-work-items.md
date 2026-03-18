@@ -8,8 +8,3 @@
   - Branch: `fix/coach-chat-interface-locks-up-after-filing-a-bug-v`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/308
   - Files: handoffs/coach-chat-interface-locks-up-after-filing-a-bug-v.md
-
-- **Reset PRJ-9 (PA Real Estate Agent v2) to Execute in Notion for re-decomposition** (jamesstineheath/agent-forge)
-  - Branch: `fix/reset-prj-9-pa-real-estate-agent-v2-to-execute-in-`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/229
-  - Files: handoffs/reset-prj-9-pa-real-estate-agent-v2-to-execute-in-.md
