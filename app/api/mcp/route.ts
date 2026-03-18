@@ -1,12 +1,10 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { NextRequest, NextResponse } from "next/server";
 import { createMcpServer } from "@/lib/mcp/server";
+import { validateToken } from "@/lib/oauth";
 
 function checkAuth(request: NextRequest): boolean {
-  const authHeader = request.headers.get("authorization");
-  const secret = process.env.AGENT_FORGE_API_SECRET;
-  if (!secret) return false;
-  return authHeader === `Bearer ${secret}`;
+  return validateToken(request.headers.get("authorization"));
 }
 
 export async function POST(request: NextRequest) {
