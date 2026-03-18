@@ -8,6 +8,7 @@ import { EscalationCard } from "@/components/escalation-card";
 import { ATCMetricsPanel } from "@/components/atc-metrics-panel";
 import { ActivityFeed } from "@/components/activity-feed";
 import { WebhookEventFeed } from "@/components/webhook-event-feed";
+import { QADashboard } from "@/components/qa-dashboard";
 import {
   useWorkItems,
   useRepos,
@@ -178,6 +179,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* QA Agent */}
+          <QADashboard />
 
           {/* Webhook Event Feed */}
           <WebhookEventFeed />
