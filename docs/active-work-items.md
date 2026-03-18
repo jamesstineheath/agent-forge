@@ -9,11 +9,6 @@
   - Files: lib/debate/storage.ts
   - Started: 2026-03-18T14:33:41.329Z
 
-- **Implement graph query engine** (jamesstineheath/agent-forge)
-  - Branch: `feat/implement-graph-query-engine`
-  - Files: lib/knowledge-graph/query.ts, lib/__tests__/knowledge-graph-query.test.ts
-  - Started: 2026-03-18T14:32:35.208Z
-
 ## Queued for Dispatch
 
 - **Action Ledger Logger — Log QA Agent Results to Structured Ledger** (agent-forge)
@@ -49,12 +44,6 @@
 - **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
 
 - **Integration test: end-to-end debate flow with mock PR data** (jamesstineheath/agent-forge)
-
-- **Create Knowledge Graph API routes** (jamesstineheath/agent-forge)
-
-- **Create Knowledge Graph barrel export and index module** (jamesstineheath/agent-forge)
-
-- **Integrate Knowledge Graph into Plan Decomposer** (jamesstineheath/agent-forge)
 
 - **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
 
