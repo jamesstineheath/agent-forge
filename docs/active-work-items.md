@@ -4,10 +4,10 @@
 
 ## Currently Executing
 
-- **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
-  - Branch: `feat/add-atc-auto-indexing-trigger-on-pr-merge`
-  - Files: lib/atc.ts
-  - Started: 2026-03-18T14:46:47.631Z
+- **Add Knowledge Graph dashboard page** (jamesstineheath/agent-forge)
+  - Branch: `fix/add-knowledge-graph-dashboard-page`
+  - Files: app/(app)/knowledge-graph/page.tsx, components/sidebar.tsx
+  - Started: 2026-03-18T14:58:52.920Z
 
 ## Queued for Dispatch
 
@@ -32,5 +32,3 @@
 - **Graduation Tracker — Structured PR Verification Markers** (agent-forge)
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
-
-- **Add Knowledge Graph dashboard page** (jamesstineheath/agent-forge)
