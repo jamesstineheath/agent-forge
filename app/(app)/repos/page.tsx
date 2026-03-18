@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { BookMarked } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,110 +36,125 @@ export default function ReposPage() {
   }
 
   return (
-    <div className="space-y-6 px-4 md:px-6">
-      <div className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl md:text-3xl font-bold">Registered Repos</h1>
-        <Link href="/repos/new" className={buttonVariants() + " min-h-[44px]"}>
-          Add Repo
-        </Link>
-      </div>
-
-      {editing && (
-        <RepoForm
-          existing={editing}
-          onSuccess={() => {
-            setEditing(null);
-            mutate();
-          }}
-        />
-      )}
-
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      ) : error ? (
-        <p className="text-sm text-red-600">Failed to load repos.</p>
-      ) : !repos || repos.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <p className="text-muted-foreground">No repos registered yet.</p>
-            <Link href="/repos/new" className={buttonVariants() + " mt-4"}>
-              Add your first repo
+    <>
+      <header className="sticky top-0 z-10 glass-header border-b border-border">
+        <div className="flex items-center justify-between px-6 py-3.5">
+          <div>
+            <h1 className="text-lg font-display font-bold text-foreground">Repos</h1>
+            <p className="text-[11px] font-medium text-muted-foreground">
+              Registered target repositories
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1 text-[11px] font-medium text-muted-foreground ring-1 ring-border">
+              <BookMarked className="h-3 w-3" />
+              {repos?.length ?? 0} repos
+            </span>
+            <Link href="/repos/new" className={buttonVariants({ size: "sm" })}>
+              Add Repo
             </Link>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {repos.map((repo) => (
-            <Card key={repo.id}>
-              <CardHeader className="pb-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <CardTitle className="text-base leading-tight break-all">{repo.fullName}</CardTitle>
-                    <p className="text-sm text-muted-foreground break-all">
-                      {repo.shortName}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className="shrink-0 text-xs">
-                    concurrency: {repo.concurrencyLimit}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span>Budget: ${repo.defaultBudget}</span>
-                  <span>Handoffs: {repo.handoffDir}</span>
-                  <span className="break-all">
-                    Workflow: {repo.executeWorkflow}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="min-h-[44px]"
-                    onClick={() => setEditing(repo)}
-                  >
-                    Edit
-                  </Button>
-                  {confirmDelete === repo.id ? (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="min-h-[44px]"
-                        onClick={() => handleDelete(repo.id)}
-                        disabled={deleting}
-                      >
-                        {deleting ? "..." : "Confirm"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="min-h-[44px]"
-                        onClick={() => setConfirmDelete(null)}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="min-h-[44px]"
-                      onClick={() => setConfirmDelete(repo.id)}
-                    >
-                      Delete
-                    </Button>
-                  )}
-                </div>
-                {deleteError && confirmDelete === repo.id && (
-                  <p className="text-xs text-red-600">{deleteError}</p>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+          </div>
         </div>
-      )}
-    </div>
+      </header>
+
+      <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
+        <div className="max-w-5xl space-y-6">
+          {editing && (
+            <RepoForm
+              existing={editing}
+              onSuccess={() => {
+                setEditing(null);
+                mutate();
+              }}
+            />
+          )}
+
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : error ? (
+            <p className="text-sm text-status-blocked">Failed to load repos.</p>
+          ) : !repos || repos.length === 0 ? (
+            <div className="rounded-xl card-elevated bg-surface-1 p-12 text-center">
+              <BookMarked className="h-8 w-8 text-muted-foreground/20 mx-auto mb-3" />
+              <p className="text-[14px] font-display font-bold text-foreground">No repos registered</p>
+              <p className="text-[12px] text-muted-foreground mt-1">
+                Connect a repository to start orchestrating work
+              </p>
+              <Link href="/repos/new" className={buttonVariants() + " mt-4"}>
+                Add your first repo
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {repos.map((repo) => (
+                <div key={repo.id} className="rounded-xl card-elevated bg-surface-1 overflow-hidden">
+                  <div className="p-4 border-b border-border">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-display font-bold text-foreground break-all">{repo.fullName}</h3>
+                        <p className="text-[11px] text-muted-foreground break-all font-mono">
+                          {repo.shortName}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="shrink-0 text-[10px] font-bold">
+                        concurrency: {repo.concurrencyLimit}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="p-4 space-y-3">
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                      <span>Budget: ${repo.defaultBudget}</span>
+                      <span>Handoffs: {repo.handoffDir}</span>
+                      <span className="break-all font-mono">
+                        Workflow: {repo.executeWorkflow}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setEditing(repo)}
+                      >
+                        Edit
+                      </Button>
+                      {confirmDelete === repo.id ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDelete(repo.id)}
+                            disabled={deleting}
+                          >
+                            {deleting ? "..." : "Confirm"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setConfirmDelete(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setConfirmDelete(repo.id)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    {deleteError && confirmDelete === repo.id && (
+                      <p className="text-xs text-status-blocked">{deleteError}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

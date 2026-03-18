@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import {
   Plane,
   AlertTriangle,
@@ -33,7 +34,6 @@ function formatRelativeTime(ts?: string): string {
 function isHealthy(state: ATCStateWithEvents): boolean {
   if (!state.lastRunAt) return false;
   const ms = Date.now() - new Date(state.lastRunAt).getTime();
-  // Healthy if last run was within 10 minutes
   return ms < 10 * 60 * 1000;
 }
 
@@ -41,28 +41,28 @@ function EventTypeIcon({ type }: { type: ATCEvent["type"] }) {
   const cls = "shrink-0";
   switch (type) {
     case "auto_dispatch":
-      return <Plane size={12} className={`text-blue-400 ${cls}`} />;
+      return <Plane size={12} className={`text-status-executing ${cls}`} />;
     case "conflict":
     case "concurrency_block":
-      return <AlertTriangle size={12} className={`text-amber-400 ${cls}`} />;
+      return <AlertTriangle size={12} className={`text-status-reviewing ${cls}`} />;
     case "timeout":
-      return <Timer size={12} className={`text-red-400 ${cls}`} />;
+      return <Timer size={12} className={`text-status-blocked ${cls}`} />;
     case "retry":
-      return <RotateCcw size={12} className={`text-amber-400 ${cls}`} />;
+      return <RotateCcw size={12} className={`text-status-reviewing ${cls}`} />;
     case "parked":
-      return <ParkingCircle size={12} className={`text-zinc-400 ${cls}`} />;
+      return <ParkingCircle size={12} className={`text-muted-foreground ${cls}`} />;
     case "cleanup":
-      return <Trash2 size={12} className={`text-zinc-500 ${cls}`} />;
+      return <Trash2 size={12} className={`text-muted-foreground/60 ${cls}`} />;
     case "project_trigger":
     case "project_completion":
-      return <Layers size={12} className={`text-purple-400 ${cls}`} />;
+      return <Layers size={12} className={`text-primary ${cls}`} />;
     case "escalation_resolved":
-      return <Shield size={12} className={`text-emerald-400 ${cls}`} />;
+      return <Shield size={12} className={`text-status-merged ${cls}`} />;
     case "escalation":
     case "escalation_timeout":
-      return <AlertTriangle size={12} className={`text-red-400 ${cls}`} />;
+      return <AlertTriangle size={12} className={`text-status-blocked ${cls}`} />;
     default:
-      return <GitBranch size={12} className={`text-zinc-500 ${cls}`} />;
+      return <GitBranch size={12} className={`text-muted-foreground/60 ${cls}`} />;
   }
 }
 
@@ -71,12 +71,12 @@ export function ATCMetricsPanel() {
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 animate-pulse">
-        <div className="h-4 w-48 bg-zinc-800 rounded mb-3" />
-        <div className="h-3 w-32 bg-zinc-800 rounded mb-4" />
+      <div className="rounded-xl card-elevated bg-surface-1 p-4 animate-pulse">
+        <div className="h-4 w-48 bg-muted rounded mb-3" />
+        <div className="h-3 w-32 bg-muted rounded mb-4" />
         <div className="space-y-2">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-3 w-full bg-zinc-800 rounded" />
+            <div key={i} className="h-3 w-full bg-muted rounded" />
           ))}
         </div>
       </div>
@@ -85,15 +85,15 @@ export function ATCMetricsPanel() {
 
   if (error || !data) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
-          <Activity size={14} className="text-zinc-500" />
+      <div className="rounded-xl card-elevated bg-surface-1 p-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Activity size={14} className="text-muted-foreground/60" />
           <span>ATC Metrics</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-zinc-400/10 text-zinc-500 border-zinc-500/20">
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-secondary text-muted-foreground border-border">
             unavailable
           </span>
         </div>
-        <p className="text-xs text-zinc-500 mt-2">
+        <p className="text-xs text-muted-foreground/60 mt-2">
           Unable to load ATC state. The cron may not have run yet.
         </p>
       </div>
@@ -106,53 +106,55 @@ export function ATCMetricsPanel() {
   const events = (data.recentEvents ?? []).slice(-10);
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+    <div className="rounded-xl card-elevated overflow-hidden bg-surface-1">
       {/* Health Indicator + Last Run */}
-      <div className="px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-3 border-b border-zinc-800/50">
+      <div className="px-4 py-3 flex flex-wrap items-center gap-2 sm:gap-3 border-b border-border">
         <div
-          className={`h-2.5 w-2.5 rounded-full shrink-0 ${
-            healthy ? "bg-emerald-400" : "bg-red-400"
-          }`}
+          className={cn(
+            "h-2.5 w-2.5 rounded-full shrink-0",
+            healthy ? "bg-status-merged animate-status-pulse" : "bg-status-blocked"
+          )}
         />
         <div className="flex items-center gap-2">
-          <Activity size={14} className="text-zinc-300" />
-          <span className="text-sm font-medium text-zinc-100">
+          <Activity size={14} className="text-foreground" />
+          <span className="text-sm font-display font-bold text-foreground">
             ATC Performance
           </span>
         </div>
         <span
-          className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+          className={cn(
+            "text-[10px] px-1.5 py-0.5 rounded-full border font-semibold",
             healthy
-              ? "bg-emerald-400/10 text-emerald-400 border-emerald-400/20"
-              : "bg-red-400/10 text-red-400 border-red-400/20"
-          }`}
+              ? "bg-status-merged/10 text-status-merged border-status-merged/20"
+              : "bg-status-blocked/10 text-status-blocked border-status-blocked/20"
+          )}
         >
           {healthy ? "healthy" : "stale"}
         </span>
-        <span className="text-xs text-zinc-500 sm:ml-auto flex items-center gap-1">
+        <span className="text-xs text-muted-foreground sm:ml-auto flex items-center gap-1">
           <Clock size={10} />
           Last sweep {formatRelativeTime(data.lastRunAt)}
         </span>
       </div>
 
       {/* Queue Depth + Active Executions */}
-      <div className="px-4 py-3 flex flex-wrap items-center gap-4 sm:gap-6 border-b border-zinc-800/50">
+      <div className="px-4 py-3 flex flex-wrap items-center gap-4 sm:gap-6 border-b border-border">
         <div className="flex items-center gap-2">
           <Radio
             size={12}
-            className={`${activeCount > 0 ? "text-amber-400 animate-pulse" : "text-zinc-600"}`}
+            className={cn(activeCount > 0 ? "text-status-executing animate-status-pulse" : "text-muted-foreground/40")}
           />
-          <span className="text-xs text-zinc-400">
-            <span className="font-mono font-medium text-zinc-200">
+          <span className="text-xs text-muted-foreground">
+            <span className="font-mono font-bold text-foreground">
               {activeCount}
             </span>{" "}
             active execution{activeCount !== 1 ? "s" : ""}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Layers size={12} className="text-zinc-500" />
-          <span className="text-xs text-zinc-400">
-            <span className="font-mono font-medium text-zinc-200">
+          <Layers size={12} className="text-muted-foreground/60" />
+          <span className="text-xs text-muted-foreground">
+            <span className="font-mono font-bold text-foreground">
               {queuedCount}
             </span>{" "}
             queued
@@ -162,19 +164,19 @@ export function ATCMetricsPanel() {
 
       {/* Active Execution Details */}
       {activeCount > 0 && (
-        <div className="px-4 py-2 border-b border-zinc-800/50">
+        <div className="px-4 py-2 border-b border-border">
           <div className="space-y-1">
             {data.activeExecutions.map((exec) => (
               <div
                 key={exec.workItemId}
                 className="flex items-center gap-2 text-xs"
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-zinc-300 font-mono">
+                <span className="h-1.5 w-1.5 rounded-full bg-status-executing animate-status-pulse" />
+                <span className="text-foreground font-mono">
                   {exec.workItemId.slice(0, 8)}
                 </span>
-                <span className="text-zinc-500">{exec.targetRepo}</span>
-                <span className="text-zinc-600 ml-auto">
+                <span className="text-muted-foreground">{exec.targetRepo}</span>
+                <span className="text-muted-foreground/60 ml-auto">
                   {exec.elapsedMinutes}m elapsed
                 </span>
               </div>
@@ -186,7 +188,7 @@ export function ATCMetricsPanel() {
       {/* Recent Events Timeline */}
       {events.length > 0 ? (
         <div className="px-4 py-3">
-          <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-2">
+          <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-2">
             Recent Events
           </div>
           <div className="space-y-1.5">
@@ -199,10 +201,10 @@ export function ATCMetricsPanel() {
                   className="flex items-start gap-2 text-xs"
                 >
                   <EventTypeIcon type={event.type} />
-                  <span className="text-zinc-400 truncate flex-1">
+                  <span className="text-muted-foreground truncate flex-1">
                     {event.details}
                   </span>
-                  <span className="text-zinc-600 shrink-0 text-[10px]">
+                  <span className="text-muted-foreground/50 shrink-0 text-[10px]">
                     {formatRelativeTime(event.timestamp)}
                   </span>
                 </div>
@@ -211,7 +213,7 @@ export function ATCMetricsPanel() {
         </div>
       ) : (
         <div className="px-4 py-3">
-          <p className="text-xs text-zinc-500">No recent events recorded.</p>
+          <p className="text-xs text-muted-foreground/60">No recent events recorded.</p>
         </div>
       )}
     </div>

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { AlertTriangle, Clock, ExternalLink, Zap } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { Escalation } from "@/lib/escalation";
 
 function formatRelativeTime(ts: string): string {
@@ -58,33 +60,60 @@ export function EscalationCard({
   };
 
   return (
-    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-3">
-      <AlertTriangle size={16} className="text-amber-400 mt-0.5 shrink-0" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-sm font-medium text-zinc-200">
-            {workItemTitle ?? escalation.workItemId}
-          </span>
-          <span className="text-[10px] text-zinc-400">
-            {escalation.projectId && <>{escalation.projectId} &middot; </>}
-            {formatRelativeTime(escalation.createdAt)}
-          </span>
+    <div
+      className={cn(
+        "group relative rounded-xl overflow-hidden card-elevated",
+        "bg-status-blocked/[0.04] ring-1 ring-status-blocked/15"
+      )}
+    >
+      {/* Severity accent bar */}
+      <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-status-blocked" />
+
+      <div className="flex items-start justify-between gap-4 pl-5 pr-4 py-3.5">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-status-blocked shrink-0" />
+            <span className="text-[13px] font-semibold text-foreground truncate">
+              {workItemTitle ?? escalation.workItemId}
+            </span>
+          </div>
+          <p className="text-[12px] leading-relaxed text-muted-foreground line-clamp-2">
+            {escalation.reason}
+          </p>
+          <div className="flex items-center gap-3 pt-0.5">
+            {escalation.projectId && (
+              <span className="inline-flex items-center rounded-md bg-secondary px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground ring-1 ring-border">
+                {escalation.projectId}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              {formatRelativeTime(escalation.createdAt)}
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-status-blocked">
+              <Zap className="h-3 w-3" />
+              Urgent
+            </span>
+          </div>
         </div>
-        <div className="text-xs text-zinc-400 mb-2">{escalation.reason}</div>
-        <div className="flex gap-2">
-          <button
+        <div className="flex gap-2 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={handleResolve}
             disabled={resolving}
-            className="text-xs px-2.5 py-1 rounded-md transition-colors bg-amber-500/20 text-amber-300 hover:bg-amber-500/30"
+            className="h-8 gap-1.5 text-[11px] font-semibold"
           >
             {resolving ? "..." : getActionLabel(escalation.reason)}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onDismiss}
-            className="text-xs px-2.5 py-1 rounded-md transition-colors bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+            className="h-8 text-[11px] font-semibold text-muted-foreground"
           >
             Dismiss
-          </button>
+          </Button>
         </div>
       </div>
     </div>

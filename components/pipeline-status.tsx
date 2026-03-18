@@ -78,7 +78,7 @@ export function PipelineStatus() {
                   <div className="flex items-center justify-between py-1">
                     <div className="flex items-center gap-2 min-w-0">
                       {isActive && (
-                        <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+                        <span className="h-2 w-2 rounded-full bg-status-executing animate-pulse flex-shrink-0" />
                       )}
                       <div className="min-w-0">
                         <p className="text-sm font-medium truncate">

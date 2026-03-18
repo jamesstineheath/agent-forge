@@ -5,25 +5,25 @@ import { Badge } from "@/components/ui/badge";
 import type { ATCEvent } from "@/lib/types";
 
 const EVENT_COLORS: Record<ATCEvent["type"], string> = {
-  status_change: "bg-blue-100 text-blue-700",
-  timeout: "bg-red-100 text-red-700",
-  concurrency_block: "bg-yellow-100 text-yellow-700",
-  auto_dispatch: "bg-green-100 text-green-700",
-  conflict: "bg-orange-100 text-orange-700",
-  retry: "bg-amber-100 text-amber-700",
-  parked: "bg-slate-100 text-slate-600",
-  error: "bg-red-100 text-red-700",
-  cleanup: "bg-teal-100 text-teal-700",
-  project_trigger: "bg-indigo-100 text-indigo-700",
-  project_completion: "bg-emerald-100 text-emerald-700",
-  work_item_reconciled: "bg-cyan-100 text-cyan-700",
-  escalation: "bg-red-100 text-red-700",
-  escalation_timeout: "bg-red-200 text-red-800",
-  escalation_resolved: "bg-green-100 text-green-700",
-  dependency_block: "bg-purple-100 text-purple-700",
-  auto_cancel: "bg-rose-100 text-rose-700",
-  project_retry: "bg-amber-200 text-amber-800",
-  dep_resolved: "bg-green-200 text-green-800",
+  status_change: "bg-status-queued/10 text-status-queued",
+  timeout: "bg-status-blocked/10 text-status-blocked",
+  concurrency_block: "bg-status-executing/10 text-status-executing",
+  auto_dispatch: "bg-status-merged/10 text-status-merged",
+  conflict: "bg-status-reviewing/10 text-status-reviewing",
+  retry: "bg-status-executing/10 text-status-executing",
+  parked: "bg-muted text-muted-foreground",
+  error: "bg-status-blocked/10 text-status-blocked",
+  cleanup: "bg-muted text-muted-foreground",
+  project_trigger: "bg-primary/10 text-primary",
+  project_completion: "bg-status-merged/10 text-status-merged",
+  work_item_reconciled: "bg-status-queued/10 text-status-queued",
+  escalation: "bg-status-blocked/10 text-status-blocked",
+  escalation_timeout: "bg-status-blocked/15 text-status-blocked",
+  escalation_resolved: "bg-status-merged/10 text-status-merged",
+  dependency_block: "bg-status-reviewing/10 text-status-reviewing",
+  auto_cancel: "bg-status-blocked/10 text-status-blocked",
+  project_retry: "bg-status-executing/15 text-status-executing",
+  dep_resolved: "bg-status-merged/15 text-status-merged",
 };
 
 const ALL_TYPES = Object.keys(EVENT_COLORS) as ATCEvent["type"][];
@@ -88,7 +88,7 @@ export function ATCEventLog({ events }: ATCEventLogProps) {
         {activeFilters.size > 0 && (
           <button
             onClick={() => setActiveFilters(new Set())}
-            className="px-2 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-600 hover:bg-gray-200"
+            className="px-2 py-0.5 rounded-full text-xs font-medium border border-border bg-muted text-muted-foreground hover:bg-accent"
           >
             clear
           </button>

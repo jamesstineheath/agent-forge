@@ -17,7 +17,7 @@ export function ProgressBar({
 }: ProgressBarProps) {
   if (total === 0) {
     return (
-      <div className="text-xs text-zinc-500">No work items yet</div>
+      <div className="text-xs text-muted-foreground/60">No work items yet</div>
     );
   }
 
@@ -25,46 +25,46 @@ export function ProgressBar({
 
   return (
     <div className="w-full">
-      <div className="flex h-2 rounded-full overflow-hidden bg-zinc-800">
+      <div className="flex h-1.5 rounded-full overflow-hidden bg-border/50">
         {completed > 0 && (
           <div
-            className="bg-emerald-500 transition-all"
+            className="bg-status-merged transition-all"
             style={{ width: pct(completed) }}
           />
         )}
         {executing > 0 && (
           <div
-            className="bg-amber-500 transition-all"
+            className="bg-status-executing transition-all"
             style={{ width: pct(executing) }}
           />
         )}
         {failed > 0 && (
           <div
-            className="bg-red-500 transition-all"
+            className="bg-status-blocked transition-all"
             style={{ width: pct(failed) }}
           />
         )}
         {blocked > 0 && (
           <div
-            className="bg-orange-500/40 transition-all"
+            className="bg-status-blocked/40 transition-all"
             style={{ width: pct(blocked) }}
           />
         )}
       </div>
-      <div className="flex gap-3 mt-1.5 text-xs text-zinc-400">
+      <div className="flex gap-3 mt-1.5 text-[10px] text-muted-foreground">
         {completed > 0 && (
-          <span className="text-emerald-400">{completed} done</span>
+          <span className="text-status-merged">{completed} done</span>
         )}
         {executing > 0 && (
-          <span className="text-amber-400">{executing} running</span>
+          <span className="text-status-executing">{executing} running</span>
         )}
         {failed > 0 && (
-          <span className="text-red-400">{failed} failed</span>
+          <span className="text-status-blocked">{failed} failed</span>
         )}
         {blocked > 0 && (
-          <span className="text-orange-400">{blocked} blocked</span>
+          <span className="text-status-blocked">{blocked} blocked</span>
         )}
-        <span className="ml-auto">
+        <span className="ml-auto font-mono tabular-nums">
           {completed}/{total}
         </span>
       </div>

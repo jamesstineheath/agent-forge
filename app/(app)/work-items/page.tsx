@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { FolderKanban, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { WorkItemCard } from "@/components/work-item-card";
 import { useWorkItems, useRepos } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
@@ -53,7 +54,6 @@ export default function WorkItemsPage() {
     sourceFilter === "direct" ? item.source?.type === "direct" : true
   );
 
-  // New work item form state
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
@@ -106,246 +106,256 @@ export default function WorkItemsPage() {
   }
 
   return (
-    <div className="overflow-x-hidden space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Work Items</h1>
-        <Button className="min-h-[44px]" onClick={() => setShowForm(!showForm)}>
-          {showForm ? "Cancel" : "New Work Item"}
-        </Button>
-      </div>
-
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <CardTitle>New Work Item</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleCreateItem} className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2 space-y-1">
-                  <label className="text-sm font-medium">
-                    Title <span className="text-red-500">*</span>
-                  </label>
-                  <Input
-                    value={formData.title}
-                    onChange={(e) =>
-                      setFormData((p) => ({ ...p, title: e.target.value }))
-                    }
-                    required
-                    placeholder="Brief description of the work"
-                  />
-                </div>
-                <div className="sm:col-span-2 space-y-1">
-                  <label className="text-sm font-medium">
-                    Description <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    rows={3}
-                    value={formData.description}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        description: e.target.value,
-                      }))
-                    }
-                    required
-                    placeholder="Detailed description of what needs to be done"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">
-                    Target Repo <span className="text-red-500">*</span>
-                  </label>
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={formData.targetRepo}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        targetRepo: e.target.value,
-                      }))
-                    }
-                    required
-                  >
-                    <option value="">Select repo...</option>
-                    {repos?.map((r) => (
-                      <option key={r.id} value={r.fullName}>
-                        {r.fullName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Source Type</label>
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={formData.sourceType}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        sourceType: e.target.value as typeof formData.sourceType,
-                      }))
-                    }
-                  >
-                    <option value="manual">Manual</option>
-                    <option value="pa-improvement">PA Improvement</option>
-                    <option value="github-issue">GitHub Issue</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Priority</label>
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={formData.priority}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        priority: e.target.value as WorkItem["priority"],
-                      }))
-                    }
-                  >
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Risk Level</label>
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={formData.riskLevel}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        riskLevel: e.target.value as WorkItem["riskLevel"],
-                      }))
-                    }
-                  >
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-sm font-medium">Complexity</label>
-                  <select
-                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    value={formData.complexity}
-                    onChange={(e) =>
-                      setFormData((p) => ({
-                        ...p,
-                        complexity: e.target.value as WorkItem["complexity"],
-                      }))
-                    }
-                  >
-                    <option value="simple">Simple</option>
-                    <option value="moderate">Moderate</option>
-                    <option value="complex">Complex</option>
-                  </select>
-                </div>
-              </div>
-              {formError && (
-                <p className="text-sm text-red-600">{formError}</p>
-              )}
-              <div className="flex gap-2">
-                <Button type="submit" disabled={submitting} className="min-h-[44px]">
-                  {submitting ? "Creating..." : "Create Work Item"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="min-h-[44px]"
-                  onClick={() => setShowForm(false)}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Filter bar */}
-      <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:gap-3">
-        <select
-          className="w-full md:w-auto rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={statusFilter}
-          onChange={(e) =>
-            setStatusFilter(e.target.value as WorkItem["status"] | "")
-          }
-        >
-          {STATUS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="w-full md:w-auto rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={priorityFilter}
-          onChange={(e) =>
-            setPriorityFilter(e.target.value as WorkItem["priority"] | "")
-          }
-        >
-          {PRIORITY_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
-        <select
-          className="w-full md:w-auto rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={repoFilter}
-          onChange={(e) => setRepoFilter(e.target.value)}
-        >
-          <option value="">All Repos</option>
-          {repos?.map((r) => (
-            <option key={r.id} value={r.fullName}>
-              {r.fullName}
-            </option>
-          ))}
-        </select>
-        <button
-          className={`w-full md:w-auto rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-            sourceFilter === "direct"
-              ? "border-green-500 bg-green-50 text-green-800"
-              : "border-input bg-background text-muted-foreground hover:bg-accent"
-          }`}
-          onClick={() =>
-            setSourceFilter(sourceFilter === "direct" ? "" : "direct")
-          }
-        >
-          ⚡ Fast Lane
-        </button>
-      </div>
-
-      {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading...</p>
-      ) : error ? (
-        <p className="text-sm text-red-600">Failed to load work items.</p>
-      ) : !filteredItems || filteredItems.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <p className="text-muted-foreground">
-              No work items match the current filters.
+    <>
+      <header className="sticky top-0 z-10 glass-header border-b border-border">
+        <div className="flex items-center justify-between px-6 py-3.5">
+          <div>
+            <h1 className="text-lg font-display font-bold text-foreground">Work Items</h1>
+            <p className="text-[11px] font-medium text-muted-foreground">
+              All work items across repos
             </p>
-            <Button
-              className="mt-4 min-h-[44px]"
-              variant="outline"
-              onClick={() => setShowForm(true)}
-            >
-              Create your first work item
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredItems.map((item) => (
-            <WorkItemCard key={item.id} item={item} />
-          ))}
+          </div>
+          <Button size="sm" onClick={() => setShowForm(!showForm)}>
+            {showForm ? "Cancel" : "New Work Item"}
+          </Button>
         </div>
-      )}
-    </div>
+      </header>
+
+      <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
+        <div className="max-w-5xl space-y-6">
+          {showForm && (
+            <div className="rounded-xl card-elevated bg-surface-1 p-5">
+              <h2 className="text-sm font-display font-bold text-foreground mb-4">New Work Item</h2>
+              <form onSubmit={handleCreateItem} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2 space-y-1">
+                    <label className="text-[12px] font-medium text-foreground">
+                      Title <span className="text-status-blocked">*</span>
+                    </label>
+                    <Input
+                      value={formData.title}
+                      onChange={(e) =>
+                        setFormData((p) => ({ ...p, title: e.target.value }))
+                      }
+                      required
+                      placeholder="Brief description of the work"
+                    />
+                  </div>
+                  <div className="sm:col-span-2 space-y-1">
+                    <label className="text-[12px] font-medium text-foreground">
+                      Description <span className="text-status-blocked">*</span>
+                    </label>
+                    <textarea
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      rows={3}
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          description: e.target.value,
+                        }))
+                      }
+                      required
+                      placeholder="Detailed description of what needs to be done"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[12px] font-medium text-foreground">
+                      Target Repo <span className="text-status-blocked">*</span>
+                    </label>
+                    <select
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                      value={formData.targetRepo}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          targetRepo: e.target.value,
+                        }))
+                      }
+                      required
+                    >
+                      <option value="">Select repo...</option>
+                      {repos?.map((r) => (
+                        <option key={r.id} value={r.fullName}>
+                          {r.fullName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[12px] font-medium text-foreground">Source Type</label>
+                    <select
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                      value={formData.sourceType}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          sourceType: e.target.value as typeof formData.sourceType,
+                        }))
+                      }
+                    >
+                      <option value="manual">Manual</option>
+                      <option value="pa-improvement">PA Improvement</option>
+                      <option value="github-issue">GitHub Issue</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[12px] font-medium text-foreground">Priority</label>
+                    <select
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                      value={formData.priority}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          priority: e.target.value as WorkItem["priority"],
+                        }))
+                      }
+                    >
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[12px] font-medium text-foreground">Risk Level</label>
+                    <select
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                      value={formData.riskLevel}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          riskLevel: e.target.value as WorkItem["riskLevel"],
+                        }))
+                      }
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[12px] font-medium text-foreground">Complexity</label>
+                    <select
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                      value={formData.complexity}
+                      onChange={(e) =>
+                        setFormData((p) => ({
+                          ...p,
+                          complexity: e.target.value as WorkItem["complexity"],
+                        }))
+                      }
+                    >
+                      <option value="simple">Simple</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="complex">Complex</option>
+                    </select>
+                  </div>
+                </div>
+                {formError && (
+                  <p className="text-sm text-status-blocked">{formError}</p>
+                )}
+                <div className="flex gap-2">
+                  <Button type="submit" disabled={submitting} size="sm">
+                    {submitting ? "Creating..." : "Create Work Item"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowForm(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Filter bar */}
+          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:gap-3">
+            <select
+              className="w-full md:w-auto rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              value={statusFilter}
+              onChange={(e) =>
+                setStatusFilter(e.target.value as WorkItem["status"] | "")
+              }
+            >
+              {STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="w-full md:w-auto rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              value={priorityFilter}
+              onChange={(e) =>
+                setPriorityFilter(e.target.value as WorkItem["priority"] | "")
+              }
+            >
+              {PRIORITY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="w-full md:w-auto rounded-lg border border-input bg-background px-3 py-2 text-sm"
+              value={repoFilter}
+              onChange={(e) => setRepoFilter(e.target.value)}
+            >
+              <option value="">All Repos</option>
+              {repos?.map((r) => (
+                <option key={r.id} value={r.fullName}>
+                  {r.fullName}
+                </option>
+              ))}
+            </select>
+            <button
+              className={cn(
+                "w-full md:w-auto rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                sourceFilter === "direct"
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-input bg-background text-muted-foreground hover:bg-accent"
+              )}
+              onClick={() =>
+                setSourceFilter(sourceFilter === "direct" ? "" : "direct")
+              }
+            >
+              <Zap className="inline h-3 w-3 mr-1" />
+              Fast Lane
+            </button>
+          </div>
+
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading...</p>
+          ) : error ? (
+            <p className="text-sm text-status-blocked">Failed to load work items.</p>
+          ) : !filteredItems || filteredItems.length === 0 ? (
+            <div className="rounded-xl card-elevated bg-surface-1 p-12 text-center">
+              <FolderKanban className="h-8 w-8 text-muted-foreground/20 mx-auto mb-3" />
+              <p className="text-[14px] font-display font-bold text-foreground">No work items</p>
+              <p className="text-[12px] text-muted-foreground mt-1">
+                No work items match the current filters
+              </p>
+              <Button
+                className="mt-4"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowForm(true)}
+              >
+                Create your first work item
+              </Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredItems.map((item) => (
+                <WorkItemCard key={item.id} item={item} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

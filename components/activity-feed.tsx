@@ -26,7 +26,6 @@ const EVENT_LABELS: Record<string, string> = {
 
 function formatEventNarrative(event: ATCEvent): string {
   const label = EVENT_LABELS[event.type] ?? event.type;
-  // Strip work item ID prefix from details if it starts with one
   const details = event.details.replace(/^[\w-]{36}:\s*/, "");
 
   if (event.type === "auto_dispatch") {
@@ -70,8 +69,8 @@ export function ActivityFeed() {
 
   if (isLoading) {
     return (
-      <div className="rounded-lg border bg-card p-6">
-        <h2 className="text-lg font-semibold mb-4">Activity</h2>
+      <div className="rounded-xl card-elevated bg-surface-1 p-6">
+        <h2 className="text-sm font-display font-bold text-foreground mb-4">Activity</h2>
         <p className="text-sm text-muted-foreground">Loading...</p>
       </div>
     );
@@ -79,12 +78,12 @@ export function ActivityFeed() {
 
   const sortedEvents = [...(events ?? [])]
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .filter(e => e.workItemId !== "system"); // Filter out system events
+    .filter(e => e.workItemId !== "system");
 
   if (sortedEvents.length === 0) {
     return (
-      <div className="rounded-lg border bg-card p-6">
-        <h2 className="text-lg font-semibold mb-4">Activity</h2>
+      <div className="rounded-xl card-elevated bg-surface-1 p-6">
+        <h2 className="text-sm font-display font-bold text-foreground mb-4">Activity</h2>
         <p className="text-sm text-muted-foreground">No recent activity.</p>
       </div>
     );
@@ -93,12 +92,12 @@ export function ActivityFeed() {
   const grouped = groupByHour(sortedEvents);
 
   return (
-    <div className="rounded-lg border bg-card p-6">
-      <h2 className="text-lg font-semibold mb-4">Activity</h2>
+    <div className="rounded-xl card-elevated bg-surface-1 p-5">
+      <h2 className="text-sm font-display font-bold text-foreground mb-4">Activity</h2>
       <div className="space-y-4 max-h-[500px] overflow-y-auto">
         {Array.from(grouped.entries()).map(([hour, hourEvents]) => (
           <div key={hour}>
-            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+            <h3 className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest mb-2">
               {hour}
             </h3>
             <div className="space-y-1.5">
@@ -107,14 +106,14 @@ export function ActivityFeed() {
                   key={event.id}
                   className="flex items-start gap-2 text-sm py-1"
                 >
-                  <span className="min-w-[50px] text-xs text-muted-foreground font-mono">
+                  <span className="min-w-[50px] text-[10px] text-muted-foreground/60 font-mono tabular-nums">
                     {new Date(event.timestamp).toLocaleTimeString("en-US", {
                       hour: "2-digit",
                       minute: "2-digit",
                       hour12: false,
                     })}
                   </span>
-                  <span className="text-foreground">
+                  <span className="text-foreground text-[12px]">
                     {formatEventNarrative(event)}
                   </span>
                 </div>
