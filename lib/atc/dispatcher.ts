@@ -6,6 +6,7 @@ import type { ATCState } from "../types";
 import type { CycleContext } from "./types";
 import { GLOBAL_CONCURRENCY_LIMIT } from "./types";
 import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent } from "./utils";
+import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
 
 /**
  * Dispatcher agent: maximizes throughput within concurrency limits.
@@ -18,6 +19,10 @@ import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent } from
  */
 export async function runDispatcher(ctx: CycleContext): Promise<ATCState["activeExecutions"]> {
   const { now, events } = ctx;
+  const trace = startTrace('dispatcher');
+  let phaseStart = Date.now();
+
+  try {
 
   // === PHASE 0: INDEX RECONCILIATION ===
   try {
@@ -25,9 +30,12 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
     if (reconcileResult.repaired > 0) {
       console.warn("[dispatcher] index reconciliation repaired items", reconcileResult);
     }
+    addPhase(trace, { name: 'index_reconciliation', durationMs: Date.now() - phaseStart, repaired: reconcileResult.repaired });
   } catch (err) {
+    addError(trace, `index reconciliation failed: ${err instanceof Error ? err.message : String(err)}`);
     console.error("[dispatcher] index reconciliation failed", err);
   }
+  phaseStart = Date.now();
 
   // === PHASE 1: DISPATCH ===
 
@@ -130,6 +138,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
         const repoActiveExecs = activeExecutions.filter((e) => e.targetRepo === repo.fullName);
         const conflicting = repoActiveExecs.find((e) => hasFileOverlap(itemFiles, e.filesBeingModified));
         if (conflicting) {
+          addDecision(trace, { workItemId: item.id, action: 'blocked', reason: `file overlap with ${conflicting.workItemId}` });
           events.push(
             makeEvent(
               "conflict",
@@ -148,6 +157,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
             e.filesBeingModified.some((f) => itemHighChurn.includes(f))
           );
           if (highChurnConflict) {
+            addDecision(trace, { workItemId: item.id, action: 'blocked', reason: `high-churn file overlap with ${highChurnConflict.workItemId}` });
             events.push(
               makeEvent(
                 "conflict",
@@ -163,6 +173,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
 
         try {
           const result = await dispatchWorkItem(item.id);
+          addDecision(trace, { workItemId: item.id, action: 'dispatched', reason: `dispatched to ${repo.fullName} (branch: ${result.branch})` });
           events.push(
             makeEvent(
               "auto_dispatch",
@@ -176,6 +187,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
           concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Unknown error";
+          addDecision(trace, { workItemId: item.id, action: 'dispatch_failed', reason: msg });
           await updateWorkItem(item.id, {
             status: "failed",
             execution: {
@@ -230,6 +242,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
       );
       try {
         const result = await dispatchWorkItem(item.id);
+        addDecision(trace, { workItemId: item.id, action: 'dispatched', reason: `standalone item dispatched to ${item.targetRepo} (branch: ${result.branch})` });
         events.push(
           makeEvent(
             "auto_dispatch",
@@ -243,6 +256,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
         concurrencyMap.set(item.targetRepo, (concurrencyMap.get(item.targetRepo) ?? 0) + 1);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
+        addDecision(trace, { workItemId: item.id, action: 'dispatch_failed', reason: `standalone dispatch failed: ${msg}` });
         await updateWorkItem(item.id, {
           status: "failed",
           execution: {
@@ -261,6 +275,9 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
       `[dispatcher] Global concurrency limit reached (${totalActive}/${GLOBAL_CONCURRENCY_LIMIT}), skipping dispatch`
     );
   }
+
+  addPhase(trace, { name: 'dispatch', durationMs: Date.now() - phaseStart, decisions: trace.decisions.length });
+  phaseStart = Date.now();
 
   // 1.4: Update active-work-items.md in each repo
   try {
@@ -347,5 +364,23 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
     console.error("[dispatcher] active-work-items.md generation failed:", err);
   }
 
+  addPhase(trace, { name: 'active_work_items_update', durationMs: Date.now() - phaseStart });
+
+  const dispatched = trace.decisions.filter(d => d.action === 'dispatched').length;
+  const blocked = trace.decisions.filter(d => d.action === 'blocked').length;
+  completeTrace(trace, 'success', `Dispatched ${dispatched} items, blocked ${blocked}`);
   return activeExecutions;
+
+  } catch (err) {
+    addError(trace, String(err));
+    completeTrace(trace, 'error');
+    throw err;
+  } finally {
+    try {
+      await persistTrace(trace);
+      await cleanupOldTraces('dispatcher');
+    } catch (tracingErr) {
+      console.error('[Dispatcher] Tracing failed (non-fatal):', tracingErr);
+    }
+  }
 }
