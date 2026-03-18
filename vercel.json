@@ -20,6 +20,10 @@
     {
       "path": "/api/agents/supervisor/cron",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/agents/digest/cron",
+      "schedule": "0 8 * * *"
     }
   ]
 }
