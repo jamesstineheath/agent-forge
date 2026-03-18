@@ -4,11 +4,6 @@
 
 ## Currently Executing
 
-- **Build TypeScript AST parser for code entity extraction** (jamesstineheath/agent-forge)
-  - Branch: `feat/build-typescript-ast-parser-for-code-entity-extrac`
-  - Files: lib/knowledge-graph/parser.ts, lib/__tests__/knowledge-graph-parser.test.ts
-  - Started: 2026-03-18T14:17:33.837Z
-
 - **Build import/dependency resolver for cross-file relationships** (jamesstineheath/agent-forge)
   - Branch: `feat/build-importdependency-resolver-for-cross-file-rel`
   - Files: lib/knowledge-graph/resolver.ts, lib/__tests__/knowledge-graph-resolver.test.ts
@@ -54,8 +49,6 @@
 
 - **Implement graph query engine** (jamesstineheath/agent-forge)
 
-- **Build repo indexer that fetches and indexes a full repository** (jamesstineheath/agent-forge)
-
 - **Create Knowledge Graph API routes** (jamesstineheath/agent-forge)
 
 - **Create Knowledge Graph barrel export and index module** (jamesstineheath/agent-forge)
@@ -65,5 +58,3 @@
 - **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
 
 - **Add Knowledge Graph dashboard page** (jamesstineheath/agent-forge)
-
-- **Integration test: end-to-end Knowledge Graph indexing and querying** (jamesstineheath/agent-forge)
