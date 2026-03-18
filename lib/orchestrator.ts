@@ -10,6 +10,7 @@ import {
   pushFile,
   getWorkflowRuns,
   triggerWorkflow,
+  getPRByBranch,
 } from "./github";
 import { buildCachedPrompt } from "./prompt-cache";
 import type { WorkItem, RepoConfig } from "./types";
@@ -377,7 +378,29 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
     // 6. Determine branch name from work item
     const branchName = slugifyBranch(workItem);
 
-    // 7. Create branch in target repo
+    // 7. Check if branch already exists (e.g. from a prior 'skipped' run that
+    //    actually succeeded). If a PR exists on that branch, reconcile to
+    //    'reviewing' instead of re-creating the branch (which would fail with
+    //    "Reference already exists").
+    const existingPr = await getPRByBranch(repoConfig.fullName, branchName);
+    if (existingPr) {
+      await updateWorkItem(workItemId, {
+        status: "reviewing",
+        execution: {
+          ...workItem.execution,
+          prNumber: existingPr.number,
+          prUrl: existingPr.htmlUrl,
+        },
+      });
+      return {
+        workItemId,
+        branch: branchName,
+        handoffPath: "",
+        repo: repoConfig.fullName,
+      };
+    }
+
+    // Create branch in target repo
     await createBranch(repoConfig.fullName, branchName);
 
     // 8. Push handoff file to handoffs/awaiting_handoff/ directory on the branch

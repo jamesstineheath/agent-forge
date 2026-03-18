@@ -120,7 +120,104 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     });
 
     if (item.status === "executing") {
-      if (pr?.mergedAt) {
+      // Handle 'skipped' conclusion as ambiguous: the workflow may have been
+      // skipped due to a workflow_run trigger with a non-matching condition,
+      // while a prior workflow_dispatch run already created a PR.
+      if (
+        latestRun?.status === "completed" &&
+        latestRun.conclusion === "skipped" &&
+        pr
+      ) {
+        // A PR exists on this branch — the execution likely succeeded via a
+        // prior run. Treat as success rather than failure.
+        const event = makeEvent(
+          "work_item_reconciled",
+          item.id,
+          "executing",
+          "reviewing",
+          `Workflow run ${latestRun.id} concluded 'skipped' but PR #${pr.number} exists — reconciling to reviewing`
+        );
+        await updateWorkItem(item.id, {
+          status: "reviewing",
+          execution: {
+            ...item.execution,
+            workflowRunId: latestRun.id,
+            prNumber: pr.number,
+            prUrl: pr.htmlUrl,
+          },
+        });
+        events.push(event);
+      } else if (
+        latestRun?.status === "completed" &&
+        latestRun.conclusion === "skipped" &&
+        !pr
+      ) {
+        // Skipped and no PR — check if the run was long enough to suggest
+        // actual execution happened (> 2 minutes)
+        const durationMs =
+          new Date(latestRun.updatedAt).getTime() - new Date(latestRun.createdAt).getTime();
+        if (durationMs > 2 * 60 * 1000 || item.handoff?.branch) {
+          // Ambiguous skip: ran for a while or has a branch — try to find a PR
+          const reconcilePr = await getPRByBranch(item.targetRepo, branch);
+          if (reconcilePr) {
+            const event = makeEvent(
+              "work_item_reconciled",
+              item.id,
+              "executing",
+              "reviewing",
+              `Workflow concluded 'skipped' but found PR #${reconcilePr.number} via branch lookup — reconciling`
+            );
+            await updateWorkItem(item.id, {
+              status: "reviewing",
+              execution: {
+                ...item.execution,
+                workflowRunId: latestRun.id,
+                prNumber: reconcilePr.number,
+                prUrl: reconcilePr.htmlUrl,
+              },
+            });
+            events.push(event);
+          } else {
+            // No PR found after ambiguous skip — mark failed
+            const event = makeEvent(
+              "status_change",
+              item.id,
+              "executing",
+              "failed",
+              `Workflow run ${latestRun.id} concluded 'skipped', no PR found (reason: no_pr_after_execution)`
+            );
+            await updateWorkItem(item.id, {
+              status: "failed",
+              execution: {
+                ...item.execution,
+                workflowRunId: latestRun.id,
+                completedAt: now.toISOString(),
+                outcome: "failed",
+              },
+            });
+            events.push(event);
+          }
+        } else {
+          // Truly skipped (short run, no branch) — mark failed
+          const event = makeEvent(
+            "status_change",
+            item.id,
+            "executing",
+            "failed",
+            `Workflow run ${latestRun.id} concluded 'skipped' (reason: workflow_failed)`
+          );
+          await updateWorkItem(item.id, {
+            status: "failed",
+            execution: {
+              ...item.execution,
+              workflowRunId: latestRun.id,
+              completedAt: now.toISOString(),
+              outcome: "failed",
+            },
+          });
+          events.push(event);
+        }
+      } else if (pr?.mergedAt) {
         const event = makeEvent("status_change", item.id, "executing", "merged", `PR #${pr.number} merged`);
         await updateWorkItem(item.id, {
           status: "merged",
@@ -189,6 +286,7 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
       } else if (
         latestRun?.status === "completed" &&
         latestRun.conclusion !== "success" &&
+        latestRun.conclusion !== "skipped" &&
         latestRun.conclusion !== null
       ) {
         const event = makeEvent(
