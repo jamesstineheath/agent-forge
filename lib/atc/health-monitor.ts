@@ -21,6 +21,7 @@ import {
   MAX_RETRIES,
 } from "./types";
 import { parseEstimatedFiles, makeEvent } from "./utils";
+import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
 
 /**
  * Health Monitor agent: ensures every active execution progresses or gets unstuck.
@@ -37,6 +38,10 @@ import { parseEstimatedFiles, makeEvent } from "./utils";
  */
 export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["activeExecutions"]> {
   const { now, events } = ctx;
+  const trace = startTrace('health-monitor');
+  let phaseStart = Date.now();
+
+  try {
 
   // Load active work items
   const [executingEntries, reviewingEntries] = await Promise.all([
@@ -465,6 +470,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     }
   }
 
+  addPhase(trace, { name: 'monitoring', durationMs: Date.now() - phaseStart, activeItems: activeEntries.length });
+  phaseStart = Date.now();
+
   // 2.5: Generating timeout detection
   const GENERATING_TIMEOUT_MINUTES = 15;
   const generatingEntries = await listWorkItems({ status: "generating" as any });
@@ -492,6 +500,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
       );
     }
   }
+
+  addPhase(trace, { name: 'generating_timeout_detection', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
 
   // 2.8: Failed work item PR reconciliation
   const failedEntries = await listWorkItems({ status: "failed" });
@@ -554,6 +565,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     }
   }
 
+  addPhase(trace, { name: 'failed_pr_reconciliation', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // 4.1: Dependency block detection
   const repoIndex = await listRepos();
   for (const repoEntry of repoIndex) {
@@ -611,6 +625,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     }
   }
 
+  addPhase(trace, { name: 'dependency_management', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // 3.4: Auto-cancel obsolete remediation items
   const RESOLVED_STATUSES = ["merged", "cancelled"];
   const allActiveEntries = [
@@ -652,6 +669,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
       );
     }
   }
+
+  addPhase(trace, { name: 'auto_cancel', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
 
   // 3.5: Retry failed items (max 2 retries, then park)
   const failedThisCycle = events
@@ -726,6 +746,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     }
   }
 
+  addPhase(trace, { name: 'retry', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // 3.6: Re-evaluate failed items whose dependencies have all resolved
   const failedForDepCheck = await listWorkItems({ status: "failed" });
   for (const entry of failedForDepCheck) {
@@ -787,5 +810,21 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     }
   }
 
+  addPhase(trace, { name: 'dep_resolved_reevaluation', durationMs: Date.now() - phaseStart });
+
+  completeTrace(trace, 'success');
   return activeExecutions;
+
+  } catch (err) {
+    addError(trace, String(err));
+    completeTrace(trace, 'error');
+    throw err;
+  } finally {
+    try {
+      await persistTrace(trace);
+      await cleanupOldTraces('health-monitor');
+    } catch (tracingErr) {
+      console.error('[HealthMonitor] Tracing failed (non-fatal):', tracingErr);
+    }
+  }
 }

@@ -29,6 +29,8 @@ import {
   MAX_BRANCHES_PER_REPO,
 } from "./types";
 import { makeEvent } from "./utils";
+import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces, listRecentTraces } from "./tracing";
+import type { AgentName } from "./tracing";
 
 /**
  * Supervisor agent: ensures every other agent is healthy and the system is learning.
@@ -47,6 +49,10 @@ import { makeEvent } from "./utils";
  */
 export async function runSupervisor(ctx: CycleContext): Promise<void> {
   const { now, events } = ctx;
+  const trace = startTrace('supervisor');
+  let phaseStart = Date.now();
+
+  try {
 
   // §10: Escalation timeout monitoring
   try {
@@ -150,6 +156,9 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
     await saveJson(ATC_EVENTS_KEY, updated);
   }
 
+  addPhase(trace, { name: 'escalation_management', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // §15: Poll HLO Lifecycle State from Open PRs
   try {
     const reviewingForHLO = await listWorkItems({ status: "reviewing" });
@@ -164,6 +173,9 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
     console.error("[supervisor §15] HLO state polling failed:", err);
   }
 
+  addPhase(trace, { name: 'hlo_polling', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // Branch cleanup
   try {
     const cleanupResult = await cleanupStaleBranches();
@@ -177,6 +189,9 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   } catch (err) {
     console.error("[supervisor] Branch cleanup failed:", err);
   }
+
+  addPhase(trace, { name: 'branch_cleanup', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
 
   // §9.5: Work item blob-index reconciliation (hourly)
   const RECONCILIATION_KEY = "atc/last-reconciliation";
@@ -238,6 +253,9 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
     console.error("[supervisor] Blob-index reconciliation failed:", err);
   }
 
+  addPhase(trace, { name: 'blob_reconciliation', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // Cache metrics summary (observability)
   await summarizeDailyCacheMetrics().catch((err) =>
     console.error("[supervisor] cache metrics summary failed:", err)
@@ -298,6 +316,30 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
     console.error("[supervisor §16] Periodic re-index check failed:", err);
   }
 
+  addPhase(trace, { name: 'pm_sweep_and_reindex', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
+  // Agent trace health check — read peer agent traces and detect elevated error rates
+  try {
+    const peerAgents: AgentName[] = ['dispatcher', 'health-monitor', 'project-manager'];
+    for (const agentName of peerAgents) {
+      const recentTraces = await listRecentTraces(agentName, 5);
+      const errorCount = recentTraces.filter(t => t.status === 'error').length;
+      if (recentTraces.length >= 3 && errorCount / recentTraces.length > 0.5) {
+        addDecision(trace, {
+          action: 'agent_health_warning',
+          reason: `Agent ${agentName} has ${errorCount}/${recentTraces.length} error rate in recent runs`,
+        });
+        console.warn(`[Supervisor] Agent ${agentName} elevated error rate: ${errorCount}/${recentTraces.length}`);
+      }
+    }
+  } catch (err) {
+    console.error("[supervisor] Agent trace health check failed:", err);
+  }
+
+  addPhase(trace, { name: 'agent_trace_health_check', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // NEW: Agent health monitoring — check last-run timestamps for all agents
   try {
     const { getAgentLastRun } = await import("./utils");
@@ -324,6 +366,23 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
     }
   } catch (err) {
     console.error("[supervisor] Agent health monitoring failed:", err);
+  }
+
+  addPhase(trace, { name: 'agent_staleness_check', durationMs: Date.now() - phaseStart });
+
+  completeTrace(trace, 'success');
+
+  } catch (err) {
+    addError(trace, String(err));
+    completeTrace(trace, 'error');
+    throw err;
+  } finally {
+    try {
+      await persistTrace(trace);
+      await cleanupOldTraces('supervisor');
+    } catch (tracingErr) {
+      console.error('[Supervisor] Tracing failed (non-fatal):', tracingErr);
+    }
   }
 }
 

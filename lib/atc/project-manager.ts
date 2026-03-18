@@ -18,6 +18,7 @@ import type { ATCEvent, WorkItem } from "../types";
 import type { CycleContext } from "./types";
 import { QUALITY_GATE_EXEMPT_PROJECTS } from "./types";
 import { makeEvent } from "./utils";
+import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
 
 /**
  * Project Manager agent: moves projects from planning to completion.
@@ -30,6 +31,10 @@ import { makeEvent } from "./utils";
  */
 export async function runProjectManager(ctx: CycleContext): Promise<void> {
   const { now, events } = ctx;
+  const trace = startTrace('project-manager');
+  let phaseStart = Date.now();
+
+  try {
 
   // §4 — Project retry processing
   try {
@@ -86,6 +91,9 @@ export async function runProjectManager(ctx: CycleContext): Promise<void> {
   } catch (err) {
     console.error(`[project-manager] §4 error:`, err);
   }
+
+  addPhase(trace, { name: 'retry_processing', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
 
   // §4.5: Detect Notion projects with Status = "Execute", transition, and decompose
   try {
@@ -237,6 +245,9 @@ export async function runProjectManager(ctx: CycleContext): Promise<void> {
     console.error("[project-manager] Project sweep failed:", err);
   }
 
+  addPhase(trace, { name: 'decomposition', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // §13: Project lifecycle management
   try {
     const { listProjects } = await import("../projects");
@@ -294,5 +305,22 @@ export async function runProjectManager(ctx: CycleContext): Promise<void> {
     }
   } catch (err) {
     console.error("[project-manager] Project lifecycle management failed:", err);
+  }
+
+  addPhase(trace, { name: 'lifecycle_management', durationMs: Date.now() - phaseStart });
+
+  completeTrace(trace, 'success');
+
+  } catch (err) {
+    addError(trace, String(err));
+    completeTrace(trace, 'error');
+    throw err;
+  } finally {
+    try {
+      await persistTrace(trace);
+      await cleanupOldTraces('project-manager');
+    } catch (tracingErr) {
+      console.error('[ProjectManager] Tracing failed (non-fatal):', tracingErr);
+    }
   }
 }
