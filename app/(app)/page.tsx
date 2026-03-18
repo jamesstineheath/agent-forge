@@ -5,14 +5,14 @@ import { CheckCircle2, ArrowRight, AlertTriangle } from "lucide-react";
 import { QuickStats } from "@/components/quick-stats";
 import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
-import { ATCMetricsPanel } from "@/components/atc-metrics-panel";
+
 import { ActivityFeed } from "@/components/activity-feed";
 import { WebhookEventFeed } from "@/components/webhook-event-feed";
 import { QADashboard } from "@/components/qa-dashboard";
 import {
   useWorkItems,
   useRepos,
-  useATCState,
+
   useProjects,
   useEscalations,
 } from "@/lib/hooks";
@@ -32,7 +32,7 @@ function formatRelativeTime(ts?: string): string {
 export default function DashboardPage() {
   const { data: workItems, isLoading: itemsLoading } = useWorkItems();
   const { data: repos, isLoading: reposLoading } = useRepos();
-  const { data: atcState, isLoading: atcLoading } = useATCState();
+
   const { data: projects, isLoading: projectsLoading } = useProjects();
   const {
     data: escalations,
@@ -113,9 +113,6 @@ export default function DashboardPage() {
           ) : (
             <QuickStats workItems={workItems ?? []} />
           )}
-
-          {/* ATC Performance Metrics */}
-          <ATCMetricsPanel />
 
           {/* Needs Attention (Escalations) */}
           {!escalationsLoading && escalations && escalations.length > 0 && (

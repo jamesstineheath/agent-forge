@@ -11,7 +11,7 @@ import {
   GitBranch,
   BookMarked,
   Bot,
-  Network,
+
   Settings,
   Zap,
   AlertTriangle,
@@ -26,7 +26,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useATCState, useRepos } from "@/lib/hooks";
+import { useWorkItems } from "@/lib/hooks";
 
 interface NavItem {
   label: string;
@@ -53,17 +53,15 @@ const navSections: NavSection[] = [
     items: [
       { label: "Agents", href: "/agents", icon: Bot },
       { label: "Repos", href: "/repos", icon: BookMarked },
-      { label: "Knowledge Graph", href: "/knowledge-graph", icon: Network },
       { label: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ];
 
-type HealthStatus = "healthy" | "degraded" | "error";
+type HealthStatus = "healthy" | "error";
 
 const healthConfig: Record<HealthStatus, { dotClass: string; labelClass: string }> = {
   healthy: { dotClass: "bg-status-merged animate-status-pulse", labelClass: "text-status-merged" },
-  degraded: { dotClass: "bg-status-reviewing", labelClass: "text-status-reviewing" },
   error: { dotClass: "bg-status-blocked animate-status-pulse", labelClass: "text-status-blocked" },
 };
 
@@ -113,27 +111,23 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function HealthPanel() {
-  const { data: atcState } = useATCState();
-  const { data: repos } = useRepos();
+  const { data: workItems } = useWorkItems();
 
-  const activeCount = atcState?.activeExecutions?.length ?? 0;
-  const failingRepos = repos?.filter((r) => {
-    // Check if any active executions have issues
-    return false; // Will be populated by real data
-  }).length ?? 0;
+  const activeCount = (workItems ?? []).filter(
+    (i) => i.status === "generating" || i.status === "executing" || i.status === "reviewing"
+  ).length;
+  const failedCount = (workItems ?? []).filter(
+    (i) => i.status === "failed" || i.status === "blocked"
+  ).length;
 
   let status: HealthStatus = "healthy";
   let label = "Healthy";
   let detail = `${activeCount} agent${activeCount !== 1 ? "s" : ""} executing.`;
 
-  if (!atcState) {
-    status = "degraded";
-    label = "Unknown";
-    detail = "ATC status unavailable.";
-  } else if (failingRepos > 0) {
+  if (failedCount > 0) {
     status = "error";
-    label = "Error";
-    detail = `${failingRepos} repo${failingRepos !== 1 ? "s" : ""} failing. ${activeCount} executing.`;
+    label = "Attention";
+    detail = `${failedCount} failed/blocked. ${activeCount} executing.`;
   } else if (activeCount > 0) {
     detail = `${activeCount} agent${activeCount !== 1 ? "s" : ""} executing.`;
   }
@@ -145,7 +139,6 @@ function HealthPanel() {
       className={cn(
         "rounded-lg p-3",
         status === "healthy" && "bg-surface-2",
-        status === "degraded" && "bg-status-reviewing/[0.06] ring-1 ring-status-reviewing/10",
         status === "error" && "bg-status-blocked/[0.06] ring-1 ring-status-blocked/10"
       )}
       role="status"
