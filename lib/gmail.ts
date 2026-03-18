@@ -422,6 +422,58 @@ export async function sendEmail({
 }
 
 /**
+ * Send an HTML email via Gmail.
+ * Returns the Gmail thread ID if sent, null if credentials missing or error.
+ */
+export async function sendHtmlEmail({
+  to,
+  subject,
+  html,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<string | null> {
+  const client = getGmailClient();
+  if (!client) {
+    console.log('[Gmail] Skipping HTML email (credentials not configured).');
+    return null;
+  }
+
+  try {
+    const message = [
+      `From: james.stine.heath@gmail.com`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Content-Type: text/html; charset="UTF-8"`,
+      `MIME-Version: 1.0`,
+      '',
+      html,
+    ].join('\r\n');
+
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+
+    const response = await client.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    const threadId = response.data.threadId;
+    console.log(`[Gmail] HTML email sent: "${subject}". Thread ID: ${threadId}`);
+    return threadId || null;
+  } catch (error) {
+    console.error('[Gmail] Failed to send HTML email:', error);
+    return null;
+  }
+}
+
+/**
  * Check if a reply exists in an escalation thread.
  * Returns the reply message object if found, null otherwise.
  */
