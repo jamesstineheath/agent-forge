@@ -205,6 +205,47 @@ export function useAgentDashboard() {
   return { data, error, isLoading, mutate };
 }
 
+// === Agent Traces ===
+
+export interface AgentTracePhase {
+  name: string;
+  durationMs: number;
+  [key: string]: unknown;
+}
+
+export interface AgentTraceDecision {
+  workItemId?: string;
+  action: string;
+  reason: string;
+  [key: string]: unknown;
+}
+
+export interface AgentTraceRecord {
+  agent: string;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  status?: "success" | "error";
+  phases: AgentTracePhase[];
+  decisions: AgentTraceDecision[];
+  errors: string[];
+  summary?: string;
+}
+
+export function useAgentTraces() {
+  const { data, error, isLoading, mutate } = useSWR<{ traces: AgentTraceRecord[] }>(
+    "/api/agents/traces?limit=50",
+    fetcher,
+    { refreshInterval: 30_000 }
+  );
+  return {
+    traces: data?.traces ?? [],
+    isLoading,
+    error,
+    refresh: mutate,
+  };
+}
+
 export function useDebateSessions(repo?: string, pr?: number) {
   const key = repo && pr ? `/api/debates?repo=${encodeURIComponent(repo)}&pr=${pr}` : null;
   const { data, error, isLoading, mutate } = useSWR<DebateSession[]>(key, fetcher);
