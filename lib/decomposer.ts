@@ -73,12 +73,19 @@ async function decomposeSubPhases(
         name: phaseId,
       });
     } else if (depth >= maxRecursionDepth) {
-      // Escalate: sub-phase still too large after max recursion
-      throw new SubPhaseEscalationError(
-        `Sub-phase '${phase.name}' still has ${phasedItems.length} items after recursive decomposition. Manual intervention needed.`,
-        phase.name,
-        phasedItems.length,
+      // Sub-phase exceeds soft limit after max recursion, but is still under
+      // hard limit. Proceed with the oversized phase rather than escalating —
+      // tightly-coupled items that can't be split should still flow through.
+      console.warn(
+        `[decomposer] Sub-phase '${phase.name}' has ${phasedItems.length} items (soft limit ${softLimit}) after max recursion. Proceeding anyway — items are tightly coupled.`
       );
+      resultItems.push(...phasedItems);
+      resultPhases.push({
+        ...phase,
+        id: phaseId,
+        parentProjectId: projectId,
+        name: phaseId,
+      });
     } else {
       // Recurse once
       const recursed = await decomposeSubPhases(

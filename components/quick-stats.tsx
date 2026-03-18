@@ -27,17 +27,18 @@ export function QuickStats({ workItems }: QuickStatsProps) {
   const qualityRate = qualityDenom > 0 ? Math.round((merged / qualityDenom) * 100) : 100;
 
   const itemCost = (wi: WorkItem) => wi.execution?.actualCost ?? wi.handoff?.budget ?? 0;
+  const hasActual = (wi: WorkItem) => wi.execution?.actualCost != null;
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const todaySpend = workItems
-    .filter(
-      (wi) =>
-        wi.execution?.startedAt &&
-        new Date(wi.execution.startedAt) >= todayStart &&
-        wi.handoff
-    )
-    .reduce((sum, wi) => sum + itemCost(wi), 0);
+  const todayExecuted = workItems.filter(
+    (wi) =>
+      wi.execution?.startedAt &&
+      new Date(wi.execution.startedAt) >= todayStart &&
+      wi.handoff
+  );
+  const todaySpend = todayExecuted.reduce((sum, wi) => sum + itemCost(wi), 0);
+  const todayHasActuals = todayExecuted.some(hasActual);
 
   const active = workItems.filter((wi) =>
     ACTIVE_STATUSES.includes(wi.status)
@@ -64,7 +65,7 @@ export function QuickStats({ workItems }: QuickStatsProps) {
       color: "text-status-merged",
     },
     {
-      label: "Spent today",
+      label: todayHasActuals ? "Spent today" : "Spent today (est.)",
       value: `$${todaySpend.toFixed(0)}`,
       icon: DollarSign,
       color: "text-foreground",
