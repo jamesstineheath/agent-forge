@@ -11,6 +11,7 @@ import {
   GitBranch,
   BookMarked,
   Bot,
+  Network,
   Settings,
   Zap,
   AlertTriangle,
@@ -52,6 +53,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Agents", href: "/agents", icon: Bot },
       { label: "Repos", href: "/repos", icon: BookMarked },
+      { label: "Knowledge Graph", href: "/knowledge-graph", icon: Network },
       { label: "Settings", href: "/settings", icon: Settings },
     ],
   },
