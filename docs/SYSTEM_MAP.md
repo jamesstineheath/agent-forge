@@ -131,6 +131,25 @@ Orchestrator → Push handoff to branch
             Handoff Lifecycle Orchestrator tracks state
                     ↓
             TLM Outcome Tracker (daily assessment)
+                    ↓
+            Feedback Compiler (weekly analysis)
+```
+
+### TLM Self-Improvement Loop
+
+```
+Outcome Tracker (daily)
+  → docs/tlm-memory.md (Hot Patterns, Outcomes, Lessons, Stats)
+      → Feedback Compiler (weekly, Sunday 10pm UTC)
+          → Reads: memory, agent prompts, PR history, previous changes
+          → Claude analysis: patterns, failure modes, cross-agent misalignment
+          → Outputs:
+              ├── PR with prompt/config changes (gated by Code Reviewer + human)
+              ├── GitHub Issues for escalations
+              └── docs/feedback-compiler-history.json (effectiveness tracking)
+                    → Next run checks if previous changes were effective
+                        → If ineffective: propose revert or stronger fix
+                        → If effective: mark and move on
 ```
 
 ## Agent Evaluation
@@ -179,6 +198,7 @@ Until graduation, QA Agent results are advisory only and do not block auto-merge
 | Outcome Tracker cron | `.github/workflows/tlm-outcome-tracker.yml` | Daily assessment cron |
 | Handoff Orchestrator | `.github/workflows/handoff-orchestrator.yml` | Lifecycle state machine, CI retry |
 | QA Agent workflow | `.github/workflows/tlm-qa-agent.yml` | Triggers on deployment_status + check_suite |
+| Feedback Compiler workflow | `.github/workflows/tlm-feedback-compiler.yml` | Weekly self-improvement cron |
 | CI Stuck PR Monitor | `.github/workflows/ci-stuck-pr-monitor.yml` | Alerts after 2h stuck |
 | TLM shared memory | `docs/tlm-memory.md` | Rolling 20-entry review patterns + lessons |
 | Action Ledger (in pipeline) | `docs/tlm-action-ledger.json` | Never-pruned outcome history |

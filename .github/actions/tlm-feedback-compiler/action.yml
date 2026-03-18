@@ -1,0 +1,27 @@
+name: "TLM Feedback Compiler"
+description: "Reads outcome data, detects failure patterns, and proposes prompt/config changes via PRs"
+inputs:
+  anthropic-api-key:
+    description: "Anthropic API key"
+    required: true
+  github-token:
+    description: "GitHub token with repo write and PR permissions (GH_PAT)"
+    required: true
+  model:
+    description: "Claude model for analysis"
+    required: false
+    default: "claude-opus-4-6"
+  lookback-days:
+    description: "How many days back to look for PR history"
+    required: false
+    default: "14"
+outputs:
+  patterns-detected:
+    description: "Number of actionable patterns detected"
+  pr-url:
+    description: "URL of the created PR, if any"
+  escalation-count:
+    description: "Number of issues created for escalation items"
+runs:
+  using: "node20"
+  main: "dist/index.js"
