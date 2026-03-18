@@ -313,7 +313,7 @@ async function checkCIStatus(
     core.info(`CI still running: ${pendingChecks.map((c) => c.name).join(", ")}`);
 
     const alreadyPostedPending = await hasRecentTLMComment(
-      octokit, owner, repo, prNumber, "TLM Review: CI Pending"
+      octokit, owner, repo, prNumber, "TLM Review: CI_PENDING"
     );
     if (!alreadyPostedPending) {
       await octokit.rest.pulls.createReview({
@@ -321,17 +321,19 @@ async function checkCIStatus(
         repo,
         pull_number: prNumber,
         body: [
-          "## TLM Review: CI Pending",
+          "## TLM Review: CI_PENDING",
           "",
-          "CI still running. Will review on check_suite completion.",
+          "CI still running. Code review deferred until CI completes.",
           "",
           "Pending checks:",
           ...pendingChecks.map((c) => `- \`${c.name}\`: ${c.status}`),
+          "",
+          "*Will automatically re-review when CI completes (via check_suite trigger).*",
         ].join("\n"),
         event: "COMMENT",
       });
     } else {
-      core.info("Skipping duplicate CI Pending comment (recent one exists).");
+      core.info("Skipping duplicate CI_PENDING comment (recent one exists).");
     }
     return "pending";
   }
@@ -448,7 +450,7 @@ async function run(): Promise<void> {
         (r) =>
           r.body?.includes("## TLM Review:") &&
           !r.body?.includes("CI_BLOCKED") &&
-          !r.body?.includes("CI Pending") &&
+          !r.body?.includes("CI_PENDING") &&
           r.commit_id === pr.head.sha
       );
       if (hasFullReview) {

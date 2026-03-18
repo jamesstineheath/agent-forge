@@ -510,7 +510,10 @@ async function fetchMergedPRs(
       );
     }
 
-    // Determine TLM review decision from PR comments
+    // Determine TLM review decision from PR reviews
+    // Use reverse search to find the most recent TLM review (not the first),
+    // since earlier reviews may be CI_PENDING/CI_BLOCKED placeholders that were
+    // superseded by a full review after CI completed.
     let tlmDecision = "unknown";
     try {
       const { data: reviews } = await octokit.rest.pulls.listReviews({
@@ -518,12 +521,18 @@ async function fetchMergedPRs(
         repo,
         pull_number: pr.number,
       });
-      const tlmReview = reviews.find((r) =>
+      const tlmReviews = reviews.filter((r) =>
         r.body?.includes("TLM Review:")
       );
+      // Most recent review is last in the array
+      const tlmReview = tlmReviews.length > 0
+        ? tlmReviews[tlmReviews.length - 1]
+        : undefined;
       if (tlmReview) {
         if (tlmReview.body?.includes("CI_BLOCKED"))
           tlmDecision = "ci_blocked";
+        else if (tlmReview.body?.includes("CI_PENDING"))
+          tlmDecision = "ci_pending";
         else if (tlmReview.body?.includes("APPROVE"))
           tlmDecision = "approve";
         else if (tlmReview.body?.includes("REQUEST_CHANGES"))
