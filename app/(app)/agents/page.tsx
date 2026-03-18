@@ -7,6 +7,7 @@ import { CostSummary } from "@/components/cost-summary";
 import { TLMAgentCard } from "@/components/tlm-agent-card";
 import { ATCAgentCard } from "@/components/atc-agent-card";
 import { PAAgentRow } from "@/components/pa-agent-row";
+import { AgentDashboard } from "@/components/agent-dashboard";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -75,6 +76,17 @@ export default function AgentsPage() {
               <CostSummary workItems={workItems ?? []} />
             )}
           </section>
+
+          {/* Agent Heartbeat Dashboard */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Agent Heartbeat
+              </p>
+              <span className="text-[10px] text-muted-foreground/40">(real-time health)</span>
+            </div>
+            <AgentDashboard />
+          </div>
 
           {/* Control Plane */}
           <div className="space-y-3">

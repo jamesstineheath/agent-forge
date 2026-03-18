@@ -196,6 +196,15 @@ export function useDebateStats() {
   return { data, error, isLoading, mutate };
 }
 
+export function useAgentDashboard() {
+  const { data, error, isLoading, mutate } = useSWR<import("@/lib/agent-dashboard").AgentDashboardData>(
+    "/api/agents/dashboard",
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
 export function useDebateSessions(repo?: string, pr?: number) {
   const key = repo && pr ? `/api/debates?repo=${encodeURIComponent(repo)}&pr=${pr}` : null;
   const { data, error, isLoading, mutate } = useSWR<DebateSession[]>(key, fetcher);
