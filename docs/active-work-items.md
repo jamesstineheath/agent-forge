@@ -15,7 +15,3 @@
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
   - Files: handoffs/pa-auth-bypass-middleware-for-qa-agent-smoke-tests.md, proxy.ts
-
-- **Extend event bus retention from 7 days to 30 days** (jamesstineheath/agent-forge)
-  - Branch: `fix/extend-event-bus-retention-from-7-days-to-30-days`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/271
