@@ -56,3 +56,14 @@ export interface HLOStateEntry {
   hloState: HLOLifecycleState | null;
   prInfo: PR | null;
 }
+
+export interface AgentHeartbeat {
+  agentName: string;
+  lastRunAt: string;       // ISO 8601 timestamp
+  durationMs: number;
+  status: 'ok' | 'error';
+  itemsProcessed: number;
+  notes?: string;
+}
+
+export const HEARTBEAT_BLOB_PREFIX = 'agent-heartbeats';

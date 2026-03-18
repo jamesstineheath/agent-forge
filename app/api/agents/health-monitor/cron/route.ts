@@ -4,7 +4,7 @@ import { listWorkItems } from "@/lib/work-items";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { persistEvents } from "@/lib/atc/events";
 import { runHealthMonitor } from "@/lib/atc/health-monitor";
-import { withTimeout } from "@/lib/atc/utils";
+import { withTimeout, writeAgentHeartbeat } from "@/lib/atc/utils";
 import { CYCLE_TIMEOUT_MS, ATC_STATE_KEY, CycleTimeoutError } from "@/lib/atc/types";
 import type { CycleContext } from "@/lib/atc/types";
 
@@ -30,6 +30,7 @@ async function handleCron(req: NextRequest) {
     return NextResponse.json({ success: true, skipped: true, reason: "lock held" });
   }
 
+  const startedAt = Date.now();
   try {
     const ctx: CycleContext = { now: new Date(), events: [] };
     const activeExecutions = await withTimeout(runHealthMonitor(ctx), CYCLE_TIMEOUT_MS);
@@ -46,6 +47,23 @@ async function handleCron(req: NextRequest) {
       queuedItems: queuedEntries.length + readyEntries.length,
       recentEvents: ctx.events.slice(-20),
     });
+
+    const totalChecked = activeExecutions.length;
+    const issuesFound = ctx.events.filter((e) => e.type === "timeout" || e.type === "retry" || e.type === "escalation").length;
+
+    // Write heartbeat
+    try {
+      await writeAgentHeartbeat({
+        agentName: 'health-monitor',
+        lastRunAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        status: 'ok',
+        itemsProcessed: totalChecked,
+        notes: `Checked ${totalChecked} items, ${issuesFound} issues found`,
+      });
+    } catch (heartbeatErr) {
+      console.error('[HealthMonitor] Failed to write heartbeat:', heartbeatErr);
+    }
 
     return NextResponse.json({
       success: true,

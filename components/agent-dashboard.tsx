@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useAgentDashboard } from "@/lib/hooks";
+import { useAgentDashboard, useAgentHeartbeats } from "@/lib/hooks";
+import type { AgentHeartbeat } from "@/lib/atc/types";
 import {
   Activity,
   Clock,
@@ -73,7 +74,16 @@ function timeAgo(isoString: string): string {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 }
 
-function AgentRow({ agent }: { agent: AgentHealthInfo }) {
+function formatHeartbeatSummary(agent: AgentHealthInfo, heartbeat: AgentHeartbeat | undefined): string {
+  if (heartbeat?.notes && heartbeat.lastRunAt) {
+    return heartbeat.notes;
+  }
+  // Fallback to trace-based metrics
+  return `${agent.metrics.successCount}/${agent.metrics.totalRuns} runs succeeded`;
+}
+
+function AgentRow({ agent, heartbeat }: { agent: AgentHealthInfo; heartbeat?: AgentHeartbeat }) {
+  const lastRunAt = heartbeat?.lastRunAt || agent.lastRunAt;
   return (
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="flex-1 min-w-0">
@@ -88,11 +98,11 @@ function AgentRow({ agent }: { agent: AgentHealthInfo }) {
         </div>
         <div className="flex items-center gap-3 mt-1">
           <span className="text-[11px] text-muted-foreground">
-            {agent.lastRunAt ? `Last run ${timeAgo(agent.lastRunAt)}` : "Never run"}
+            {lastRunAt ? `Last run ${timeAgo(lastRunAt)}` : "Never run"}
           </span>
           <span className="text-[10px] text-muted-foreground/40">|</span>
           <span className="text-[11px] text-muted-foreground">
-            {agent.metrics.successCount}/{agent.metrics.totalRuns} succeeded
+            {formatHeartbeatSummary(agent, heartbeat)}
           </span>
           {agent.metrics.avgDurationMs > 0 && (
             <>
@@ -113,6 +123,8 @@ function AgentRow({ agent }: { agent: AgentHealthInfo }) {
 
 export function AgentDashboard() {
   const { data, isLoading, error } = useAgentDashboard();
+  const { heartbeats } = useAgentHeartbeats();
+  const getHeartbeat = (name: string) => heartbeats.find((h) => h.agentName === name);
 
   if (isLoading) {
     return (
@@ -258,7 +270,7 @@ export function AgentDashboard() {
       {/* Agent list */}
       <div className="rounded-xl card-elevated bg-surface-1 divide-y divide-border">
         {data.agents.map((agent) => (
-          <AgentRow key={agent.name} agent={agent} />
+          <AgentRow key={agent.name} agent={agent} heartbeat={getHeartbeat(agent.name)} />
         ))}
       </div>
     </div>

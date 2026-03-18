@@ -3,6 +3,7 @@ import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, Deba
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
+import type { AgentHeartbeat } from "@/lib/atc/types";
 
 const fetcher = (url: string) =>
   fetch(url).then((res) => {
@@ -245,6 +246,19 @@ export function useAgentTraces() {
     isLoading,
     error,
     refresh: mutate,
+  };
+}
+
+export function useAgentHeartbeats() {
+  const { data, error, isLoading } = useSWR<{ heartbeats: AgentHeartbeat[] }>(
+    '/api/agents/heartbeats',
+    fetcher,
+    { refreshInterval: 30_000 }
+  );
+  return {
+    heartbeats: data?.heartbeats ?? [],
+    isLoading,
+    error,
   };
 }
 

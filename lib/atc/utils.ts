@@ -1,7 +1,8 @@
 import { randomUUID } from "crypto";
 import { loadJson, saveJson } from "../storage";
 import type { ATCEvent } from "../types";
-import { CycleTimeoutError } from "./types";
+import { CycleTimeoutError, HEARTBEAT_BLOB_PREFIX } from "./types";
+import type { AgentHeartbeat } from "./types";
 
 const AGENT_RUN_PREFIX = "atc/agent-last-run";
 
@@ -61,6 +62,15 @@ export function makeEvent(
     previousStatus,
     newStatus,
   };
+}
+
+/**
+ * Write a heartbeat record for a named agent.
+ * Failures are swallowed so they never crash the caller.
+ */
+export async function writeAgentHeartbeat(heartbeat: AgentHeartbeat): Promise<void> {
+  const key = `${HEARTBEAT_BLOB_PREFIX}/${heartbeat.agentName}/latest`;
+  await saveJson(key, heartbeat);
 }
 
 export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

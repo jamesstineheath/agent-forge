@@ -4,7 +4,7 @@ import { listWorkItems } from "@/lib/work-items";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { persistEvents } from "@/lib/atc/events";
 import { runSupervisor } from "@/lib/atc/supervisor";
-import { withTimeout, recordAgentRun } from "@/lib/atc/utils";
+import { withTimeout, recordAgentRun, writeAgentHeartbeat } from "@/lib/atc/utils";
 import { CYCLE_TIMEOUT_MS, ATC_STATE_KEY, CycleTimeoutError } from "@/lib/atc/types";
 import type { CycleContext } from "@/lib/atc/types";
 
@@ -30,6 +30,7 @@ async function handleCron(req: NextRequest) {
     return NextResponse.json({ success: true, skipped: true, reason: "lock held" });
   }
 
+  const startedAt = Date.now();
   try {
     const ctx: CycleContext = { now: new Date(), events: [] };
     await withTimeout(runSupervisor(ctx), CYCLE_TIMEOUT_MS);
@@ -48,6 +49,20 @@ async function handleCron(req: NextRequest) {
     });
 
     await recordAgentRun("supervisor");
+
+    // Write heartbeat
+    try {
+      await writeAgentHeartbeat({
+        agentName: 'supervisor',
+        lastRunAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        status: 'ok',
+        itemsProcessed: ctx.events.length,
+        notes: `Supervisor cycle completed, ${ctx.events.length} events`,
+      });
+    } catch (heartbeatErr) {
+      console.error('[Supervisor] Failed to write heartbeat:', heartbeatErr);
+    }
 
     return NextResponse.json({
       success: true,

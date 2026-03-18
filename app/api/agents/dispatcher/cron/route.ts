@@ -4,7 +4,7 @@ import { listWorkItems } from "@/lib/work-items";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { persistEvents } from "@/lib/atc/events";
 import { runDispatcher } from "@/lib/atc/dispatcher";
-import { withTimeout } from "@/lib/atc/utils";
+import { withTimeout, writeAgentHeartbeat } from "@/lib/atc/utils";
 import { CYCLE_TIMEOUT_MS, ATC_STATE_KEY, CycleTimeoutError } from "@/lib/atc/types";
 import type { CycleContext } from "@/lib/atc/types";
 
@@ -30,6 +30,7 @@ async function handleCron(req: NextRequest) {
     return NextResponse.json({ success: true, skipped: true, reason: "lock held" });
   }
 
+  const startedAt = Date.now();
   try {
     const ctx: CycleContext = { now: new Date(), events: [] };
     const activeExecutions = await withTimeout(runDispatcher(ctx), CYCLE_TIMEOUT_MS);
@@ -48,6 +49,21 @@ async function handleCron(req: NextRequest) {
     });
 
     const dispatchEvents = ctx.events.filter((e) => e.type === "auto_dispatch");
+
+    // Write heartbeat
+    try {
+      await writeAgentHeartbeat({
+        agentName: 'dispatcher',
+        lastRunAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        status: 'ok',
+        itemsProcessed: dispatchEvents.length,
+        notes: `Dispatched ${dispatchEvents.length} items, ${ctx.events.length} events total`,
+      });
+    } catch (heartbeatErr) {
+      console.error('[Dispatcher] Failed to write heartbeat:', heartbeatErr);
+    }
+
     return NextResponse.json({
       success: true,
       state: {
