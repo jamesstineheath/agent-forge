@@ -128,7 +128,7 @@ export async function listRecentTraces(agent?: AgentName, limit = 20): Promise<A
   for (const blob of selected) {
     try {
       // Use downloadUrl for private blobs (available in Vercel Blob SDK v0.19+)
-      const fetchUrl = (blob as Record<string, unknown>).downloadUrl as string | undefined
+      const fetchUrl = (blob as unknown as Record<string, unknown>).downloadUrl as string | undefined
         ?? blob.url;
       const response = await fetch(fetchUrl, {
         cache: "no-store",

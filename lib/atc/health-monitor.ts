@@ -10,6 +10,7 @@ import {
   closePRWithReason,
   deleteBranch,
   triggerWorkflow,
+  rerunFailedJobs,
 } from "../github";
 import { escalate } from "../escalation";
 import { incrementalIndex } from "../knowledge-graph/indexer";
@@ -429,15 +430,44 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         const retryBudget = item.retryBudget ?? CODE_CI_RETRY_BUDGET_DEFAULT;
         const currentRetryCount = item.execution?.retryCount ?? 0;
 
-        if (failureType === 'code' && currentRetryCount < retryBudget) {
-          // Update workflow run info before retry
+        if (failureType === 'infra') {
+          // Infra failure (checkout flake, runner timeout) — re-run the workflow for free
+          try {
+            const [owner, repoName] = (item.targetRepo ?? '').split('/');
+            if (owner && repoName) {
+              await rerunFailedJobs(item.targetRepo, latestRun.id);
+              addDecision(trace, {
+                workItemId: item.id,
+                action: 'infra_retry',
+                reason: `Infra CI failure (${latestRun.conclusion}) — re-running failed jobs for run ${latestRun.id}`,
+              });
+              events.push(
+                makeEvent(
+                  'retry' as ATCEvent['type'],
+                  item.id,
+                  'executing',
+                  'executing',
+                  `Infra CI retry: re-running failed jobs for workflow run ${latestRun.id}`
+                )
+              );
+              console.log(`[HealthMonitor] Infra CI retry triggered for ${item.id}, run ${latestRun.id}`);
+            }
+          } catch (infraRetryErr) {
+            console.error(`[HealthMonitor] Infra retry failed for ${item.id} (non-fatal):`, infraRetryErr);
+            addDecision(trace, {
+              workItemId: item.id,
+              action: 'infra_retry_failed',
+              reason: `Failed to re-run workflow ${latestRun.id}: ${infraRetryErr instanceof Error ? infraRetryErr.message : String(infraRetryErr)}`,
+            });
+          }
+        } else if (failureType === 'code' && currentRetryCount < retryBudget) {
+          // Code failure — re-execute the handoff with error context
           await updateWorkItem(item.id, {
             execution: {
               ...item.execution,
               workflowRunId: latestRun.id,
             },
           });
-          // Re-fetch item with updated execution data
           const updatedItem = await getWorkItem(item.id);
           if (updatedItem) {
             await handleCodeCIFailure(updatedItem, errorLogs, ctx);
