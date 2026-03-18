@@ -44,11 +44,14 @@ Any of these are true:
 - Architectural changes (new top-level directories, new patterns, new frameworks)
 - Changes to AI system prompts, agent definitions, or agent behavior
 - Changes to cron job schedules or cron configuration
-- Changes to the TLM workflow itself (.github/actions/tlm-review/ or .github/workflows/tlm-review.yml)
+- Changes to any TLM workflow or action (.github/actions/tlm-*/ or .github/workflows/tlm-*.yml)
+- Changes to any GitHub Actions workflow (.github/workflows/*.yml) or action definition (.github/actions/*/action.yml) — these have a historically high failure rate
 - Diff exceeds the configured maximum line count
 - PR description does not reference a work item or known context
 - Changes to database schemas or data migration logic
 - Changes that duplicate functionality already present in the system
+- PR title and changed files closely match a recently merged PR (potential duplicate dispatch)
+- New lib/ subdirectories or top-level modules not documented in the system map
 - Past reviews of similar changes had issues (check review memory)
 - You are genuinely uncertain about the safety of the changes
 
