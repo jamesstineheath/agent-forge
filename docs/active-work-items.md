@@ -4,10 +4,10 @@
 
 ## Currently Executing
 
-- **Deploy QA Agent Workflow + Composite Action to personal-assistant** (jamesstineheath/personal-assistant)
-  - Branch: `fix/deploy-qa-agent-workflow-composite-action-to-perso`
-  - Files: .github/actions/tlm-qa-agent/action.yml, .github/actions/tlm-qa-agent/src/index.ts, .github/actions/tlm-qa-agent/src/action-ledger.ts, .github/actions/tlm-qa-agent/dist/index.js, .github/workflows/tlm-qa-agent.yml
-  - Started: 2026-03-18T21:04:14.551Z
+- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `feat/create-pattern-detection-module-srcpattern-detecto`
+  - Files: .github/actions/tlm-feedback-compiler/src/pattern-detector.ts, .github/actions/tlm-feedback-compiler/src/types.ts
+  - Started: 2026-03-18T21:17:36.025Z
 
 ## In Review
 
@@ -27,8 +27,6 @@
   - Files: app/api/agents/digest/cron/route.ts, handoffs/daily-email-digest-of-pipeline-activity.md, lib/digest.ts, lib/gmail.ts, vercel.json
 
 ## Queued for Dispatch
-
-- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
 
 - **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
 
