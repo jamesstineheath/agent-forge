@@ -129,21 +129,36 @@ export async function updateWorkItem(
     updatedAt: new Date().toISOString(),
   };
 
+  // Write the individual item blob first (source of truth)
   await saveJson(itemKey(id), updated);
 
-  const index = await loadIndex();
-  const idx = index.findIndex((e) => e.id === id);
-  if (idx !== -1) {
-    index[idx] = {
-      id: updated.id,
-      title: updated.title,
-      targetRepo: updated.targetRepo,
-      status: updated.status,
-      priority: updated.priority,
-      updatedAt: updated.updatedAt,
-      source: updated.source,
-    };
+  // Update the index blob — upsert to handle both existing and missing entries
+  const indexEntry: WorkItemIndexEntry = {
+    id: updated.id,
+    title: updated.title,
+    targetRepo: updated.targetRepo,
+    status: updated.status,
+    priority: updated.priority,
+    updatedAt: updated.updatedAt,
+    source: updated.source,
+  };
+  try {
+    const index = await loadIndex();
+    const idx = index.findIndex((e) => e.id === id);
+    if (idx !== -1) {
+      index[idx] = indexEntry;
+    } else {
+      // Item missing from index — add it rather than silently skipping
+      console.warn('[work-items] item missing from index during update, adding', { id });
+      index.push(indexEntry);
+    }
     await saveIndex(index);
+  } catch (err) {
+    console.warn('[work-items] index write failed for item', {
+      id: updated.id,
+      newStatus: updated.status,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   return updated;
@@ -259,6 +274,64 @@ export async function deleteWorkItem(id: string): Promise<boolean> {
   await saveIndex(filtered);
 
   return true;
+}
+
+/**
+ * Reconciles the work item index against individual item blobs.
+ * For each non-terminal item in the index, reads the individual blob
+ * and repairs the index entry if the status differs.
+ * Returns a summary of repaired items.
+ */
+export async function reconcileWorkItemIndex(): Promise<{
+  checked: number;
+  repaired: number;
+  repairedItems: Array<{ id: string; indexStatus: string; blobStatus: string }>;
+}> {
+  const terminalStates = new Set(['merged', 'parked', 'failed', 'cancelled']);
+  const index = await loadIndex();
+  const repairedItems: Array<{ id: string; indexStatus: string; blobStatus: string }> = [];
+  let needsSave = false;
+
+  for (let i = 0; i < index.length; i++) {
+    const entry = index[i];
+    if (terminalStates.has(entry.status)) continue;
+
+    try {
+      const blobItem = await getWorkItem(entry.id);
+      if (blobItem && blobItem.status !== entry.status) {
+        console.warn('[work-items] index/blob drift detected', {
+          id: entry.id,
+          indexStatus: entry.status,
+          blobStatus: blobItem.status,
+        });
+        // Update the index entry to match the blob (source of truth)
+        index[i] = {
+          id: blobItem.id,
+          title: blobItem.title,
+          targetRepo: blobItem.targetRepo,
+          status: blobItem.status,
+          priority: blobItem.priority,
+          updatedAt: blobItem.updatedAt,
+          source: blobItem.source,
+        };
+        repairedItems.push({
+          id: entry.id,
+          indexStatus: entry.status,
+          blobStatus: blobItem.status,
+        });
+        needsSave = true;
+      }
+    } catch (err) {
+      console.error('[work-items] reconcile error for item', entry.id, err);
+    }
+  }
+
+  if (needsSave) {
+    await saveIndex(index);
+  }
+
+  const nonTerminalCount = index.filter(e => !terminalStates.has(e.status)).length;
+  return { checked: nonTerminalCount, repaired: repairedItems.length, repairedItems };
 }
 
 /**

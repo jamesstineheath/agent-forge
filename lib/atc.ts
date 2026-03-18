@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { loadJson, saveJson, deleteJson } from "./storage";
-import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable } from "./work-items";
+import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable, reconcileWorkItemIndex } from "./work-items";
 import { listRepos, getRepo } from "./repos";
 import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate, getPRLifecycleState, getPRMergeability, rebasePR, closePRWithReason, pushFile } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
@@ -133,6 +133,18 @@ export async function runATCCycle(): Promise<ATCState> {
 async function _runATCCycleInner(): Promise<ATCState> {
   const now = new Date();
   const events: ATCEvent[] = [];
+
+  // === PHASE 0: INDEX RECONCILIATION ===
+  // Detect and repair index/blob drift so repaired items are visible in this cycle
+  try {
+    const reconcileResult = await reconcileWorkItemIndex();
+    if (reconcileResult.repaired > 0) {
+      console.warn('[atc] index reconciliation repaired items', reconcileResult);
+    }
+  } catch (err) {
+    console.error('[atc] index reconciliation failed', err);
+    // Non-fatal: continue with ATC cycle
+  }
 
   // === PHASE 1: DISPATCH (runs first to avoid timeout starvation) ===
   // Build lightweight active state from work item data (no GitHub API calls)
