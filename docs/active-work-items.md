@@ -4,6 +4,10 @@
 
 ## In Review
 
+- **Add drift detection to ATC cron cycle** (jamesstineheath/agent-forge)
+  - Branch: `fix/add-drift-detection-to-atc-cron-cycle`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/288
+
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
