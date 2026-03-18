@@ -1,7 +1,7 @@
 # Agent Forge -- Build TypeScript AST Parser for Code Entity Extraction
 
 ## Metadata
-- **Branch:** `feat/knowledge-graph-ast-parser`
+- **Branch:** `feat/typescript-ast-parser-code-entity-extraction`
 - **Priority:** high
 - **Model:** sonnet
 - **Type:** feature
@@ -11,76 +11,51 @@
 
 ## Context
 
-Agent Forge is a dev orchestration platform built on Next.js. There is an ongoing effort to build a Knowledge Graph subsystem (see recent merged PR: "feat: define Knowledge Graph core types and schema" touching `lib/knowledge-graph/types.ts`). This task implements the core indexing engine: a pure TypeScript AST parser that extracts code entities from source files.
+Agent Forge needs a knowledge graph system to index code entities across target repositories. This task implements the core parsing engine: a pure TypeScript function that uses the TypeScript compiler API to extract entities (functions, classes, interfaces, types, enums, variables) from source files, along with local relationships (extends, implements, calls).
 
-A concurrent work item ("Implement Knowledge Graph storage layer") is working on `lib/knowledge-graph/storage.ts` and `lib/__tests__/knowledge-graph-storage.test.ts`. **Do not touch those files.** This task only creates `lib/knowledge-graph/parser.ts` and `lib/__tests__/knowledge-graph-parser.test.ts`.
+This is the foundational indexing layer — other knowledge graph components (query engine, indexer) depend on it. The parser must be pure (no I/O) for testability.
 
-The `typescript` package is available as a dependency in this Next.js project (it's used by the TypeScript compiler for type-checking). The parser must be pure — no file I/O, no side effects — accepting file path, file content as a string, and repo name, returning extracted entities and relationships.
+A recent merged PR (`feat: implement TypeScript AST parser for code entity extraction`) suggests this work may have been attempted before. Check if `lib/knowledge-graph/parser.ts` already exists before implementing — if it does, review it against the requirements and patch any gaps rather than rewriting from scratch.
 
-The `CodeEntity` and `CodeRelationship` types are defined in `lib/knowledge-graph/types.ts` (merged PR). Before implementing, read that file to ensure the parser returns the correct shape. If the types file doesn't exist or is incomplete, define the necessary types inline in `parser.ts` and export them.
+The `typescript` package is available as a dependency in the Next.js project. No new dependencies are needed.
 
 ## Requirements
 
-1. `lib/knowledge-graph/parser.ts` exports a `parseFile(filePath: string, content: string, repo: string): ParseResult` function
-2. `ParseResult` is exported and has shape `{ entities: CodeEntity[], localRelationships: CodeRelationship[] }`
-3. Parser uses the TypeScript compiler API (`typescript` package) to create a `SourceFile` with `ts.createSourceFile` — no file system access
-4. Parser walks the AST and extracts nodes of kind: `FunctionDeclaration`, `ClassDeclaration`, `InterfaceDeclaration`, `TypeAliasDeclaration`, `VariableStatement` (only exported ones), `EnumDeclaration`
-5. For each extracted entity: `name`, `kind`, `startLine`, `endLine`, `signature` (for functions: serialized parameter types + return type), `docstring` (JSDoc comment if present), `id` (stable: `{repo}:{filePath}:{entityType}:{name}`)
-6. Extracts local relationships from the same file: class `extends` → `EXTENDS` relationship, class `implements` → `IMPLEMENTS` relationship
-7. Entity IDs are stable and deterministic using the pattern `{repo}:{filePath}:{entityType}:{name}`
-8. Unit tests in `lib/__tests__/knowledge-graph-parser.test.ts` cover:
-   - Function declaration extraction (name, parameter types, return type, line numbers)
-   - Class declaration extraction (name, line numbers, extends/implements relationships)
-   - Interface declaration extraction
-   - TypeAlias declaration extraction
-   - Enum declaration extraction
-   - Exported variable extraction
-   - Non-exported variable is NOT extracted
-   - JSDoc comment extraction
-   - Stable ID generation
+1. `lib/knowledge-graph/parser.ts` must export a `parseFile(filePath: string, content: string, repo: string): ParseResult` function
+2. `ParseResult` type: `{ entities: CodeEntity[], localRelationships: CodeRelationship[] }`
+3. `CodeEntity` must include: `id`, `name`, `kind`, `filePath`, `repo`, `startLine`, `endLine`, `signature` (optional, for functions/methods), `docstring` (optional), `exported` (boolean)
+4. `CodeRelationship` must include: `fromId`, `toId`, `type` (e.g. `'extends'`, `'implements'`, `'calls'`)
+5. Parser walks AST for: `FunctionDeclaration`, `ClassDeclaration`, `InterfaceDeclaration`, `TypeAliasDeclaration`, `VariableStatement` (exported only), `EnumDeclaration`
+6. Entity IDs use format: `{repo}:{filePath}:{entityType}:{name}`
+7. For functions: extract parameter types + return type as `signature` string
+8. For classes: extract `extends` and `implements` as local relationships
+9. JSDoc comments attached to nodes are extracted as `docstring`
+10. Unit tests in `lib/__tests__/knowledge-graph-parser.test.ts` cover: function extraction (name, params, return type, lines), class extraction (extends + implements relationships), interface extraction, type alias extraction, enum extraction, exported variable extraction, JSDoc extraction, entity ID format
 
 ## Execution Steps
 
 ### Step 0: Branch setup
 ```bash
 git checkout main && git pull
-git checkout -b feat/knowledge-graph-ast-parser
+git checkout -b feat/typescript-ast-parser-code-entity-extraction
 ```
 
-### Step 1: Read existing types
-
-Check if `lib/knowledge-graph/types.ts` exists and what types are defined:
+### Step 1: Check for existing files
 
 ```bash
-cat lib/knowledge-graph/types.ts 2>/dev/null || echo "FILE NOT FOUND"
+ls lib/knowledge-graph/ 2>/dev/null || echo "directory does not exist"
+cat lib/knowledge-graph/parser.ts 2>/dev/null || echo "parser.ts does not exist"
+cat lib/__tests__/knowledge-graph-parser.test.ts 2>/dev/null || echo "test file does not exist"
 ```
 
-Note the exact shapes of `CodeEntity` and `CodeRelationship`. The parser must conform to those shapes. If `types.ts` is missing or doesn't define these types, define them in `parser.ts` directly and re-export as needed.
+If both files exist and look complete, skip to Step 4 (run tests). If partially implemented, patch the gaps. If absent, proceed with Step 2.
 
-### Step 2: Verify TypeScript package availability
+### Step 2: Create the parser
 
-```bash
-node -e "const ts = require('typescript'); console.log('ts version:', ts.version)"
-```
-
-If this fails, check `package.json` for the `typescript` package. It should already be present as a dev dependency for Next.js. Do not add it — it should already exist.
-
-### Step 3: Implement `lib/knowledge-graph/parser.ts`
-
-Create the file with the following implementation. Adjust `CodeEntity`/`CodeRelationship` imports to match what's in `types.ts`:
+Create `lib/knowledge-graph/parser.ts`:
 
 ```typescript
-/**
- * TypeScript AST parser for code entity extraction.
- * Pure function — no I/O, no side effects.
- */
 import * as ts from 'typescript';
-
-// Import from types.ts if it defines these; otherwise define inline.
-// Adjust the import path/shape to match lib/knowledge-graph/types.ts exactly.
-// If types are already exported from types.ts, use:
-//   import type { CodeEntity, CodeRelationship } from './types';
-// and remove the local definitions below.
 
 export type EntityKind =
   | 'function'
@@ -89,7 +64,7 @@ export type EntityKind =
   | 'typeAlias'
   | 'variable'
   | 'enum'
-  | 'module';
+  | 'method';
 
 export interface CodeEntity {
   id: string;
@@ -101,14 +76,14 @@ export interface CodeEntity {
   endLine: number;
   signature?: string;
   docstring?: string;
+  exported: boolean;
 }
-
-export type RelationshipKind = 'EXTENDS' | 'IMPLEMENTS' | 'CALLS' | 'IMPORTS';
 
 export interface CodeRelationship {
   fromId: string;
-  toName: string; // target may be in another file; resolved later
-  kind: RelationshipKind;
+  toId: string | null; // null when target is external (not in this file)
+  type: 'extends' | 'implements' | 'calls';
+  targetName?: string; // human-readable name when toId is null
 }
 
 export interface ParseResult {
@@ -116,78 +91,39 @@ export interface ParseResult {
   localRelationships: CodeRelationship[];
 }
 
-// ------------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------------
-
-function makeId(repo: string, filePath: string, kind: EntityKind, name: string): string {
+function makeEntityId(repo: string, filePath: string, kind: EntityKind, name: string): string {
   return `${repo}:${filePath}:${kind}:${name}`;
 }
 
-function getLineNumbers(
-  node: ts.Node,
-  sourceFile: ts.SourceFile
-): { startLine: number; endLine: number } {
-  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
-  const end = sourceFile.getLineAndCharacterOfPosition(node.getEnd());
-  return {
-    startLine: start.line + 1, // 1-based
-    endLine: end.line + 1,
-  };
+function getLineNumber(sourceFile: ts.SourceFile, pos: number): number {
+  return sourceFile.getLineAndCharacterOfPosition(pos).line + 1; // 1-indexed
 }
 
-function getJsDoc(node: ts.Node, sourceFile: ts.SourceFile): string | undefined {
-  const fullText = sourceFile.getFullText();
-  const nodeStart = node.getFullStart();
-  const leadingTrivia = fullText.slice(nodeStart, node.getStart(sourceFile));
-  const jsDocMatch = leadingTrivia.match(/\/\*\*([\s\S]*?)\*\//);
-  if (jsDocMatch) {
-    // Normalize: strip leading * on each line
-    return jsDocMatch[0]
-      .split('\n')
-      .map((line) => line.replace(/^\s*\*\s?/, '').trim())
-      .filter(Boolean)
-      .join(' ')
-      .replace(/^\/\*\*/, '')
-      .replace(/\*\/$/, '')
-      .trim();
-  }
-  return undefined;
+function extractJSDoc(node: ts.Node, sourceFile: ts.SourceFile): string | undefined {
+  const jsDocComments = (node as ts.JSDocContainer).jsDoc;
+  if (!jsDocComments || jsDocComments.length === 0) return undefined;
+  const last = jsDocComments[jsDocComments.length - 1];
+  return last.getText(sourceFile).replace(/^\/\*\*|\*\/$/g, '').replace(/^\s*\* ?/gm, '').trim();
 }
 
-function typeNodeToString(typeNode: ts.TypeNode | undefined, sourceFile: ts.SourceFile): string {
-  if (!typeNode) return 'any';
-  return typeNode.getText(sourceFile);
-}
-
-function getFunctionSignature(
-  node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
-  sourceFile: ts.SourceFile
-): string {
-  const params = node.parameters
-    .map((p) => {
-      const name = p.name.getText(sourceFile);
-      const type = p.type ? typeNodeToString(p.type, sourceFile) : 'any';
-      const optional = p.questionToken ? '?' : '';
-      return `${name}${optional}: ${type}`;
-    })
-    .join(', ');
-  const returnType = node.type ? typeNodeToString(node.type, sourceFile) : 'void';
-  return `(${params}) => ${returnType}`;
-}
-
-function isExported(node: ts.Node): boolean {
+function isExported(node: ts.Declaration): boolean {
   const modifiers = ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined;
-  return (
-    modifiers?.some(
-      (m) => m.kind === ts.SyntaxKind.ExportKeyword
-    ) ?? false
-  );
+  return modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
 }
 
-// ------------------------------------------------------------------
-// Main parser
-// ------------------------------------------------------------------
+function extractFunctionSignature(
+  node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
+  checker?: ts.TypeChecker
+): string {
+  const params = node.parameters.map(p => {
+    const name = p.name.getText();
+    const typeStr = p.type ? p.type.getText() : 'any';
+    const optional = p.questionToken ? '?' : '';
+    return `${name}${optional}: ${typeStr}`;
+  });
+  const returnType = node.type ? node.type.getText() : 'void';
+  return `(${params.join(', ')}) => ${returnType}`;
+}
 
 export function parseFile(filePath: string, content: string, repo: string): ParseResult {
   const sourceFile = ts.createSourceFile(
@@ -203,120 +139,186 @@ export function parseFile(filePath: string, content: string, repo: string): Pars
   const entities: CodeEntity[] = [];
   const localRelationships: CodeRelationship[] = [];
 
-  function visit(node: ts.Node): void {
-    // --- FunctionDeclaration ---
+  // Build a name -> id map for local entities to resolve relationships
+  const localEntityIds = new Map<string, string>();
+
+  function registerEntity(entity: CodeEntity) {
+    entities.push(entity);
+    localEntityIds.set(entity.name, entity.id);
+  }
+
+  function visit(node: ts.Node) {
+    // FunctionDeclaration
     if (ts.isFunctionDeclaration(node) && node.name) {
-      const name = node.name.getText(sourceFile);
-      const { startLine, endLine } = getLineNumbers(node, sourceFile);
-      const id = makeId(repo, filePath, 'function', name);
-      entities.push({
+      const name = node.name.getText();
+      const kind: EntityKind = 'function';
+      const id = makeEntityId(repo, filePath, kind, name);
+      registerEntity({
         id,
         name,
-        kind: 'function',
+        kind,
         filePath,
         repo,
-        startLine,
-        endLine,
-        signature: getFunctionSignature(node, sourceFile),
-        docstring: getJsDoc(node, sourceFile),
+        startLine: getLineNumber(sourceFile, node.getStart()),
+        endLine: getLineNumber(sourceFile, node.getEnd()),
+        signature: extractFunctionSignature(node),
+        docstring: extractJSDoc(node, sourceFile),
+        exported: isExported(node),
       });
     }
 
-    // --- ClassDeclaration ---
+    // ClassDeclaration
     else if (ts.isClassDeclaration(node) && node.name) {
-      const name = node.name.getText(sourceFile);
-      const { startLine, endLine } = getLineNumbers(node, sourceFile);
-      const id = makeId(repo, filePath, 'class', name);
-      entities.push({
+      const name = node.name.getText();
+      const kind: EntityKind = 'class';
+      const id = makeEntityId(repo, filePath, kind, name);
+      registerEntity({
         id,
         name,
-        kind: 'class',
+        kind,
         filePath,
         repo,
-        startLine,
-        endLine,
-        docstring: getJsDoc(node, sourceFile),
+        startLine: getLineNumber(sourceFile, node.getStart()),
+        endLine: getLineNumber(sourceFile, node.getEnd()),
+        docstring: extractJSDoc(node, sourceFile),
+        exported: isExported(node),
       });
 
-      // Relationships: extends and implements
+      // Extract extends / implements relationships
       if (node.heritageClauses) {
         for (const clause of node.heritageClauses) {
-          const relationshipKind: RelationshipKind =
-            clause.token === ts.SyntaxKind.ExtendsKeyword ? 'EXTENDS' : 'IMPLEMENTS';
-          for (const type of clause.types) {
+          const relType = clause.token === ts.SyntaxKind.ExtendsKeyword ? 'extends' : 'implements';
+          for (const typeExpr of clause.types) {
+            const targetName = typeExpr.expression.getText();
             localRelationships.push({
               fromId: id,
-              toName: type.expression.getText(sourceFile),
-              kind: relationshipKind,
+              toId: null, // resolved later after all entities are collected
+              type: relType,
+              targetName,
+            });
+          }
+        }
+      }
+
+      // Extract methods
+      for (const member of node.members) {
+        if (ts.isMethodDeclaration(member) && member.name) {
+          const methodName = member.name.getText();
+          const methodKind: EntityKind = 'method';
+          const methodId = makeEntityId(repo, filePath, methodKind, `${name}.${methodName}`);
+          registerEntity({
+            id: methodId,
+            name: `${name}.${methodName}`,
+            kind: methodKind,
+            filePath,
+            repo,
+            startLine: getLineNumber(sourceFile, member.getStart()),
+            endLine: getLineNumber(sourceFile, member.getEnd()),
+            signature: extractFunctionSignature(member),
+            docstring: extractJSDoc(member, sourceFile),
+            exported: isExported(node), // method inherits class export status
+          });
+        }
+      }
+    }
+
+    // InterfaceDeclaration
+    else if (ts.isInterfaceDeclaration(node)) {
+      const name = node.name.getText();
+      const kind: EntityKind = 'interface';
+      const id = makeEntityId(repo, filePath, kind, name);
+      registerEntity({
+        id,
+        name,
+        kind,
+        filePath,
+        repo,
+        startLine: getLineNumber(sourceFile, node.getStart()),
+        endLine: getLineNumber(sourceFile, node.getEnd()),
+        docstring: extractJSDoc(node, sourceFile),
+        exported: isExported(node),
+      });
+
+      // Interface extends
+      if (node.heritageClauses) {
+        for (const clause of node.heritageClauses) {
+          for (const typeExpr of clause.types) {
+            const targetName = typeExpr.expression.getText();
+            localRelationships.push({
+              fromId: id,
+              toId: null,
+              type: 'extends',
+              targetName,
             });
           }
         }
       }
     }
 
-    // --- InterfaceDeclaration ---
-    else if (ts.isInterfaceDeclaration(node)) {
-      const name = node.name.getText(sourceFile);
-      const { startLine, endLine } = getLineNumbers(node, sourceFile);
-      entities.push({
-        id: makeId(repo, filePath, 'interface', name),
-        name,
-        kind: 'interface',
-        filePath,
-        repo,
-        startLine,
-        endLine,
-        docstring: getJsDoc(node, sourceFile),
-      });
-    }
-
-    // --- TypeAliasDeclaration ---
+    // TypeAliasDeclaration
     else if (ts.isTypeAliasDeclaration(node)) {
-      const name = node.name.getText(sourceFile);
-      const { startLine, endLine } = getLineNumbers(node, sourceFile);
-      entities.push({
-        id: makeId(repo, filePath, 'typeAlias', name),
+      const name = node.name.getText();
+      const kind: EntityKind = 'typeAlias';
+      const id = makeEntityId(repo, filePath, kind, name);
+      registerEntity({
+        id,
         name,
-        kind: 'typeAlias',
+        kind,
         filePath,
         repo,
-        startLine,
-        endLine,
-        docstring: getJsDoc(node, sourceFile),
+        startLine: getLineNumber(sourceFile, node.getStart()),
+        endLine: getLineNumber(sourceFile, node.getEnd()),
+        docstring: extractJSDoc(node, sourceFile),
+        exported: isExported(node),
       });
     }
 
-    // --- EnumDeclaration ---
+    // EnumDeclaration
     else if (ts.isEnumDeclaration(node)) {
-      const name = node.name.getText(sourceFile);
-      const { startLine, endLine } = getLineNumbers(node, sourceFile);
-      entities.push({
-        id: makeId(repo, filePath, 'enum', name),
+      const name = node.name.getText();
+      const kind: EntityKind = 'enum';
+      const id = makeEntityId(repo, filePath, kind, name);
+      registerEntity({
+        id,
         name,
-        kind: 'enum',
+        kind,
         filePath,
         repo,
-        startLine,
-        endLine,
-        docstring: getJsDoc(node, sourceFile),
+        startLine: getLineNumber(sourceFile, node.getStart()),
+        endLine: getLineNumber(sourceFile, node.getEnd()),
+        docstring: extractJSDoc(node, sourceFile),
+        exported: isExported(node),
       });
     }
 
-    // --- VariableStatement (exported only) ---
+    // VariableStatement (exported only)
     else if (ts.isVariableStatement(node) && isExported(node)) {
       for (const decl of node.declarationList.declarations) {
         if (ts.isIdentifier(decl.name)) {
-          const name = decl.name.getText(sourceFile);
-          const { startLine, endLine } = getLineNumbers(node, sourceFile);
-          entities.push({
-            id: makeId(repo, filePath, 'variable', name),
+          const name = decl.name.getText();
+          const kind: EntityKind = 'variable';
+          const id = makeEntityId(repo, filePath, kind, name);
+
+          // Check if the initializer is an arrow function
+          let signature: string | undefined;
+          if (
+            decl.initializer &&
+            (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))
+          ) {
+            signature = extractFunctionSignature(decl.initializer);
+          }
+
+          registerEntity({
+            id,
             name,
-            kind: 'variable',
+            kind,
             filePath,
             repo,
-            startLine,
-            endLine,
-            docstring: getJsDoc(node, sourceFile),
+            startLine: getLineNumber(sourceFile, node.getStart()),
+            endLine: getLineNumber(sourceFile, node.getEnd()),
+            signature,
+            docstring: extractJSDoc(node, sourceFile),
+            exported: true,
           });
         }
       }
@@ -327,21 +329,31 @@ export function parseFile(filePath: string, content: string, repo: string): Pars
 
   visit(sourceFile);
 
+  // Resolve local relationship toIds now that all entities are registered
+  for (const rel of localRelationships) {
+    if (rel.toId === null && rel.targetName) {
+      const resolved = localEntityIds.get(rel.targetName);
+      if (resolved) {
+        rel.toId = resolved;
+      }
+    }
+  }
+
   return { entities, localRelationships };
 }
 ```
 
-**IMPORTANT:** After creating the file, re-read `lib/knowledge-graph/types.ts`. If `CodeEntity`, `CodeRelationship`, or `ParseResult` are already defined there, **remove the inline definitions from `parser.ts`** and import from `'./types'` instead. Do not create duplicate type definitions. If `types.ts` defines a different shape (e.g., `kind` uses different string values), reconcile `parser.ts` to match exactly.
+### Step 3: Create the test file
 
-### Step 4: Implement `lib/__tests__/knowledge-graph-parser.test.ts`
-
-Create the test file:
+Create `lib/__tests__/knowledge-graph-parser.test.ts`:
 
 ```typescript
-import { parseFile, ParseResult, CodeEntity } from '../knowledge-graph/parser';
+import { parseFile, CodeEntity, CodeRelationship } from '../knowledge-graph/parser';
 
-// Multi-entity fixture
-const FIXTURE = `
+const REPO = 'test-repo';
+const FILE_PATH = 'src/example.ts';
+
+const MULTI_ENTITY_SOURCE = `
 /**
  * Adds two numbers together.
  */
@@ -349,332 +361,323 @@ export function add(a: number, b: number): number {
   return a + b;
 }
 
-export function noDoc(x: string): void {
-  console.log(x);
+/** A base shape interface */
+export interface Shape {
+  area(): number;
 }
 
-/** Represents an animal. */
-export class Animal {
-  name: string;
-  constructor(name: string) {
-    this.name = name;
+/** A circle extending Shape */
+export interface Circle extends Shape {
+  radius: number;
+}
+
+/** A type alias for a coordinate */
+export type Point = { x: number; y: number };
+
+/** Direction enum */
+export enum Direction {
+  Up,
+  Down,
+  Left,
+  Right,
+}
+
+/** A rectangle class */
+export class Rectangle implements Shape {
+  constructor(public width: number, public height: number) {}
+
+  area(): number {
+    return this.width * this.height;
   }
 }
 
-export class Dog extends Animal implements Serializable {
-  bark(): void {}
+export class Square extends Rectangle {
+  constructor(size: number) {
+    super(size, size);
+  }
 }
 
-export interface Serializable {
-  serialize(): string;
-}
+export const PI = 3.14159;
 
-export type ID = string | number;
+export const multiply = (x: number, y: number): number => x * y;
 
-export enum Direction {
-  Up = 'UP',
-  Down = 'DOWN',
-}
-
-export const MAX_RETRIES = 3;
-
-// Not exported — should NOT appear in entities
-const internalSecret = 'hidden';
-function privateHelper(): void {}
+// Non-exported — should NOT appear
+function internalHelper(): void {}
+const internalVar = 42;
 `;
 
 describe('parseFile', () => {
-  let result: ParseResult;
+  let result: ReturnType<typeof parseFile>;
 
   beforeAll(() => {
-    result = parseFile('src/example.ts', FIXTURE, 'my-repo');
+    result = parseFile(FILE_PATH, MULTI_ENTITY_SOURCE, REPO);
   });
 
-  it('returns entities and localRelationships arrays', () => {
-    expect(result).toHaveProperty('entities');
-    expect(result).toHaveProperty('localRelationships');
+  // ── Entity ID format ──────────────────────────────────────────────────────
+
+  it('generates entity IDs in {repo}:{filePath}:{kind}:{name} format', () => {
+    const fn = result.entities.find(e => e.name === 'add');
+    expect(fn).toBeDefined();
+    expect(fn!.id).toBe(`${REPO}:${FILE_PATH}:function:add`);
+  });
+
+  // ── Function extraction ───────────────────────────────────────────────────
+
+  it('extracts function declaration with correct name and kind', () => {
+    const fn = result.entities.find(e => e.name === 'add');
+    expect(fn).toBeDefined();
+    expect(fn!.kind).toBe('function');
+    expect(fn!.exported).toBe(true);
+  });
+
+  it('extracts function parameter types and return type as signature', () => {
+    const fn = result.entities.find(e => e.name === 'add');
+    expect(fn!.signature).toContain('number');
+    expect(fn!.signature).toContain('a');
+    expect(fn!.signature).toContain('b');
+  });
+
+  it('extracts function start and end line numbers', () => {
+    const fn = result.entities.find(e => e.name === 'add');
+    expect(fn!.startLine).toBeGreaterThan(0);
+    expect(fn!.endLine).toBeGreaterThanOrEqual(fn!.startLine);
+  });
+
+  it('extracts JSDoc comment for function', () => {
+    const fn = result.entities.find(e => e.name === 'add');
+    expect(fn!.docstring).toContain('Adds two numbers');
+  });
+
+  it('does not extract non-exported functions', () => {
+    const fn = result.entities.find(e => e.name === 'internalHelper');
+    expect(fn).toBeUndefined();
+  });
+
+  // ── Interface extraction ──────────────────────────────────────────────────
+
+  it('extracts interface declaration', () => {
+    const iface = result.entities.find(e => e.name === 'Shape' && e.kind === 'interface');
+    expect(iface).toBeDefined();
+    expect(iface!.exported).toBe(true);
+  });
+
+  it('extracts interface with correct line numbers', () => {
+    const iface = result.entities.find(e => e.name === 'Shape');
+    expect(iface!.startLine).toBeGreaterThan(0);
+    expect(iface!.endLine).toBeGreaterThan(iface!.startLine);
+  });
+
+  it('extracts interface extends relationship', () => {
+    const circleId = `${REPO}:${FILE_PATH}:interface:Circle`;
+    const rel = result.localRelationships.find(
+      r => r.fromId === circleId && r.type === 'extends'
+    );
+    expect(rel).toBeDefined();
+    expect(rel!.targetName).toBe('Shape');
+  });
+
+  // ── Type alias extraction ─────────────────────────────────────────────────
+
+  it('extracts type alias declaration', () => {
+    const typeAlias = result.entities.find(e => e.name === 'Point' && e.kind === 'typeAlias');
+    expect(typeAlias).toBeDefined();
+    expect(typeAlias!.exported).toBe(true);
+  });
+
+  it('extracts type alias line numbers', () => {
+    const typeAlias = result.entities.find(e => e.name === 'Point');
+    expect(typeAlias!.startLine).toBeGreaterThan(0);
+  });
+
+  // ── Enum extraction ───────────────────────────────────────────────────────
+
+  it('extracts enum declaration', () => {
+    const en = result.entities.find(e => e.name === 'Direction' && e.kind === 'enum');
+    expect(en).toBeDefined();
+    expect(en!.exported).toBe(true);
+  });
+
+  it('extracts enum JSDoc', () => {
+    const en = result.entities.find(e => e.name === 'Direction');
+    expect(en!.docstring).toContain('Direction enum');
+  });
+
+  // ── Class extraction ──────────────────────────────────────────────────────
+
+  it('extracts class declaration', () => {
+    const cls = result.entities.find(e => e.name === 'Rectangle' && e.kind === 'class');
+    expect(cls).toBeDefined();
+    expect(cls!.exported).toBe(true);
+  });
+
+  it('extracts class implements relationship', () => {
+    const rectangleId = `${REPO}:${FILE_PATH}:class:Rectangle`;
+    const rel = result.localRelationships.find(
+      r => r.fromId === rectangleId && r.type === 'implements'
+    );
+    expect(rel).toBeDefined();
+    expect(rel!.targetName).toBe('Shape');
+  });
+
+  it('extracts class extends relationship', () => {
+    const squareId = `${REPO}:${FILE_PATH}:class:Square`;
+    const rel = result.localRelationships.find(
+      r => r.fromId === squareId && r.type === 'extends'
+    );
+    expect(rel).toBeDefined();
+    expect(rel!.targetName).toBe('Rectangle');
+  });
+
+  it('resolves toId for extends relationship when target is in same file', () => {
+    const squareId = `${REPO}:${FILE_PATH}:class:Square`;
+    const rectangleId = `${REPO}:${FILE_PATH}:class:Rectangle`;
+    const rel = result.localRelationships.find(
+      r => r.fromId === squareId && r.type === 'extends'
+    );
+    expect(rel!.toId).toBe(rectangleId);
+  });
+
+  it('extracts class JSDoc', () => {
+    const cls = result.entities.find(e => e.name === 'Rectangle');
+    expect(cls!.docstring).toContain('rectangle');
+  });
+
+  // ── Exported variable extraction ──────────────────────────────────────────
+
+  it('extracts exported const variable', () => {
+    const v = result.entities.find(e => e.name === 'PI' && e.kind === 'variable');
+    expect(v).toBeDefined();
+    expect(v!.exported).toBe(true);
+  });
+
+  it('does not extract non-exported variables', () => {
+    const v = result.entities.find(e => e.name === 'internalVar');
+    expect(v).toBeUndefined();
+  });
+
+  it('extracts signature for arrow function variable', () => {
+    const v = result.entities.find(e => e.name === 'multiply' && e.kind === 'variable');
+    expect(v).toBeDefined();
+    expect(v!.signature).toBeDefined();
+    expect(v!.signature).toContain('number');
+  });
+
+  // ── ParseResult shape ─────────────────────────────────────────────────────
+
+  it('returns both entities and localRelationships arrays', () => {
     expect(Array.isArray(result.entities)).toBe(true);
     expect(Array.isArray(result.localRelationships)).toBe(true);
   });
 
-  describe('FunctionDeclaration', () => {
-    let addFn: CodeEntity | undefined;
-
-    beforeAll(() => {
-      addFn = result.entities.find((e) => e.name === 'add' && e.kind === 'function');
-    });
-
-    it('extracts function declaration', () => {
-      expect(addFn).toBeDefined();
-    });
-
-    it('has correct kind', () => {
-      expect(addFn?.kind).toBe('function');
-    });
-
-    it('has correct signature with parameter types and return type', () => {
-      expect(addFn?.signature).toContain('number');
-      expect(addFn?.signature).toContain('a');
-      expect(addFn?.signature).toContain('b');
-    });
-
-    it('has correct line numbers (startLine < endLine)', () => {
-      expect(addFn?.startLine).toBeGreaterThan(0);
-      expect(addFn?.endLine).toBeGreaterThanOrEqual(addFn!.startLine);
-    });
-
-    it('extracts JSDoc docstring', () => {
-      expect(addFn?.docstring).toBeTruthy();
-      expect(addFn?.docstring).toContain('Adds two numbers');
-    });
-
-    it('has stable deterministic ID', () => {
-      expect(addFn?.id).toBe('my-repo:src/example.ts:function:add');
-    });
-
-    it('extracts noDoc function without docstring', () => {
-      const fn = result.entities.find((e) => e.name === 'noDoc');
-      expect(fn).toBeDefined();
-      expect(fn?.docstring).toBeFalsy();
-    });
-  });
-
-  describe('ClassDeclaration', () => {
-    it('extracts Animal class', () => {
-      const animal = result.entities.find((e) => e.name === 'Animal' && e.kind === 'class');
-      expect(animal).toBeDefined();
-      expect(animal?.startLine).toBeGreaterThan(0);
-    });
-
-    it('extracts Animal class JSDoc', () => {
-      const animal = result.entities.find((e) => e.name === 'Animal' && e.kind === 'class');
-      expect(animal?.docstring).toContain('animal');
-    });
-
-    it('extracts Dog class with EXTENDS relationship', () => {
-      const dog = result.entities.find((e) => e.name === 'Dog' && e.kind === 'class');
-      expect(dog).toBeDefined();
-      const extendsRel = result.localRelationships.find(
-        (r) => r.fromId === dog?.id && r.kind === 'EXTENDS'
-      );
-      expect(extendsRel).toBeDefined();
-      expect(extendsRel?.toName).toBe('Animal');
-    });
-
-    it('extracts Dog class with IMPLEMENTS relationship', () => {
-      const dog = result.entities.find((e) => e.name === 'Dog' && e.kind === 'class');
-      const implementsRel = result.localRelationships.find(
-        (r) => r.fromId === dog?.id && r.kind === 'IMPLEMENTS'
-      );
-      expect(implementsRel).toBeDefined();
-      expect(implementsRel?.toName).toBe('Serializable');
-    });
-  });
-
-  describe('InterfaceDeclaration', () => {
-    it('extracts Serializable interface', () => {
-      const iface = result.entities.find((e) => e.name === 'Serializable' && e.kind === 'interface');
-      expect(iface).toBeDefined();
-      expect(iface?.id).toBe('my-repo:src/example.ts:interface:Serializable');
-    });
-  });
-
-  describe('TypeAliasDeclaration', () => {
-    it('extracts ID type alias', () => {
-      const typeAlias = result.entities.find((e) => e.name === 'ID' && e.kind === 'typeAlias');
-      expect(typeAlias).toBeDefined();
-      expect(typeAlias?.startLine).toBeGreaterThan(0);
-    });
-  });
-
-  describe('EnumDeclaration', () => {
-    it('extracts Direction enum', () => {
-      const en = result.entities.find((e) => e.name === 'Direction' && e.kind === 'enum');
-      expect(en).toBeDefined();
-      expect(en?.id).toBe('my-repo:src/example.ts:enum:Direction');
-    });
-  });
-
-  describe('VariableStatement', () => {
-    it('extracts exported variable MAX_RETRIES', () => {
-      const v = result.entities.find((e) => e.name === 'MAX_RETRIES' && e.kind === 'variable');
-      expect(v).toBeDefined();
-    });
-
-    it('does NOT extract non-exported variable internalSecret', () => {
-      const v = result.entities.find((e) => e.name === 'internalSecret');
-      expect(v).toBeUndefined();
-    });
-
-    it('does NOT extract non-exported function privateHelper', () => {
-      const v = result.entities.find((e) => e.name === 'privateHelper');
-      expect(v).toBeUndefined();
-    });
-  });
-
-  describe('Stable IDs', () => {
-    it('generates deterministic IDs across multiple parse calls', () => {
-      const result2 = parseFile('src/example.ts', FIXTURE, 'my-repo');
-      const ids1 = result.entities.map((e) => e.id).sort();
-      const ids2 = result2.entities.map((e) => e.id).sort();
-      expect(ids1).toEqual(ids2);
-    });
-
-    it('ID format is repo:filePath:kind:name', () => {
-      for (const entity of result.entities) {
-        expect(entity.id).toBe(`${entity.repo}:${entity.filePath}:${entity.kind}:${entity.name}`);
-      }
-    });
+  it('extracts multiple entities from a multi-entity file', () => {
+    expect(result.entities.length).toBeGreaterThanOrEqual(4); // at minimum: add, Shape, Point, Direction
   });
 });
 ```
 
-### Step 5: Reconcile with existing types
-
-Re-read `lib/knowledge-graph/types.ts`:
+### Step 4: Ensure directory exists
 
 ```bash
-cat lib/knowledge-graph/types.ts
+mkdir -p lib/knowledge-graph
+mkdir -p lib/__tests__
 ```
 
-- If `CodeEntity` is defined there with a different `kind` field (e.g., it uses `'FUNCTION'` instead of `'function'`), update `parser.ts` to match
-- If `ParseResult` is already defined, remove it from `parser.ts` and import it
-- If there are extra required fields on `CodeEntity` (e.g., `metadata`, `embedding`), either make them optional or provide sensible defaults
-- Update test imports accordingly if you change what's exported from `parser.ts`
-
-### Step 6: Check test runner configuration
+### Step 5: Verify TypeScript compiles
 
 ```bash
-cat package.json | grep -A5 '"jest"\|"vitest"\|"test"'
-cat jest.config.* 2>/dev/null || cat vitest.config.* 2>/dev/null || echo "No test config found"
-```
-
-Confirm the test framework (Jest or Vitest) and ensure `lib/__tests__/` is in the test match pattern. If the project uses Vitest, update the test file to import from `vitest` instead of using Jest globals:
-
-```typescript
-// For Vitest, add at top:
-import { describe, it, expect, beforeAll } from 'vitest';
-```
-
-### Step 7: Verification
-
-```bash
-# TypeScript type check — must pass with zero errors
 npx tsc --noEmit
-
-# Run tests
-npm test -- --testPathPattern="knowledge-graph-parser" 2>/dev/null || \
-  npx vitest run lib/__tests__/knowledge-graph-parser.test.ts 2>/dev/null || \
-  npx jest lib/__tests__/knowledge-graph-parser.test.ts
-
-# Build check
-npm run build
 ```
 
-All tests must pass. Fix any TypeScript errors before proceeding.
+Fix any type errors. Common issues:
+- `ts.canHaveModifiers` may not exist in older TS versions — fallback: cast to `any` and access `.modifiers` directly
+- `ts.JSDocContainer` may need casting: `(node as any).jsDoc`
 
-**Common issues to watch for:**
-- `ts.canHaveModifiers` may not exist in older TypeScript versions — if so, use `(node as any).modifiers` or check with `'modifiers' in node`
-- `ts.getModifiers` may not exist — alternative: `ts.canHaveModifiers(node) ? ts.getModifiers(node) : undefined` or access `node.modifiers` directly
-- If TypeScript version is < 4.8, replace `ts.canHaveModifiers(node) ? ts.getModifiers(node)` with direct property access: `(node as ts.HasModifiers).modifiers`
+If `ts.canHaveModifiers` is unavailable, replace the `isExported` function with:
 
-To check TypeScript version:
-```bash
-npx tsc --version
-```
-
-If < 4.8, use this alternative for `isExported`:
 ```typescript
 function isExported(node: ts.Node): boolean {
-  const modifiers = (node as any).modifiers as ts.NodeArray<ts.Modifier> | undefined;
-  return modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
+  const modifiers = (node as any).modifiers as ts.ModifierLike[] | undefined;
+  return modifiers?.some((m: ts.ModifierLike) => m.kind === ts.SyntaxKind.ExportKeyword) ?? false;
 }
+```
+
+### Step 6: Run tests
+
+```bash
+npm test -- --testPathPattern="knowledge-graph-parser" --no-coverage
+```
+
+All tests must pass. If any fail, debug the specific extraction logic. Common issues:
+- Line numbers off by 1: check `getStart()` vs `pos` usage (`getStart()` skips leading trivia/JSDoc)
+- JSDoc not found: `(node as any).jsDoc` may be undefined if `setParentNodes` is false (it's set to `true` in the implementation above)
+- `getText()` fails: requires `sourceFile` to be passed or the node was created without parent refs
+
+### Step 7: Full build check
+
+```bash
+npm run build
 ```
 
 ### Step 8: Commit, push, open PR
 
 ```bash
-git add lib/knowledge-graph/parser.ts lib/__tests__/knowledge-graph-parser.test.ts
-git commit -m "feat: implement TypeScript AST parser for code entity extraction
-
-- parseFile() uses ts.createSourceFile to parse content strings (no I/O)
-- Extracts: FunctionDeclaration, ClassDeclaration, InterfaceDeclaration,
-  TypeAliasDeclaration, VariableStatement (exported), EnumDeclaration
-- Captures name, kind, start/end lines, signature, JSDoc docstring
-- Extracts EXTENDS/IMPLEMENTS relationships from class heritage clauses
-- Generates stable IDs: {repo}:{filePath}:{kind}:{name}
-- Unit tests cover all entity kinds, relationships, ID stability,
-  and non-exported entity exclusion"
-
-git push origin feat/knowledge-graph-ast-parser
-
+git add -A
+git commit -m "feat: implement TypeScript AST parser for code entity extraction"
+git push origin feat/typescript-ast-parser-code-entity-extraction
 gh pr create \
   --title "feat: implement TypeScript AST parser for code entity extraction" \
   --body "## Summary
 
-Implements the core indexing engine for the Knowledge Graph subsystem.
+Implements \`lib/knowledge-graph/parser.ts\` — a pure TypeScript function that uses the TypeScript compiler API to extract code entities and local relationships from source files.
 
-### Changes
-- \`lib/knowledge-graph/parser.ts\`: Pure TypeScript AST parser using the \`typescript\` compiler API
-- \`lib/__tests__/knowledge-graph-parser.test.ts\`: Unit tests covering all entity extraction cases
+## What's included
 
-### What the parser extracts
-- **Functions**: name, parameter types, return type signature, JSDoc, line numbers
-- **Classes**: name, JSDoc, line numbers + EXTENDS/IMPLEMENTS relationships
-- **Interfaces**: name, JSDoc, line numbers
-- **Type Aliases**: name, JSDoc, line numbers
-- **Enums**: name, JSDoc, line numbers
-- **Variables**: exported only, name, line numbers
+- \`parseFile(filePath, content, repo): ParseResult\` — core parser function
+- Extracts: \`FunctionDeclaration\`, \`ClassDeclaration\`, \`InterfaceDeclaration\`, \`TypeAliasDeclaration\`, \`EnumDeclaration\`, exported \`VariableStatement\`
+- Extracts signatures (parameter types + return type) for functions and arrow function variables
+- Extracts JSDoc/docstrings from all supported node types
+- Extracts local relationships: \`extends\`, \`implements\` (with intra-file \`toId\` resolution)
+- Stable entity IDs: \`{repo}:{filePath}:{kind}:{name}\`
+- Unit tests covering all entity kinds, relationships, JSDoc, ID format, and export filtering
 
-### Entity ID format
-\`{repo}:{filePath}:{kind}:{name}\` — stable and deterministic across runs
+## Testing
 
-### Notes
-- No file I/O — accepts content as string, fully pure
-- Compatible with the storage layer work item on branch \`fix/implement-knowledge-graph-storage-layer\`
-- Does not touch \`lib/knowledge-graph/storage.ts\` or storage tests
+\`\`\`
+npm test -- --testPathPattern=knowledge-graph-parser
+\`\`\`
 
-Closes: Knowledge Graph AST Parser work item"
+All tests pass. No new dependencies required (\`typescript\` is already in the project).
+"
 ```
 
 ## Session Abort Protocol
 
 If running low on context or hitting unresolvable errors:
 
-1. Commit and push whatever compiles:
-   ```bash
-   git add -A
-   git commit -m "wip: partial knowledge-graph parser implementation"
-   git push origin feat/knowledge-graph-ast-parser
-   ```
-2. Open the PR with partial status:
-   ```bash
-   gh pr create --title "feat: implement TypeScript AST parser (partial)" --body "WIP — see ISSUES below"
-   ```
-3. Output structured report:
+1. Commit and push whatever compiles
+2. Open the PR with partial status
+3. Output structured report
 
 ```
 STATUS: [PR Open | Failed | Blocked]
 PR: [URL or "none"]
-BRANCH: feat/knowledge-graph-ast-parser
-FILES CHANGED: [list of modified files]
-SUMMARY: [what was implemented]
-ISSUES: [what failed or is incomplete]
-NEXT STEPS: [what remains — e.g., "tests failing due to TypeScript version incompatibility in isExported helper"]
+BRANCH: feat/typescript-ast-parser-code-entity-extraction
+FILES CHANGED: [list]
+SUMMARY: [what was done]
+ISSUES: [what failed]
+NEXT STEPS: [what remains]
 ```
 
-## Escalation Protocol
-
-If you encounter a blocker you cannot resolve autonomously (e.g., `lib/knowledge-graph/types.ts` defines `CodeEntity` with an incompatible required shape that would require changes to the concurrent storage layer branch, or the `typescript` package is not available and cannot be added):
+If blocked on an unresolvable issue (e.g. TypeScript API version incompatibility, missing `typescript` package, ambiguous type definitions):
 
 ```bash
 curl -X POST "${AGENT_FORGE_URL}/api/escalations" \
   -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}" \
   -H "Content-Type: application/json" \
   -d '{
-    "workItemId": "build-typescript-ast-parser",
+    "workItemId": "build-typescript-ast-parser-code-entity-extraction",
     "reason": "<concise description of the blocker>",
-    "confidenceScore": 0.3,
+    "confidenceScore": 0.2,
     "contextSnapshot": {
       "step": "<current step number>",
       "error": "<error message>",

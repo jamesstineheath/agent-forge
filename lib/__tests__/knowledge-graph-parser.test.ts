@@ -39,6 +39,17 @@ export enum Direction {
 
 export const MAX_RETRIES = 3;
 
+export const multiply = (x: number, y: number): number => x * y;
+
+/** A base entity */
+export interface BaseEntity {
+  id: string;
+}
+
+export interface NamedEntity extends BaseEntity {
+  name: string;
+}
+
 // Not exported — should NOT appear in entities
 const internalSecret = 'hidden';
 function privateHelper(): void {}
@@ -141,6 +152,17 @@ describe('parseFile', () => {
       expect(iface).toBeDefined();
       expect(iface?.id).toBe('my-repo:src/example.ts:type:Serializable');
     });
+
+    it('extracts interface extends relationship', () => {
+      const namedEntity = result.entities.find((e) => e.name === 'NamedEntity');
+      expect(namedEntity).toBeDefined();
+      const extendsRel = result.localRelationships.find(
+        (r) => r.sourceId === namedEntity?.id && r.type === 'extends',
+      );
+      expect(extendsRel).toBeDefined();
+      const baseEntity = result.entities.find((e) => e.name === 'BaseEntity');
+      expect(extendsRel?.targetId).toBe(baseEntity?.id);
+    });
   });
 
   describe('TypeAliasDeclaration', () => {
@@ -173,6 +195,13 @@ describe('parseFile', () => {
     it('does NOT extract non-exported function privateHelper', () => {
       const v = result.entities.find((e) => e.name === 'privateHelper');
       expect(v).toBeUndefined();
+    });
+
+    it('extracts signature for arrow function variable', () => {
+      const v = result.entities.find((e) => e.name === 'multiply' && e.type === 'variable');
+      expect(v).toBeDefined();
+      expect(v?.signature).toBeDefined();
+      expect(v?.signature).toContain('number');
     });
   });
 
