@@ -24,15 +24,14 @@ concurrency:
 
 jobs:
   qa-agent:
+    # DISABLED: This workflow is a no-op stub (327 runs, 0 tests executed).
+    # Re-enable once smoke-test.ts, format-comment.ts, parse-criteria.ts, and
+    # system-prompt.md are wired up to actually run tests.
+    # See self-learning audit 2026-03-18 and plan misty-greeting-wreath.md.
+    if: false
     name: QA Agent
     continue-on-error: true
     runs-on: ubuntu-latest
-    # Only run on successful preview deployments (not production) or manual dispatch
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'deployment_status' &&
-       github.event.deployment_status.state == 'success' &&
-       github.event.deployment_status.environment != 'Production')
 
     steps:
       - name: Checkout
