@@ -40,7 +40,7 @@
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │     Event Bus (lib/event-bus.ts)                      │   │
 │  │     GitHub Webhooks → /api/webhooks/github            │   │
-│  │     Durable log: Vercel Blob (hourly, 7-day retention)│   │
+│  │     Durable log: Vercel Blob (hourly, 30-day retention)│   │
 │  │     Query API: /api/events                            │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                              │

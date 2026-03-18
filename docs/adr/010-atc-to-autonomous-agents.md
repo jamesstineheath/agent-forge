@@ -25,7 +25,7 @@ Decompose the ATC monolith into 4 autonomous agents, each with independent Verce
 
 ### Supporting Infrastructure
 
-- **Event Bus** (`lib/event-bus.ts`): Durable webhook event log in Vercel Blob (hourly-partitioned, 7-day retention).
+- **Event Bus** (`lib/event-bus.ts`): Durable webhook event log in Vercel Blob (hourly-partitioned, 30-day retention).
 - **Feedback Compiler** (weekly cron): Reads TLM memory and outcomes, proposes prompt/config changes via PR.
 
 ### Migration Path

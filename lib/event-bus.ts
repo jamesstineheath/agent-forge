@@ -3,7 +3,7 @@ import type { WebhookEvent, EventQueryOptions } from "./event-bus-types";
 
 const EVENTS_PREFIX = "events";
 const MAX_EVENTS_PER_PARTITION = 500;
-const RETENTION_HOURS = 7 * 24; // 7 days
+const RETENTION_HOURS = 30 * 24; // 30 days
 
 /**
  * Get the partition key for a given timestamp (hourly buckets).
@@ -109,7 +109,7 @@ export async function getRecentEvents(minutes: number): Promise<WebhookEvent[]> 
 }
 
 /**
- * Clean up partitions older than 7 days.
+ * Clean up partitions older than 30 days.
  */
 export async function cleanupOldPartitions(): Promise<number> {
   const { deleteJson } = await import("./storage");
