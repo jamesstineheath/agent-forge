@@ -12,11 +12,13 @@
 - **Dashboard QA Results Section — API Route** (jamesstineheath/agent-forge)
   - Branch: `fix/dashboard-qa-results-section-api-route`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/287
+  - Files: app/api/qa-results/route.ts, handoffs/dashboard-qa-results-section-api-route.md
 
-- **Add debate stats to pipeline dashboard API** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-debate-stats-to-pipeline-dashboard-api`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/257
+- **Auto-retry infra CI failures via GitHub API** (jamesstineheath/agent-forge)
+  - Branch: `feat/auto-retry-infra-ci-failures-via-github-api`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/285
 
 ## Queued for Dispatch
 
-- **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (jamesstineheath/agent-forge)
+- **Add drift detection to ATC cron cycle** (jamesstineheath/agent-forge)
+  - Estimated files: lib/atc.ts
