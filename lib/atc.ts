@@ -1087,6 +1087,10 @@ async function _runATCCycleInner(): Promise<ATCState> {
         const workItems = result.workItems;
 
         if (workItems.length === 0) {
+          console.error(
+            `[ATC] Decomposition produced 0 work items for "${project.title}" (${project.projectId}). ` +
+            `Transitioning to Failed. Check Notion plan page format and decomposer logs.`
+          );
           await transitionToFailed(project);
           events.push(makeEvent(
             "error", project.projectId, "Executing", "Failed",
