@@ -1,0 +1,35 @@
+name: TLM Feedback Compiler
+
+on:
+  schedule:
+    - cron: '0 22 * * 0'  # Weekly on Sunday at 10pm UTC
+  workflow_dispatch: {}
+
+# Only one compiler run at a time
+concurrency:
+  group: tlm-feedback-compiler
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  compile-feedback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      - name: Run TLM Feedback Compiler
+        uses: ./.github/actions/tlm-feedback-compiler
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ secrets.GH_PAT }}
+          model: "claude-opus-4-6"
+          lookback-days: "14"
