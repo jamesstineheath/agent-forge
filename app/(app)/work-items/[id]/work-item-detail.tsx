@@ -47,6 +47,8 @@ export function WorkItemDetail({ id }: { id: string }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   async function handleDelete() {
     setDeleting(true);
@@ -101,9 +103,6 @@ export function WorkItemDetail({ id }: { id: string }) {
       ? 2 // generating (had a handoff)
       : 1 // ready
     : -1;
-
-  const [resetting, setResetting] = useState(false);
-  const [resetError, setResetError] = useState<string | null>(null);
 
   async function handleResetToReady() {
     setResetting(true);
