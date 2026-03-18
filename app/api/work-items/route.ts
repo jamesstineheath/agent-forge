@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateAuth } from "@/lib/api-auth";
 import {
   listWorkItems,
+  listWorkItemsFull,
   createWorkItem,
   type WorkItemFilters,
 } from "@/lib/work-items";
@@ -18,12 +19,16 @@ export async function GET(req: NextRequest) {
   const targetRepo = searchParams.get("targetRepo");
   const priority = searchParams.get("priority");
 
+  const full = searchParams.get("full") === "true";
+
   if (status) filters.status = status as WorkItem["status"];
   if (targetRepo) filters.targetRepo = targetRepo;
   if (priority) filters.priority = priority as WorkItem["priority"];
 
   try {
-    const items = await listWorkItems(filters);
+    const items = full
+      ? await listWorkItemsFull(filters)
+      : await listWorkItems(filters);
     return NextResponse.json(items);
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

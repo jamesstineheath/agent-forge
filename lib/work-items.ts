@@ -78,6 +78,18 @@ export async function listWorkItems(
   return index;
 }
 
+/**
+ * Load full WorkItem objects for all items matching filters.
+ * More expensive than listWorkItems (reads each blob), so use sparingly.
+ */
+export async function listWorkItemsFull(
+  filters?: WorkItemFilters
+): Promise<WorkItem[]> {
+  const index = await listWorkItems(filters);
+  const items = await Promise.all(index.map((e) => getWorkItem(e.id)));
+  return items.filter((i): i is WorkItem => i !== null);
+}
+
 export async function getWorkItem(id: string): Promise<WorkItem | null> {
   return loadJson<WorkItem>(itemKey(id));
 }
