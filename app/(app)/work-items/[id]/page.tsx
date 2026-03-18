@@ -1,7 +1,7 @@
 "use client";
 
-import { use, useState, Suspense } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -41,20 +41,12 @@ function formatDate(ts?: string | null): string {
   return new Date(ts).toLocaleString();
 }
 
-interface Props {
-  params: Promise<{ id: string }>;
+export default function WorkItemDetailPage() {
+  return <WorkItemDetailContent />;
 }
 
-export default function WorkItemDetailPage({ params }: Props) {
-  return (
-    <Suspense fallback={<div className="p-6 text-[12px] text-muted-foreground">Loading...</div>}>
-      <WorkItemDetailContent params={params} />
-    </Suspense>
-  );
-}
-
-function WorkItemDetailContent({ params }: Props) {
-  const { id } = use(params);
+function WorkItemDetailContent() {
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { data: item, isLoading, error, mutate } = useWorkItem(id);
   const { data: itemEvents } = useWorkItemEvents(id);
