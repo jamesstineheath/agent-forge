@@ -263,6 +263,23 @@ export async function getBlockedByDependencies(targetRepo: string): Promise<Work
   return blocked;
 }
 
+/**
+ * Find a work item by its handoff branch name.
+ * Scans active items (executing, reviewing, merged) to bridge the gap between
+ * the execute-handoff workflow (which knows branch) and the work item store.
+ */
+export async function findWorkItemByBranch(branch: string): Promise<WorkItem | null> {
+  const activeStatuses: WorkItem["status"][] = ["executing", "reviewing", "merged"];
+  const index = await loadIndex();
+  const candidates = index.filter((e) => activeStatuses.includes(e.status));
+
+  for (const entry of candidates) {
+    const item = await getWorkItem(entry.id);
+    if (item?.handoff?.branch === branch) return item;
+  }
+  return null;
+}
+
 export async function deleteWorkItem(id: string): Promise<boolean> {
   const existing = await getWorkItem(id);
   if (!existing) return false;
