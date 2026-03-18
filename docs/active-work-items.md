@@ -4,11 +4,6 @@
 
 ## Currently Executing
 
-- **Add debate session persistence to storage** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-debate-session-persistence-to-storage`
-  - Files: lib/debate/storage.ts
-  - Started: 2026-03-18T14:42:39.211Z
-
 - **Add risk level detection utility for PRs** (jamesstineheath/agent-forge)
   - Branch: `fix/add-risk-level-detection-utility-for-prs`
   - Files: lib/debate/risk-detector.ts, lib/__tests__/debate-risk-detector.test.ts
@@ -18,6 +13,11 @@
   - Branch: `fix/update-personal-assistant-systemmap-and-claudemd-f`
   - Files: docs/SYSTEM_MAP.md, CLAUDE.md
   - Started: 2026-03-18T14:41:38.588Z
+
+- **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
+  - Branch: `feat/add-atc-auto-indexing-trigger-on-pr-merge`
+  - Files: lib/atc.ts
+  - Started: 2026-03-18T14:46:47.631Z
 
 ## Queued for Dispatch
 
@@ -42,7 +42,5 @@
 - **Graduation Tracker — Structured PR Verification Markers** (agent-forge)
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
-
-- **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
 
 - **Add Knowledge Graph dashboard page** (jamesstineheath/agent-forge)
