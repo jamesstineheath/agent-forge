@@ -4,15 +4,10 @@
 
 ## Currently Executing
 
-- **Add debate stats to pipeline dashboard API** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-debate-stats-to-pipeline-dashboard-api`
-  - Files: app/api/debates/route.ts, app/(app)/pipeline/page.tsx, lib/hooks.ts
-  - Started: 2026-03-18T15:27:08.103Z
-
-- **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
-  - Branch: `feat/add-atc-auto-indexing-trigger-on-pr-merge`
-  - Files: lib/atc.ts, lib/knowledge-graph/indexer.ts
-  - Started: 2026-03-18T15:28:31.595Z
+- **Fix execute-handoff.yml: workflow concludes 'skipped' after committing code, causing false failures** (jamesstineheath/agent-forge)
+  - Branch: `feat/fix-execute-handoffyml-workflow-concludes-skipped-`
+  - Files: .github/workflows/execute-handoff.yml, lib/atc.ts
+  - Started: 2026-03-18T15:33:24.371Z
 
 ## Queued for Dispatch
 
