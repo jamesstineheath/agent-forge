@@ -7,3 +7,4 @@
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
+  - Files: handoffs/pa-auth-bypass-middleware-for-qa-agent-smoke-tests.md, proxy.ts
