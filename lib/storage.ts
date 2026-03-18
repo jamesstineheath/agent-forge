@@ -93,7 +93,7 @@ async function saveToBlob(key: string, json: string): Promise<void> {
     contentType: "application/json",
     addRandomSuffix: false,
     allowOverwrite: true,
-    cacheControlMaxAge: 60,
+    cacheControlMaxAge: 0, // No CDN caching — work item updates must be immediately visible across invocations
   });
 }
 

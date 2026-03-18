@@ -11,6 +11,13 @@ import { FAST_LANE_BUDGET_SIMPLE, FAST_LANE_BUDGET_MODERATE } from "./types";
 const INDEX_KEY = "work-items/index";
 
 /**
+ * Terminal statuses that should not be transitioned back to non-terminal states.
+ * Prevents the lost-update bug where ATC health monitor overwrites MCP status changes.
+ * See ADR: work item store race condition fix.
+ */
+const TERMINAL_STATUSES = new Set<string>(['cancelled', 'merged', 'obsolete']);
+
+/**
  * Return the default budget for a given complexityHint.
  * Used during handoff generation when no explicit budget is provided.
  */
@@ -120,6 +127,23 @@ export async function updateWorkItem(
 ): Promise<WorkItem | null> {
   const existing = await getWorkItem(id);
   if (!existing) return null;
+
+  // Guard: don't allow transitioning OUT of terminal states.
+  // This prevents ATC health monitor from overwriting MCP-driven status changes
+  // (e.g., an item marked 'cancelled' via MCP being reverted to 'failed' by
+  // the reconciliation loop reading stale index data).
+  if (
+    TERMINAL_STATUSES.has(existing.status) &&
+    patch.status &&
+    !TERMINAL_STATUSES.has(patch.status)
+  ) {
+    console.warn('[work-items] blocked transition from terminal status', {
+      id,
+      currentStatus: existing.status,
+      attemptedStatus: patch.status,
+    });
+    return existing; // return existing item without modification
+  }
 
   const updated: WorkItem = {
     ...existing,
@@ -295,8 +319,9 @@ export async function deleteWorkItem(id: string): Promise<boolean> {
 
 /**
  * Reconciles the work item index against individual item blobs.
- * For each non-terminal item in the index, reads the individual blob
- * and repairs the index entry if the status differs.
+ * Reads the individual blob for each item and repairs the index entry
+ * if the status differs. Checks ALL items (including terminal states)
+ * because MCP updates can change terminal status while the index is stale.
  * Returns a summary of repaired items.
  */
 export async function reconcileWorkItemIndex(): Promise<{
@@ -304,14 +329,12 @@ export async function reconcileWorkItemIndex(): Promise<{
   repaired: number;
   repairedItems: Array<{ id: string; indexStatus: string; blobStatus: string }>;
 }> {
-  const terminalStates = new Set(['merged', 'parked', 'failed', 'cancelled']);
   const index = await loadIndex();
   const repairedItems: Array<{ id: string; indexStatus: string; blobStatus: string }> = [];
   let needsSave = false;
 
   for (let i = 0; i < index.length; i++) {
     const entry = index[i];
-    if (terminalStates.has(entry.status)) continue;
 
     try {
       const blobItem = await getWorkItem(entry.id);
@@ -347,8 +370,7 @@ export async function reconcileWorkItemIndex(): Promise<{
     await saveIndex(index);
   }
 
-  const nonTerminalCount = index.filter(e => !terminalStates.has(e.status)).length;
-  return { checked: nonTerminalCount, repaired: repairedItems.length, repairedItems };
+  return { checked: index.length, repaired: repairedItems.length, repairedItems };
 }
 
 /**
