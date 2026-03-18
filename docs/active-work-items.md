@@ -4,10 +4,10 @@
 
 ## Currently Executing
 
-- **Implement judge agent — synthesizes debate into verdict** (jamesstineheath/agent-forge)
-  - Branch: `fix/implement-judge-agent-synthesizes-debate-into-verd`
-  - Files: lib/debate/agents/judge.ts
-  - Started: 2026-03-18T13:57:10.087Z
+- **Implement debate orchestrator — runs multi-round debate loop** (jamesstineheath/agent-forge)
+  - Branch: `feat/implement-debate-orchestrator-runs-multi-round-deb`
+  - Files: lib/debate/orchestrator.ts
+  - Started: 2026-03-18T14:06:30.040Z
 
 - **Define Knowledge Graph core types and schema** (jamesstineheath/agent-forge)
   - Branch: `fix/define-knowledge-graph-core-types-and-schema`
@@ -37,8 +37,6 @@
 - **Graduation Tracker — Structured PR Verification Markers** (agent-forge)
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
-
-- **Implement debate orchestrator — runs multi-round debate loop** (jamesstineheath/agent-forge)
 
 - **Add debate session persistence to storage** (jamesstineheath/agent-forge)
 
