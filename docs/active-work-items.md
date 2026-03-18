@@ -9,10 +9,10 @@
   - Files: lib/debate/orchestrator.ts
   - Started: 2026-03-18T14:06:30.040Z
 
-- **Define Knowledge Graph core types and schema** (jamesstineheath/agent-forge)
-  - Branch: `fix/define-knowledge-graph-core-types-and-schema`
-  - Files: lib/knowledge-graph/types.ts
-  - Started: 2026-03-18T14:01:55.543Z
+- **Implement Knowledge Graph storage layer** (jamesstineheath/agent-forge)
+  - Branch: `fix/implement-knowledge-graph-storage-layer`
+  - Files: lib/knowledge-graph/storage.ts, lib/__tests__/knowledge-graph-storage.test.ts
+  - Started: 2026-03-18T14:12:10.601Z
 
 ## Queued for Dispatch
 
@@ -51,8 +51,6 @@
 - **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
 
 - **Integration test: end-to-end debate flow with mock PR data** (jamesstineheath/agent-forge)
-
-- **Implement Knowledge Graph storage layer** (jamesstineheath/agent-forge)
 
 - **Build TypeScript AST parser for code entity extraction** (jamesstineheath/agent-forge)
 
