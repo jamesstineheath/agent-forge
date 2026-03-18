@@ -116,20 +116,28 @@ export async function listRecentTraces(agent?: AgentName, limit = 20): Promise<A
 
   const { blobs } = await list({ prefix, token });
 
-  // Sort descending by pathname (timestamps sort lexicographically)
-  const sorted = blobs.sort((a, b) => b.pathname.localeCompare(a.pathname));
+  // Sort descending by uploadedAt (most recent first), falling back to pathname
+  const sorted = blobs.sort((a, b) => {
+    const aTime = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+    const bTime = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+    return bTime - aTime;
+  });
   const selected = sorted.slice(0, limit);
 
   const traces: AgentTrace[] = [];
   for (const blob of selected) {
     try {
-      const response = await fetch(blob.url, {
+      // Use downloadUrl for private blobs (available in Vercel Blob SDK v0.19+)
+      const fetchUrl = (blob as Record<string, unknown>).downloadUrl as string | undefined
+        ?? blob.url;
+      const response = await fetch(fetchUrl, {
         cache: "no-store",
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
         const trace = (await response.json()) as AgentTrace;
         traces.push(trace);
+      } else {
+        console.warn(`[tracing] Failed to fetch ${blob.pathname}: ${response.status}`);
       }
     } catch {
       // Skip individual fetch errors
