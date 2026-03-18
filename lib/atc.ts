@@ -1059,7 +1059,7 @@ async function _runATCCycleInner(): Promise<ATCState> {
       ));
 
       // §4.5 Plan Quality Gate
-      const validation = await validatePlan(project.projectId);
+      const validation = await validatePlan(project.id);
       if (!validation.valid) {
         const issueList = validation.issues
           .map((i) => `[${i.severity.toUpperCase()}]${i.section ? ` ${i.section}:` : ''} ${i.message}`)
