@@ -45,6 +45,262 @@ export interface PR {
   mergeableState: string | null;
 }
 
+// ── MCP Pipeline Operations ──────────────────────────────────────
+
+export interface WorkflowRunDetail {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  branch: string | null;
+  event: string;
+  created_at: string;
+  updated_at: string;
+  url: string;
+  run_attempt: number;
+  jobs: WorkflowJob[];
+}
+
+export interface WorkflowJob {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  steps?: WorkflowStep[];
+}
+
+export interface WorkflowStep {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  number: number;
+}
+
+export interface WorkflowRunSummary {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
+  branch: string | null;
+  event: string;
+  created_at: string;
+  updated_at: string;
+  url: string;
+  run_attempt: number;
+}
+
+export interface PRSummary {
+  number: number;
+  title: string;
+  state: string;
+  head: string;
+  base: string;
+  draft: boolean;
+  merged_at: string | null;
+  created_at: string;
+  updated_at: string;
+  url: string;
+  user: string | null;
+}
+
+export interface DirectoryEntry {
+  name: string;
+  type: string;
+  path: string;
+  sha: string;
+}
+
+export async function listWorkflowRuns(
+  repo: string,
+  params: {
+    workflow?: string;
+    branch?: string;
+    status?: string;
+    perPage?: number;
+  }
+): Promise<{ total_count: number; workflow_runs: WorkflowRunSummary[] }> {
+  const base = params.workflow
+    ? `${GITHUB_API}/repos/${repo}/actions/workflows/${params.workflow}/runs`
+    : `${GITHUB_API}/repos/${repo}/actions/runs`;
+
+  const qs = new URLSearchParams();
+  if (params.branch) qs.set("branch", params.branch);
+  if (params.status) qs.set("status", params.status);
+  qs.set("per_page", String(params.perPage ?? 10));
+
+  const res = await ghFetch(`${base}?${qs}`);
+  if (!res.ok) return { total_count: 0, workflow_runs: [] };
+
+  const data = (await res.json()) as {
+    total_count: number;
+    workflow_runs: Array<{
+      id: number; name: string; status: string; conclusion: string | null;
+      head_branch: string | null; event: string; created_at: string;
+      updated_at: string; html_url: string; run_attempt: number;
+    }>;
+  };
+
+  return {
+    total_count: data.total_count,
+    workflow_runs: data.workflow_runs.map((r) => ({
+      id: r.id, name: r.name, status: r.status, conclusion: r.conclusion,
+      branch: r.head_branch, event: r.event, created_at: r.created_at,
+      updated_at: r.updated_at, url: r.html_url, run_attempt: r.run_attempt,
+    })),
+  };
+}
+
+export async function getWorkflowRunDetail(
+  repo: string,
+  runId: number
+): Promise<WorkflowRunDetail> {
+  const [runRes, jobsRes] = await Promise.all([
+    ghFetch(`${GITHUB_API}/repos/${repo}/actions/runs/${runId}`),
+    ghFetch(`${GITHUB_API}/repos/${repo}/actions/runs/${runId}/jobs`),
+  ]);
+
+  if (!runRes.ok) throw new Error(`Failed to get run ${runId}: ${runRes.status}`);
+  const run = (await runRes.json()) as {
+    id: number; name: string; status: string; conclusion: string | null;
+    head_branch: string | null; event: string; created_at: string;
+    updated_at: string; html_url: string; run_attempt: number;
+  };
+
+  let jobs: WorkflowJob[] = [];
+  if (jobsRes.ok) {
+    const jobsData = (await jobsRes.json()) as {
+      jobs: Array<{
+        id: number; name: string; status: string; conclusion: string | null;
+        started_at: string | null; completed_at: string | null;
+        steps?: Array<{ name: string; status: string; conclusion: string | null; number: number }>;
+      }>;
+    };
+    jobs = jobsData.jobs.map((j) => ({
+      id: j.id, name: j.name, status: j.status, conclusion: j.conclusion,
+      started_at: j.started_at, completed_at: j.completed_at,
+      steps: j.steps?.map((s) => ({ name: s.name, status: s.status, conclusion: s.conclusion, number: s.number })),
+    }));
+  }
+
+  return {
+    id: run.id, name: run.name, status: run.status, conclusion: run.conclusion,
+    branch: run.head_branch, event: run.event, created_at: run.created_at,
+    updated_at: run.updated_at, url: run.html_url, run_attempt: run.run_attempt,
+    jobs,
+  };
+}
+
+export async function rerunWorkflow(repo: string, runId: number): Promise<void> {
+  const res = await ghFetch(`${GITHUB_API}/repos/${repo}/actions/runs/${runId}/rerun`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to rerun workflow ${runId}: ${res.status} ${err}`);
+  }
+}
+
+export async function rerunFailedJobs(repo: string, runId: number): Promise<void> {
+  const res = await ghFetch(`${GITHUB_API}/repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to rerun failed jobs for ${runId}: ${res.status} ${err}`);
+  }
+}
+
+export async function listDirectory(
+  repo: string,
+  path: string,
+  ref?: string
+): Promise<DirectoryEntry[]> {
+  const url = `${GITHUB_API}/repos/${repo}/contents/${path}${ref ? `?ref=${ref}` : ""}`;
+  const res = await ghFetch(url);
+  if (!res.ok) return [];
+  const data = await res.json();
+  if (!Array.isArray(data)) return [];
+  return (data as Array<{ name: string; type: string; path: string; sha: string }>).map((f) => ({
+    name: f.name, type: f.type, path: f.path, sha: f.sha,
+  }));
+}
+
+export async function listPullRequests(
+  repo: string,
+  params: { state?: string; head?: string; perPage?: number }
+): Promise<PRSummary[]> {
+  const qs = new URLSearchParams();
+  qs.set("state", params.state ?? "open");
+  if (params.head) qs.set("head", params.head);
+  qs.set("per_page", String(params.perPage ?? 20));
+
+  const res = await ghFetch(`${GITHUB_API}/repos/${repo}/pulls?${qs}`);
+  if (!res.ok) return [];
+
+  const prs = (await res.json()) as Array<{
+    number: number; title: string; state: string; draft: boolean;
+    head: { ref: string }; base: { ref: string };
+    merged_at: string | null; created_at: string; updated_at: string;
+    html_url: string; user: { login: string } | null;
+  }>;
+
+  return prs.map((pr) => ({
+    number: pr.number, title: pr.title, state: pr.state,
+    head: pr.head.ref, base: pr.base.ref, draft: pr.draft,
+    merged_at: pr.merged_at, created_at: pr.created_at,
+    updated_at: pr.updated_at, url: pr.html_url,
+    user: pr.user?.login ?? null,
+  }));
+}
+
+export async function getPullRequestChecks(
+  repo: string,
+  prNumber: number
+): Promise<{ pr: { number: number; title: string; head: string }; checks: Array<{ name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null }> }> {
+  const prRes = await ghFetch(`${GITHUB_API}/repos/${repo}/pulls/${prNumber}`);
+  if (!prRes.ok) throw new Error(`Failed to get PR #${prNumber}: ${prRes.status}`);
+  const pr = (await prRes.json()) as { number: number; title: string; head: { ref: string; sha: string } };
+
+  const checksRes = await ghFetch(`${GITHUB_API}/repos/${repo}/commits/${pr.head.sha}/check-runs`);
+  let checks: Array<{ name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null }> = [];
+  if (checksRes.ok) {
+    const data = (await checksRes.json()) as {
+      check_runs: Array<{ name: string; status: string; conclusion: string | null; started_at: string | null; completed_at: string | null }>;
+    };
+    checks = data.check_runs.map((c) => ({
+      name: c.name, status: c.status, conclusion: c.conclusion,
+      started_at: c.started_at, completed_at: c.completed_at,
+    }));
+  }
+
+  return { pr: { number: pr.number, title: pr.title, head: pr.head.ref }, checks };
+}
+
+const PIPELINE_WORKFLOWS = [
+  "ci.yml", "tlm-spec-review.yml", "execute-handoff.yml",
+  "tlm-review.yml", "handoff-orchestrator.yml", "ci-stuck-pr-monitor.yml",
+];
+
+export async function getPipelineHealth(
+  repo: string
+): Promise<Array<{ workflow: string; recent: WorkflowRunSummary[]; error?: string }>> {
+  const results = await Promise.allSettled(
+    PIPELINE_WORKFLOWS.map(async (wf) => {
+      const data = await listWorkflowRuns(repo, { workflow: wf, perPage: 3 });
+      return { workflow: wf, recent: data.workflow_runs };
+    })
+  );
+
+  return results.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    return { workflow: PIPELINE_WORKFLOWS[i], recent: [], error: String(r.reason) };
+  });
+}
+
+// ── Existing Functions ───────────────────────────────────────────
+
 export async function readRepoFile(
   repo: string,
   path: string,
