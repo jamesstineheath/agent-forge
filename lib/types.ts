@@ -562,6 +562,15 @@ export interface DecomposerConfig {
   maxRecursionDepth: number;
 }
 
+// --- Debate Stats ---
+
+export interface DebateStats {
+  totalSessions: number;
+  avgRounds: number;
+  avgTokens: number;
+  verdictDistribution: Record<string, number>;
+}
+
 export type PhaseBreakdown = {
   phases: {
     id: string;
