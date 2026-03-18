@@ -1,3 +1,22 @@
+/**
+ * @deprecated ATC Monolith — DISABLED as of 2026-03-18
+ *
+ * This file is preserved for reference and utility function imports.
+ * The cron route `/api/atc/cron` has been removed from vercel.json.
+ *
+ * Responsibilities have been migrated to autonomous agents:
+ *   - Dispatch logic       → lib/atc/dispatcher.ts
+ *   - Health monitoring    → lib/atc/health-monitor.ts
+ *   - Project management   → lib/pm-agent.ts
+ *   - Supervision          → app/api/agents/supervisor/cron/route.ts
+ *
+ * See docs/atc-deprecation-audit.md for the full coverage map.
+ * See ADR-010 for the architectural decision.
+ *
+ * DO NOT DELETE — agents may import utility functions from this file.
+ * DO NOT RE-ENABLE the cron unless all 4 agents are confirmed non-functional.
+ */
+
 import { loadJson, saveJson } from "./storage";
 import { listWorkItems } from "./work-items";
 import type { ATCState } from "./types";

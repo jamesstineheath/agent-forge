@@ -115,7 +115,7 @@ The ATC monolith has been decomposed into 4 autonomous agents:
 **Shared infrastructure:**
 - **Distributed lock** (`lib/atc/lock.ts`): Optimistic Vercel Blob lock with write-then-reread race detection. 5-min TTL, 10-min hard ceiling.
 - **Event log** (`lib/atc/events.ts`): Global rolling log (max 1000 events) + per-work-item history (uncapped).
-- **Feature flag**: `AGENT_SPLIT_ENABLED=true` enables new agent cron routes. Legacy `/api/atc/cron` still works as fallback.
+- **Feature flag**: `AGENT_SPLIT_ENABLED=true` enables new agent cron routes. Legacy `/api/atc/cron` **has been disabled** (removed from vercel.json). `lib/atc.ts` is preserved as a reference and for utility function imports. See `docs/atc-deprecation-audit.md`.
 
 ### Self-Healing Sections
 
@@ -182,7 +182,7 @@ Outcome Tracker (daily)
 | Utilities | `lib/atc/utils.ts` | File parsing, overlap detection, timeout wrapper |
 | PM Agent | `lib/pm-agent.ts` | Claude-powered backlog review, health, decomposition |
 | PM Prompts | `lib/pm-prompts.ts` | Structured prompt builders for PM agent |
-| ATC (legacy) | `lib/atc.ts` | Backward-compat orchestrator, delegates to agents |
+| ATC (legacy) | `lib/atc.ts` | Backward-compat orchestrator **[DEPRECATED/DISABLED]** — cron removed, file preserved |
 | **Core** | | |
 | Orchestrator | `lib/orchestrator.ts` | Handoff generation + dispatch to target repos |
 | Work Items | `lib/work-items.ts` | CRUD + dependency-aware dispatch |
