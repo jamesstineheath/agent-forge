@@ -1,61 +1,12 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { NextRequest, NextResponse } from "next/server";
-import {
-  createFastLaneItemSchema,
-  getItemStatusSchema,
-  listRecentItemsSchema,
-  handleCreateFastLaneItem,
-  handleGetItemStatus,
-  handleListRecentItems,
-} from "@/lib/mcp-tools";
+import { createMcpServer } from "@/lib/mcp/server";
 
 function checkAuth(request: NextRequest): boolean {
   const authHeader = request.headers.get("authorization");
   const secret = process.env.AGENT_FORGE_API_SECRET;
   if (!secret) return false;
   return authHeader === `Bearer ${secret}`;
-}
-
-function createMcpServer(): McpServer {
-  const server = new McpServer({
-    name: "agent-forge",
-    version: "1.0.0",
-  });
-
-  server.registerTool("create_fast_lane_item", {
-    description:
-      "Create a fast-lane work item in Agent Forge. Use this to queue dev tasks for autonomous execution.",
-    inputSchema: createFastLaneItemSchema,
-  }, async (input) => {
-    const result = await handleCreateFastLaneItem(input);
-    return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-    };
-  });
-
-  server.registerTool("get_item_status", {
-    description:
-      "Get the current status, PR number, and TLM verdict for a work item.",
-    inputSchema: getItemStatusSchema,
-  }, async (input) => {
-    const result = await handleGetItemStatus(input);
-    return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-    };
-  });
-
-  server.registerTool("list_recent_items", {
-    description: "List recent work items, optionally filtered by status.",
-    inputSchema: listRecentItemsSchema,
-  }, async (input) => {
-    const result = await handleListRecentItems(input);
-    return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-    };
-  });
-
-  return server;
 }
 
 export async function POST(request: NextRequest) {
