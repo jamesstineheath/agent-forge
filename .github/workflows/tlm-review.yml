@@ -22,7 +22,7 @@ jobs:
     # Skip if CI workflow (don't review CI-only events unless check_suite)
     if: >-
       github.event_name == 'pull_request' ||
-      (github.event_name == 'check_suite' && github.event.check_suite.conclusion == 'success')
+      github.event_name == 'check_suite'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

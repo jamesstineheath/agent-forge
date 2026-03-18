@@ -522,7 +522,10 @@ async function fetchMergedPRs(
         r.body?.includes("TLM Review:")
       );
       if (tlmReview) {
-        if (tlmReview.body?.includes("APPROVE")) tlmDecision = "approve";
+        if (tlmReview.body?.includes("CI_BLOCKED"))
+          tlmDecision = "ci_blocked";
+        else if (tlmReview.body?.includes("APPROVE"))
+          tlmDecision = "approve";
         else if (tlmReview.body?.includes("REQUEST_CHANGES"))
           tlmDecision = "request_changes";
         else if (tlmReview.body?.includes("FLAG FOR HUMAN"))
