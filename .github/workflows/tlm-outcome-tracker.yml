@@ -39,5 +39,8 @@ jobs:
           git config user.name "TLM Outcome Tracker"
           git config user.email "tlm@github-actions"
           git add docs/tlm-memory.md
-          git diff --cached --quiet || git commit -m "chore(tlm): update review memory with outcome assessments"
-          git push
+          git diff --cached --quiet || {
+            git commit -m "chore(tlm): update review memory with outcome assessments"
+            git pull --rebase origin main
+            git push
+          }
