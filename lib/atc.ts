@@ -846,9 +846,29 @@ async function _runATCCycleInner(): Promise<ATCState> {
   for (const failedId of failedThisCycle) {
     const item = await getWorkItem(failedId);
     if (!item) continue;
+
+    // Guard: if item has an open PR, defer to reconciler/HLO — don't reset to ready
+    if (item.execution?.prNumber != null) {
+      console.log(`[ATC] Skipping retry for ${item.id} — has PR #${item.execution.prNumber}, deferring to reconciler`);
+      continue;
+    }
+
     const retryCount = item.execution?.retryCount ?? 0;
 
     if (retryCount < MAX_RETRIES) {
+      // Delete stale branch before re-dispatch to prevent 422 "Reference already exists"
+      if (item.handoff?.branch) {
+        try {
+          const deleted = await deleteBranch(item.targetRepo, item.handoff.branch);
+          if (deleted) {
+            console.log(`[ATC] Deleted stale branch ${item.handoff.branch} before retry dispatch for ${item.id}`);
+          }
+        } catch (err) {
+          // Branch doesn't exist — that's fine, proceed with retry
+          console.warn(`[ATC] Failed to delete branch ${item.handoff.branch} before retry:`, err);
+        }
+      }
+
       await updateWorkItem(failedId, {
         status: "ready",
         execution: {
@@ -883,6 +903,8 @@ async function _runATCCycleInner(): Promise<ATCState> {
     const item = await getWorkItem(entry.id);
     if (!item) continue;
     if (item.dependencies.length === 0) continue;
+    // Guard: if item has an open PR, defer to reconciler — don't reset to ready
+    if (item.execution?.prNumber != null) continue;
     const retryCount = item.execution?.retryCount ?? 0;
     if (retryCount >= 2) continue; // Already retried enough
 
@@ -904,6 +926,18 @@ async function _runATCCycleInner(): Promise<ATCState> {
     }
 
     if (allDepsResolved && anyDepChanged) {
+      // Delete stale branch before re-dispatch to prevent 422 "Reference already exists"
+      if (item.handoff?.branch) {
+        try {
+          const deleted = await deleteBranch(item.targetRepo, item.handoff.branch);
+          if (deleted) {
+            console.log(`[ATC] Deleted stale branch ${item.handoff.branch} before dep-resolved retry for ${item.id}`);
+          }
+        } catch {
+          // Branch doesn't exist — fine, proceed
+        }
+      }
+
       await updateWorkItem(item.id, {
         status: "ready" as any,
         execution: {
@@ -1532,6 +1566,35 @@ export async function cleanupStaleBranches(): Promise<{ deletedCount: number; sk
   let skipped = 0;
   let errors = 0;
 
+  // --- Phase A: Clean branches for work items in terminal/failed states ---
+  // This catches branches from failed executions that may not yet be 48h old.
+  const CLEANUP_ELIGIBLE_STATUSES = ["failed", "parked", "cancelled"] as const;
+  for (const status of CLEANUP_ELIGIBLE_STATUSES) {
+    const entries = await listWorkItems({ status });
+    for (const entry of entries) {
+      const item = await getWorkItem(entry.id);
+      if (!item || !item.handoff?.branch) continue;
+
+      // Guard: skip if the work item has an associated PR (open PR = branch still needed)
+      if (item.execution?.prNumber != null) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const deleted = await deleteBranch(item.targetRepo, item.handoff.branch);
+        if (deleted) {
+          deletedCount++;
+          console.log(`[atc] Deleted branch for ${status} work item ${item.id}: ${item.handoff.branch} from ${item.targetRepo}`);
+        }
+        // deleteBranch returns false for 404 (branch already gone) — not an error
+      } catch {
+        errors++;
+      }
+    }
+  }
+
+  // --- Phase B: Time-based stale branch cleanup (existing logic) ---
   const repoIndex = await listRepos();
   for (const repoEntry of repoIndex) {
     const repo = await getRepo(repoEntry.id);
