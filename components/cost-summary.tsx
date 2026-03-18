@@ -24,6 +24,11 @@ function isWithinDays(dateStr: string, days: number): boolean {
   return d >= cutoff;
 }
 
+/** Actual cost if recorded, otherwise fall back to budget estimate */
+function itemCost(item: WorkItem): number {
+  return item.execution?.actualCost ?? item.handoff?.budget ?? 0;
+}
+
 export function CostSummary({ workItems }: CostSummaryProps) {
   const executedItems = workItems.filter(
     (item) => item.handoff && item.execution?.startedAt
@@ -33,7 +38,7 @@ export function CostSummary({ workItems }: CostSummaryProps) {
     isToday(item.execution!.startedAt!)
   );
   const todaySpend = todayItems.reduce(
-    (sum, item) => sum + (item.handoff?.budget ?? 0),
+    (sum, item) => sum + itemCost(item),
     0
   );
 
@@ -41,14 +46,14 @@ export function CostSummary({ workItems }: CostSummaryProps) {
     isWithinDays(item.execution!.startedAt!, 7)
   );
   const weekSpend = weekItems.reduce(
-    (sum, item) => sum + (item.handoff?.budget ?? 0),
+    (sum, item) => sum + itemCost(item),
     0
   );
 
   const avgCost =
     executedItems.length > 0
       ? executedItems.reduce(
-          (sum, item) => sum + (item.handoff?.budget ?? 0),
+          (sum, item) => sum + itemCost(item),
           0
         ) / executedItems.length
       : 0;
@@ -58,11 +63,11 @@ export function CostSummary({ workItems }: CostSummaryProps) {
       item.status === "failed" || item.execution?.outcome === "failed"
   );
   const wasteSpend = wasteItems.reduce(
-    (sum, item) => sum + (item.handoff?.budget ?? 0),
+    (sum, item) => sum + itemCost(item),
     0
   );
   const totalBudget = executedItems.reduce(
-    (sum, item) => sum + (item.handoff?.budget ?? 0),
+    (sum, item) => sum + itemCost(item),
     0
   );
   const wastePct =
@@ -75,7 +80,7 @@ export function CostSummary({ workItems }: CostSummaryProps) {
   for (const item of executedItems) {
     const repo = item.targetRepo;
     const existing = repoMap.get(repo) ?? { total: 0, count: 0 };
-    existing.total += item.handoff?.budget ?? 0;
+    existing.total += itemCost(item);
     existing.count += 1;
     repoMap.set(repo, existing);
   }

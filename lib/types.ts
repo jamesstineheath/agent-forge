@@ -57,6 +57,8 @@ export interface WorkItem {
     retryCount?: number;
     /** Actual files modified by the PR (populated once PR exists, more accurate than estimated files) */
     filesModified?: string[];
+    /** Actual USD cost from Claude API execution (reported by pipeline after completion) */
+    actualCost?: number;
   } | null;
   escalation?: {
     id: string;
@@ -150,6 +152,7 @@ export const updateWorkItemSchema = z.object({
       outcome: z.enum(["merged", "failed", "parked", "reverted"]).optional(),
       retryCount: z.number().optional(),
       filesModified: z.array(z.string()).optional(),
+      actualCost: z.number().optional(),
     })
     .nullable()
     .optional(),

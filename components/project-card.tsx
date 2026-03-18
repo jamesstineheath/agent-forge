@@ -157,9 +157,11 @@ export function ProjectCard({
   const blocked = workItems.filter((wi) => wi.status === "blocked").length;
   const hasFailed = failed > 0;
 
+  const itemCost = (wi: WorkItem) => wi.execution?.actualCost ?? wi.handoff?.budget ?? 0;
+
   const spent = workItems
     .filter((wi) => wi.execution && wi.handoff)
-    .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
+    .reduce((sum, wi) => sum + itemCost(wi), 0);
   const totalBudget = workItems
     .filter((wi) => wi.handoff)
     .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
@@ -260,7 +262,7 @@ export function ProjectCard({
                   </span>
                   {item.handoff?.budget != null ? (
                     <span className="text-[11px] text-muted-foreground/60 font-mono">
-                      ${item.handoff.budget.toFixed(2)}
+                      ${itemCost(item).toFixed(2)}
                     </span>
                   ) : (
                     <span className="text-[11px] text-muted-foreground/40">&mdash;</span>

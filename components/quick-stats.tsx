@@ -26,6 +26,8 @@ export function QuickStats({ workItems }: QuickStatsProps) {
   const qualityDenom = merged + failedOrReverted;
   const qualityRate = qualityDenom > 0 ? Math.round((merged / qualityDenom) * 100) : 100;
 
+  const itemCost = (wi: WorkItem) => wi.execution?.actualCost ?? wi.handoff?.budget ?? 0;
+
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const todaySpend = workItems
@@ -35,7 +37,7 @@ export function QuickStats({ workItems }: QuickStatsProps) {
         new Date(wi.execution.startedAt) >= todayStart &&
         wi.handoff
     )
-    .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
+    .reduce((sum, wi) => sum + itemCost(wi), 0);
 
   const active = workItems.filter((wi) =>
     ACTIVE_STATUSES.includes(wi.status)
@@ -43,7 +45,7 @@ export function QuickStats({ workItems }: QuickStatsProps) {
 
   const totalSpent = workItems
     .filter((wi) => wi.execution && wi.handoff)
-    .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
+    .reduce((sum, wi) => sum + itemCost(wi), 0);
   const wasteSpent = workItems
     .filter(
       (wi) =>
@@ -51,7 +53,7 @@ export function QuickStats({ workItems }: QuickStatsProps) {
         (wi.execution?.outcome === "failed" ||
           wi.execution?.outcome === "reverted")
     )
-    .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
+    .reduce((sum, wi) => sum + itemCost(wi), 0);
   const wastePct = totalSpent > 0 ? Math.round((wasteSpent / totalSpent) * 100) : 0;
 
   const stats: { label: string; value: string; icon: LucideIcon; color: string }[] = [

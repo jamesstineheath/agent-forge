@@ -342,6 +342,34 @@ jobs:
             echo "No open PR found for branch ${{ steps.params.outputs.branch }}, skipping cost comment"
           fi
 
+      - name: Report cost to Agent Forge
+        if: always()
+        env:
+          AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
+          AGENT_FORGE_URL: ${{ vars.AGENT_FORGE_URL || 'https://agent-forge-phi.vercel.app' }}
+        run: |
+          COST_VALUE="${{ steps.cost.outputs.cost }}"
+          # Strip $ prefix if present
+          COST_VALUE="${COST_VALUE#\$}"
+
+          if [ "$COST_VALUE" != "unknown" ] && [ -n "$COST_VALUE" ]; then
+            echo "Reporting cost $COST_VALUE to Agent Forge..."
+            HTTP_STATUS=$(curl -s -o /tmp/cost-response.json -w "%{http_code}" \
+              -X POST "${AGENT_FORGE_URL}/api/costs/record" \
+              -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"branch\": \"${{ steps.params.outputs.branch }}\",
+                \"repo\": \"${{ github.repository }}\",
+                \"agentType\": \"executor\",
+                \"costUsd\": ${COST_VALUE}
+              }")
+            echo "Agent Forge response: $HTTP_STATUS"
+            cat /tmp/cost-response.json 2>/dev/null || true
+          else
+            echo "Cost unknown — skipping Agent Forge cost report"
+          fi
+
       - name: Report results
         if: always()
         run: |
