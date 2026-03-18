@@ -1,6 +1,28 @@
 import { randomUUID } from "crypto";
+import { loadJson, saveJson } from "../storage";
 import type { ATCEvent } from "../types";
 import { CycleTimeoutError } from "./types";
+
+const AGENT_RUN_PREFIX = "atc/agent-last-run";
+
+/**
+ * Record the last-run timestamp for a named agent.
+ * Called by each agent at the end of its cycle.
+ */
+export async function recordAgentRun(agentName: string): Promise<void> {
+  await saveJson(`${AGENT_RUN_PREFIX}/${agentName}`, {
+    lastRunAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Get the last-run timestamp for a named agent.
+ * Returns the ISO string or null if never recorded.
+ */
+export async function getAgentLastRun(agentName: string): Promise<string | null> {
+  const data = await loadJson<{ lastRunAt: string }>(`${AGENT_RUN_PREFIX}/${agentName}`);
+  return data?.lastRunAt ?? null;
+}
 
 /**
  * Parse "Estimated files:" from handoff markdown content.

@@ -12,6 +12,14 @@
     {
       "path": "/api/agents/health-monitor/cron",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/agents/project-manager/cron",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/agents/supervisor/cron",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
