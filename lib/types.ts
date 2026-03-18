@@ -60,6 +60,8 @@ export interface WorkItem {
     /** Actual USD cost from Claude API execution (reported by pipeline after completion) */
     actualCost?: number;
   } | null;
+  /** Max allowed code-CI retries (default 1). Used by health monitor for code failure retry logic. */
+  retryBudget?: number;
   escalation?: {
     id: string;
     reason: string;
@@ -284,7 +286,7 @@ export interface Project {
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved" | "ci_code_retry_triggered" | "ci_code_retry_exhausted";
   workItemId: string;
   details: string;
   previousStatus?: string;
