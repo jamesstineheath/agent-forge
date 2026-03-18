@@ -552,6 +552,54 @@ async function _runATCCycleInner(): Promise<ATCState> {
     console.error('[ATC §14] Unexpected error in PM Agent sweep:', error);
   }
 
+  // §16: Periodic Full Re-Index (stale repos >7 days)
+  try {
+    const { loadRepoSnapshot } = await import("./knowledge-graph/storage");
+    const { fullIndex } = await import("./knowledge-graph/indexer");
+    const allRepos = await listRepos();
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    let fullIndexCount = 0;
+
+    for (const repoEntry of allRepos) {
+      if (fullIndexCount >= 1) {
+        console.log(`[ATC §16] Full re-index cap reached (1/cycle), skipping remaining repos`);
+        break;
+      }
+
+      const repo = await getRepo(repoEntry.id);
+      if (!repo) continue;
+
+      const snapshot = await loadRepoSnapshot(repo.fullName);
+      const isStale = !snapshot || !snapshot.indexedAt ||
+        (now.getTime() - new Date(snapshot.indexedAt).getTime()) > SEVEN_DAYS_MS;
+
+      if (isStale) {
+        const lastIndexed = snapshot?.indexedAt
+          ? new Date(snapshot.indexedAt).toISOString()
+          : 'never';
+        console.log(
+          `[ATC §16] ${repo.fullName} snapshot stale (lastIndexed: ${lastIndexed}), triggering full re-index`
+        );
+        try {
+          const result = await fullIndex(repo.fullName);
+          console.log(
+            `[ATC §16] Full re-index complete for ${repo.fullName} (${result.entityCount} entities)`
+          );
+        } catch (err) {
+          console.warn(
+            `[ATC §16] Full re-index failed for ${repo.fullName}:`,
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+        fullIndexCount++;
+      } else {
+        console.log(`[ATC §16] ${repo.fullName} snapshot is fresh, skipping`);
+      }
+    }
+  } catch (err) {
+    console.error("[ATC §16] Periodic re-index check failed:", err);
+  }
+
   return state;
 }
 
