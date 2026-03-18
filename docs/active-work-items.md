@@ -4,20 +4,10 @@
 
 ## Currently Executing
 
-- **Deprecate ATC monolith cron — verify agents cover all responsibilities then disable** (jamesstineheath/agent-forge)
-  - Branch: `feat/deprecate-atc-monolith-cron-verify-agents-cover-al`
-  - Files: vercel.json, lib/atc.ts, docs/SYSTEM_MAP.md, lib/orchestrator.ts, lib/decomposer.ts, lib/atc/dispatcher.ts, lib/atc/health-monitor.ts, lib/pm-agent.ts, app/api/agents/supervisor/cron/route.ts
-  - Started: 2026-03-18T22:27:17.683Z
-
 - **Preference Profile Types and Storage Layer** (jamesstineheath/personal-assistant)
   - Branch: `fix/preference-profile-types-and-storage-layer`
   - Files: lib/realestate/preferences.ts, lib/realestate/types.ts
   - Started: 2026-03-18T22:22:03.043Z
-
-- **Cost Estimator Utility** (jamesstineheath/personal-assistant)
-  - Branch: `fix/cost-estimator-utility`
-  - Files: lib/realestate/cost-estimator.ts
-  - Started: 2026-03-18T22:21:36.841Z
 
 ## In Review
 
@@ -30,6 +20,10 @@
   - Branch: `fix/dashboard-qa-results-section-api-route`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/287
   - Files: app/api/qa-results/route.ts, handoffs/dashboard-qa-results-section-api-route.md
+
+- **Deprecate ATC monolith cron — verify agents cover all responsibilities then disable** (jamesstineheath/agent-forge)
+  - Branch: `feat/deprecate-atc-monolith-cron-verify-agents-cover-al`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/293
 
 ## Queued for Dispatch
 
