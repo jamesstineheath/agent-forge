@@ -9,9 +9,11 @@ import {
   rebasePR,
   closePRWithReason,
   deleteBranch,
+  triggerWorkflow,
 } from "../github";
+import { escalate } from "../escalation";
 import { incrementalIndex } from "../knowledge-graph/indexer";
-import type { ATCState } from "../types";
+import type { ATCEvent, ATCState, WorkItem } from "../types";
 import type { CycleContext } from "./types";
 import {
   STALL_TIMEOUT_EXECUTING_NO_RUN_MINUTES,
@@ -22,6 +24,123 @@ import {
 } from "./types";
 import { parseEstimatedFiles, makeEvent } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
+
+// Default code-CI retry budget (distinct from general MAX_RETRIES which resets to ready)
+const CODE_CI_RETRY_BUDGET_DEFAULT = 1;
+
+// Idempotency window: don't re-trigger a code retry within this window
+const CODE_RETRY_IDEMPOTENCY_MINUTES = 15;
+
+/**
+ * Stub CI failure classifier.
+ * TODO: replace with real classifier from CI failure classifier work item once merged.
+ */
+function classifyCIFailure(conclusion: string | null): { type: 'code' | 'infra' | 'flaky'; errorLogs: string } {
+  // Treat all non-success, non-skipped failures as 'code' until classifier is merged
+  return {
+    type: 'code',
+    errorLogs: `Workflow failed with conclusion: ${conclusion ?? 'unknown'}`,
+  };
+}
+
+/**
+ * Handle a CI failure classified as 'code' by triggering a re-execution or escalating.
+ */
+export async function handleCodeCIFailure(
+  item: WorkItem,
+  errorLogs: string,
+  ctx: CycleContext
+): Promise<void> {
+  const retryBudget = item.retryBudget ?? CODE_CI_RETRY_BUDGET_DEFAULT;
+  const retryCount = item.execution?.retryCount ?? 0;
+
+  if (retryCount < retryBudget) {
+    // Idempotency guard: check if a retry was recently triggered
+    const recentRetryEvent = ctx.events.find(
+      (e) =>
+        e.workItemId === item.id &&
+        e.type === 'ci_code_retry_triggered' as ATCEvent['type'] &&
+        (Date.now() - new Date(e.timestamp).getTime()) < CODE_RETRY_IDEMPOTENCY_MINUTES * 60_000
+    );
+    if (recentRetryEvent) {
+      console.log(
+        `[HealthMonitor] Skipping duplicate code retry for ${item.id} — triggered ${CODE_RETRY_IDEMPOTENCY_MINUTES}min ago`
+      );
+      return;
+    }
+
+    const retryContext = JSON.stringify({
+      previousAttempt: retryCount + 1,
+      errorLogs: errorLogs.slice(0, 4000),
+      workItemId: item.id,
+      timestamp: new Date().toISOString(),
+    });
+
+    const branch = item.handoff?.branch;
+    if (!branch) {
+      console.warn(`[HealthMonitor] Cannot retry ${item.id} — no handoff branch`);
+      return;
+    }
+
+    await triggerWorkflow(
+      item.targetRepo,
+      'execute-handoff.yml',
+      branch,
+      {
+        branch,
+        handoff_file: item.handoff?.content ? `handoffs/${item.id}.md` : '',
+        retry_context: retryContext,
+      }
+    );
+
+    await updateWorkItem(item.id, {
+      execution: {
+        ...item.execution,
+        retryCount: retryCount + 1,
+      },
+    });
+
+    const event = makeEvent(
+      'ci_code_retry_triggered' as ATCEvent['type'],
+      item.id,
+      item.status,
+      item.status,
+      `Code CI retry ${retryCount + 1}/${retryBudget}: re-dispatched execute-handoff with error context`
+    );
+    ctx.events.push(event);
+
+    console.log(
+      `[HealthMonitor] ci.code_retry_triggered workItem=${item.id} attempt=${retryCount + 1}/${retryBudget}`
+    );
+  } else {
+    // Budget exhausted — mark failed and escalate
+    await updateWorkItem(item.id, { status: 'failed' });
+
+    await escalate(
+      item.id,
+      `CI failed with code error after ${retryCount} retry attempt(s). Manual intervention required.`,
+      0.8,
+      {
+        errorContext: errorLogs.slice(0, 2000),
+        retryCount,
+        retryBudget,
+      }
+    );
+
+    const event = makeEvent(
+      'ci_code_retry_exhausted' as ATCEvent['type'],
+      item.id,
+      item.status,
+      'failed',
+      `Code CI retry budget exhausted (${retryCount}/${retryBudget}). Escalation created.`
+    );
+    ctx.events.push(event);
+
+    console.log(
+      `[HealthMonitor] ci.code_retry_exhausted workItem=${item.id} — marked failed, escalation created`
+    );
+  }
+}
 
 /**
  * Health Monitor agent: ensures every active execution progresses or gets unstuck.
@@ -294,23 +413,48 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         latestRun.conclusion !== "skipped" &&
         latestRun.conclusion !== null
       ) {
-        const event = makeEvent(
-          "status_change",
-          item.id,
-          "executing",
-          "failed",
-          `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion} (reason: workflow_failed)`
-        );
-        await updateWorkItem(item.id, {
-          status: "failed",
-          execution: {
-            ...item.execution,
-            workflowRunId: latestRun.id,
-            completedAt: now.toISOString(),
-            outcome: "failed",
-          },
-        });
-        events.push(event);
+        // Classify the CI failure and attempt code retry if eligible
+        const { type: failureType, errorLogs } = classifyCIFailure(latestRun.conclusion);
+        const retryBudget = item.retryBudget ?? CODE_CI_RETRY_BUDGET_DEFAULT;
+        const currentRetryCount = item.execution?.retryCount ?? 0;
+
+        if (failureType === 'code' && currentRetryCount < retryBudget) {
+          // Update workflow run info before retry
+          await updateWorkItem(item.id, {
+            execution: {
+              ...item.execution,
+              workflowRunId: latestRun.id,
+            },
+          });
+          // Re-fetch item with updated execution data
+          const updatedItem = await getWorkItem(item.id);
+          if (updatedItem) {
+            await handleCodeCIFailure(updatedItem, errorLogs, ctx);
+          }
+        } else {
+          const event = makeEvent(
+            "status_change",
+            item.id,
+            "executing",
+            "failed",
+            `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion} (reason: workflow_failed)`
+          );
+          await updateWorkItem(item.id, {
+            status: "failed",
+            execution: {
+              ...item.execution,
+              workflowRunId: latestRun.id,
+              completedAt: now.toISOString(),
+              outcome: "failed",
+            },
+          });
+          events.push(event);
+
+          // If code failure with exhausted budget, escalate
+          if (failureType === 'code' && currentRetryCount >= retryBudget) {
+            await handleCodeCIFailure(item, errorLogs, ctx);
+          }
+        }
       } else if (
         latestRun &&
         latestRun.status !== "completed" &&
