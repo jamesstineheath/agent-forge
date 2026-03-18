@@ -20,26 +20,26 @@
 <!-- Each entry: Date | Action | Entity | Outcome (Correct/Reversed/Caused Issues/Missed) | Notes -->
 | Date | Action | Entity | Outcome | Notes |
 |---|---|---|---|---|
-| 2026-03-15 | premature | PR #28 feat: add fast-path skip for low-risk spec reviews | premature |  |
-| 2026-03-15 | caused_issues | PR #24 fix: env var cleanup verification — zero ESCALATION_SECRET references confirmed | caused_issues |  |
-| 2026-03-15 | caused_issues | PR #27 feat: workflow template storage and template reader | caused_issues |  |
-| 2026-03-15 | premature | PR #26 feat: add bootstrap types to lib/types.ts | premature |  |
-| 2026-03-15 | caused_issues | PR #25 fix: ATC dedup guard, orphan cleanup, debug endpoint removal | caused_issues |  |
-| 2026-03-15 | caused_issues | PR #23 refactor: rename ESCALATION_SECRET to AGENT_FORGE_API_SECRET | caused_issues |  |
-| 2026-03-15 | caused_issues | PR #22 feat: Handoff Lifecycle Orchestrator | caused_issues |  |
-| 2026-03-15 | caused_issues | PR #21 feat: CI feedback loop (CI wait + Code Review gate + stuck-PR monitor) | caused_issues |  |
-| 2026-03-14 | correct | PR #20 feat: add Bearer token auth to work items API | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #19 feat: ATC decomposer wiring + Gmail summary + E2E test (H16) | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #18 feat: dependency-aware dispatch + project lifecycle (Phase 2e-3, H15) | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #17 feat: Plan Decomposer core (Phase 2e-3, H14) | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #15 feat: wire escalation API auth + pipeline agent integration | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #14 feat: Gmail integration for escalation emails | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #13 feat: Escalation state machine (Phase 2f) | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #12 feat: add Notion projects integration | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #11 feat: add periodic stale branch cleanup to ATC | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #7 feat: queue management + auto-dispatch | correct | Assessed 2026-03-15 |
-| 2026-03-14 | correct | PR #10 feat: Phase 2c multi-repo support | correct | Assessed 2026-03-15 |
-| 2026-03-13 | correct | PR #4 feat: orchestrator dispatch engine | correct | Assessed 2026-03-15 |
+| 2026-03-15 | premature | PR #28 PR #28 feat: add fast-path skip for low-risk spec reviews | premature |  |
+| 2026-03-15 | caused_issues | PR #24 PR #24 fix: env var cleanup verification — zero ESCALATION_SECRET references confirmed | caused_issues |  |
+| 2026-03-15 | caused_issues | PR #27 PR #27 feat: workflow template storage and template reader | caused_issues |  |
+| 2026-03-15 | premature | PR #26 PR #26 feat: add bootstrap types to lib/types.ts | premature |  |
+| 2026-03-15 | caused_issues | PR #25 PR #25 fix: ATC dedup guard, orphan cleanup, debug endpoint removal | caused_issues |  |
+| 2026-03-15 | caused_issues | PR #23 PR #23 refactor: rename ESCALATION_SECRET to AGENT_FORGE_API_SECRET | caused_issues |  |
+| 2026-03-15 | caused_issues | PR #22 PR #22 feat: Handoff Lifecycle Orchestrator | caused_issues |  |
+| 2026-03-15 | caused_issues | PR #21 PR #21 feat: CI feedback loop (CI wait + Code Review gate + stuck-PR monitor) | caused_issues |  |
+| 2026-03-14 | correct | PR #20 PR #20 feat: add Bearer token auth to work items API | correct |  |
+| 2026-03-14 | correct | PR #19 PR #19 feat: ATC decomposer wiring + Gmail summary + E2E test (H16) | correct |  |
+| 2026-03-14 | correct | PR #18 PR #18 feat: dependency-aware dispatch + project lifecycle (Phase 2e-3, H15) | correct |  |
+| 2026-03-14 | correct | PR #17 PR #17 feat: Plan Decomposer core (Phase 2e-3, H14) | correct |  |
+| 2026-03-14 | correct | PR #15 PR #15 feat: wire escalation API auth + pipeline agent integration | correct |  |
+| 2026-03-14 | correct | PR #14 PR #14 feat: Gmail integration for escalation emails | correct |  |
+| 2026-03-14 | correct | PR #13 PR #13 feat: Escalation state machine (Phase 2f) | correct |  |
+| 2026-03-14 | correct | PR #12 PR #12 feat: add Notion projects integration | correct |  |
+| 2026-03-14 | correct | PR #11 PR #11 feat: add periodic stale branch cleanup to ATC | correct |  |
+| 2026-03-14 | correct | PR #7 PR #7 feat: queue management + auto-dispatch | correct |  |
+| 2026-03-14 | correct | PR #10 PR #10 feat: Phase 2c multi-repo support | correct |  |
+| 2026-03-13 | correct | PR #4 PR #4 feat: orchestrator dispatch engine | correct |  |
 
 ## Lessons Learned (last 15)
 
@@ -64,5 +64,5 @@
 - Reversed: 0
 - Caused Issues: 9
 - Missed: 0
-- Last Assessment: 2026-03-15
+- Last Assessment: 2026-03-18
 - Assessment Frequency: daily (9am UTC)
