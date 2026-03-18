@@ -4,10 +4,10 @@
 
 ## Currently Executing
 
-- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
-  - Branch: `feat/create-pattern-detection-module-srcpattern-detecto`
-  - Files: .github/actions/tlm-feedback-compiler/src/pattern-detector.ts, .github/actions/tlm-feedback-compiler/src/types.ts
-  - Started: 2026-03-18T21:17:36.025Z
+- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `fix/create-compiler-prompt-module-srccompiler-promptts`
+  - Files: .github/actions/tlm-feedback-compiler/src/compiler-prompt.ts
+  - Started: 2026-03-18T21:22:52.505Z
 
 ## In Review
 
@@ -28,11 +28,7 @@
 
 ## Queued for Dispatch
 
-- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
-
 - **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
-
-- **Create main entry point (src/index.ts)** (jamesstineheath/personal-assistant)
 
 - **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
 
