@@ -8,3 +8,7 @@
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
   - Files: handoffs/pa-auth-bypass-middleware-for-qa-agent-smoke-tests.md, proxy.ts
+
+- **Dashboard QA Results Section — UI Component** (jamesstineheath/agent-forge)
+  - Branch: `fix/dashboard-qa-results-section-ui-component`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/268
