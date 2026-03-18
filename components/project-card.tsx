@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/utils";
 import {
   CheckCircle2,
   Play,
@@ -10,6 +11,8 @@ import {
   ChevronDown,
   ChevronRight,
   AlertTriangle,
+  GitPullRequest,
+  Clock,
 } from "lucide-react";
 import { ProgressBar } from "@/components/progress-bar";
 import type { Project, WorkItem } from "@/lib/types";
@@ -22,37 +25,37 @@ const ACTIVE_STATUSES: WorkItem["status"][] = [
 
 const statusColor = (s: string) =>
   ({
-    merged: "text-emerald-400",
-    completed: "text-emerald-400",
-    reviewing: "text-blue-400",
-    executing: "text-amber-400",
-    generating: "text-amber-400",
-    queued: "text-zinc-400",
-    ready: "text-zinc-400",
-    blocked: "text-orange-400",
-    failed: "text-red-400",
-    draft: "text-zinc-500",
-  })[s] || "text-zinc-400";
+    merged: "text-status-merged",
+    completed: "text-status-merged",
+    reviewing: "text-status-reviewing",
+    executing: "text-status-executing",
+    generating: "text-status-executing",
+    queued: "text-status-queued",
+    ready: "text-status-queued",
+    blocked: "text-status-blocked",
+    failed: "text-status-blocked",
+    draft: "text-muted-foreground",
+  })[s] || "text-muted-foreground";
 
 const statusBg = (s: string) =>
   ({
-    merged: "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
-    completed: "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
-    Complete: "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
-    reviewing: "bg-blue-400/10 text-blue-400 border-blue-400/20",
-    executing: "bg-amber-400/10 text-amber-400 border-amber-400/20",
-    Execute: "bg-amber-400/10 text-amber-400 border-amber-400/20",
-    Executing: "bg-amber-400/10 text-amber-400 border-amber-400/20",
-    generating: "bg-amber-400/10 text-amber-400 border-amber-400/20",
-    queued: "bg-zinc-400/10 text-zinc-400 border-zinc-400/20",
-    ready: "bg-zinc-400/10 text-zinc-400 border-zinc-400/20",
-    Ready: "bg-zinc-400/10 text-zinc-400 border-zinc-400/20",
-    blocked: "bg-orange-400/10 text-orange-400 border-orange-400/20",
-    failed: "bg-red-400/10 text-red-400 border-red-400/20",
-    Failed: "bg-red-400/10 text-red-400 border-red-400/20",
-    Draft: "bg-zinc-400/10 text-zinc-500 border-zinc-500/20",
-    draft: "bg-zinc-400/10 text-zinc-500 border-zinc-500/20",
-  })[s] || "bg-zinc-400/10 text-zinc-500 border-zinc-500/20";
+    merged: "bg-status-merged/10 text-status-merged border-status-merged/20",
+    completed: "bg-status-merged/10 text-status-merged border-status-merged/20",
+    Complete: "bg-status-merged/10 text-status-merged border-status-merged/20",
+    reviewing: "bg-status-reviewing/10 text-status-reviewing border-status-reviewing/20",
+    executing: "bg-status-executing/10 text-status-executing border-status-executing/20",
+    Execute: "bg-status-executing/10 text-status-executing border-status-executing/20",
+    Executing: "bg-status-executing/10 text-status-executing border-status-executing/20",
+    generating: "bg-status-executing/10 text-status-executing border-status-executing/20",
+    queued: "bg-status-queued/10 text-status-queued border-status-queued/20",
+    ready: "bg-status-queued/10 text-status-queued border-status-queued/20",
+    Ready: "bg-status-queued/10 text-status-queued border-status-queued/20",
+    blocked: "bg-status-blocked/10 text-status-blocked border-status-blocked/20",
+    failed: "bg-status-blocked/10 text-status-blocked border-status-blocked/20",
+    Failed: "bg-status-blocked/10 text-status-blocked border-status-blocked/20",
+    Draft: "bg-secondary text-muted-foreground border-border",
+    draft: "bg-secondary text-muted-foreground border-border",
+  })[s] || "bg-secondary text-muted-foreground border-border";
 
 function StatusIcon({ status }: { status: string }) {
   const cls = statusColor(status);
@@ -96,33 +99,34 @@ function formatMergeTime(completedAt?: string): string {
 function WorkItemMeta({ item }: { item: WorkItem }) {
   if (ACTIVE_STATUSES.includes(item.status)) {
     return (
-      <span className="text-xs text-amber-400/70">
+      <span className="text-xs text-status-executing/70">
         {formatElapsed(item.execution?.startedAt)}
       </span>
     );
   }
   if (item.status === "reviewing" && item.execution?.prNumber) {
     return (
-      <span className="text-xs text-blue-400/70">
-        PR #{item.execution.prNumber}
+      <span className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-primary">
+        <GitPullRequest className="h-2.5 w-2.5" />
+        #{item.execution.prNumber}
       </span>
     );
   }
   if (item.status === "blocked" && item.escalation?.reason) {
     return (
-      <span className="text-xs text-zinc-500">{item.escalation.reason}</span>
+      <span className="text-xs text-muted-foreground/60">{item.escalation.reason}</span>
     );
   }
   if (item.status === "failed") {
     return (
-      <span className="text-xs text-red-400/70">
+      <span className="text-xs text-status-blocked/70">
         {item.execution?.outcome === "reverted" ? "Reverted" : "Failed"}
       </span>
     );
   }
   if (item.status === "merged") {
     return (
-      <span className="text-xs text-emerald-400/70">
+      <span className="text-xs text-status-merged/70">
         {formatMergeTime(item.execution?.completedAt)}
       </span>
     );
@@ -160,54 +164,57 @@ export function ProjectCard({
     .filter((wi) => wi.handoff)
     .reduce((sum, wi) => sum + (wi.handoff?.budget ?? 0), 0);
 
-  const spentRatio = totalBudget > 0 ? spent / totalBudget : 0;
-  const costPct = Math.round(spentRatio * 100);
+  const costPct = totalBudget > 0 ? Math.round((spent / totalBudget) * 100) : 0;
 
   return (
     <div
-      className={`rounded-xl border ${hasFailed ? "border-red-500/30 bg-red-500/5" : "border-zinc-800 bg-zinc-900"} overflow-hidden`}
+      className={cn(
+        "rounded-xl card-elevated overflow-hidden bg-surface-1",
+        hasFailed && "ring-1 ring-status-blocked/15"
+      )}
     >
       <button
         onClick={onToggle}
-        className="w-full text-left p-4 flex items-start gap-3 hover:bg-zinc-800/50 transition-colors"
+        className="w-full text-left p-4 flex items-start gap-3 hover:bg-accent/30 transition-colors"
       >
         <div className="mt-0.5">
           {expanded ? (
-            <ChevronDown size={16} className="text-zinc-400" />
+            <ChevronDown size={16} className="text-muted-foreground" />
           ) : (
-            <ChevronRight size={16} className="text-zinc-400" />
+            <ChevronRight size={16} className="text-muted-foreground" />
           )}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-medium text-zinc-100 text-sm">
+            <span className="font-display font-bold text-foreground text-sm">
               {project.title}
             </span>
             <span
-              className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${statusBg(project.status)}`}
+              className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-full border", statusBg(project.status))}
             >
               {project.status}
             </span>
             {hasFailed && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/20 flex items-center gap-1">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-status-blocked/10 text-status-blocked border border-status-blocked/20 flex items-center gap-1">
                 <AlertTriangle size={10} /> has failures
               </span>
             )}
             {totalBudget > 0 && (
               <span
-                className={`text-[10px] ml-auto px-1.5 py-0.5 rounded-full border ${
+                className={cn(
+                  "text-[10px] font-mono ml-auto px-1.5 py-0.5 rounded-full border",
                   costPct > 90
-                    ? "bg-red-400/10 text-red-400 border-red-400/20"
+                    ? "bg-status-blocked/10 text-status-blocked border-status-blocked/20"
                     : costPct > 70
-                      ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
-                      : "bg-zinc-400/10 text-zinc-400 border-zinc-400/20"
-                }`}
+                      ? "bg-status-reviewing/10 text-status-reviewing border-status-reviewing/20"
+                      : "bg-secondary text-muted-foreground border-border"
+                )}
               >
                 ${spent.toFixed(2)} / ${totalBudget.toFixed(0)}
               </span>
             )}
           </div>
-          <div className="text-xs text-zinc-500 mb-2">
+          <div className="text-xs text-muted-foreground/60 mb-2">
             {project.targetRepo} &middot; {project.projectId}
           </div>
           <ProgressBar
@@ -220,25 +227,23 @@ export function ProjectCard({
         </div>
       </button>
       {expanded && (
-        <div className="border-t border-zinc-800 px-4 py-2">
+        <div className="border-t border-border px-4 py-2">
           {workItems.length > 0 ? (
             <>
-              {/* Cost Summary */}
               {totalBudget > 0 && (
-                <div className="flex flex-wrap items-center gap-2 sm:gap-4 py-2 mb-1 text-xs border-b border-zinc-800">
-                  <div className="text-zinc-400">
-                    <span className="font-medium text-zinc-300">Total Budget:</span>{" "}
+                <div className="flex flex-wrap items-center gap-2 sm:gap-4 py-2 mb-1 text-xs border-b border-border">
+                  <div className="text-muted-foreground">
+                    <span className="font-medium text-foreground">Total Budget:</span>{" "}
                     ${totalBudget.toFixed(2)}
                   </div>
-                  <div className="text-emerald-400/80">
+                  <div className="text-status-merged">
                     Spent: ${spent.toFixed(2)}
                   </div>
-                  <div className="text-zinc-400">
+                  <div className="text-muted-foreground">
                     Remaining: ${(totalBudget - spent).toFixed(2)}
                   </div>
                 </div>
               )}
-              {/* Work Items */}
               {workItems.map((item) => (
                 <div
                   key={item.id}
@@ -246,18 +251,21 @@ export function ProjectCard({
                 >
                   <StatusIcon status={item.status} />
                   <span
-                    className={`flex-1 truncate ${item.status === "blocked" ? "text-zinc-500" : "text-zinc-300"}`}
+                    className={cn(
+                      "flex-1 truncate",
+                      item.status === "blocked" ? "text-muted-foreground" : "text-foreground"
+                    )}
                   >
                     {item.title}
                   </span>
                   {item.handoff?.budget != null ? (
-                    <span className="text-[11px] text-zinc-500">
+                    <span className="text-[11px] text-muted-foreground/60 font-mono">
                       ${item.handoff.budget.toFixed(2)}
                     </span>
                   ) : (
-                    <span className="text-[11px] text-zinc-600">&mdash;</span>
+                    <span className="text-[11px] text-muted-foreground/40">&mdash;</span>
                   )}
-                  <span className={`text-[10px] px-1 py-0.5 rounded ${statusBg(item.status)}`}>
+                  <span className={cn("text-[10px] px-1 py-0.5 rounded font-semibold", statusBg(item.status))}>
                     {item.status}
                   </span>
                   <WorkItemMeta item={item} />
@@ -265,9 +273,9 @@ export function ProjectCard({
               ))}
             </>
           ) : (
-            <div className="py-2 text-xs text-zinc-500">
+            <div className="py-2 text-xs text-muted-foreground/60">
               No work items linked to this project yet. Work items with{" "}
-              <code className="text-zinc-400">source.sourceId: &quot;{project.projectId}&quot;</code>{" "}
+              <code className="text-muted-foreground">source.sourceId: &quot;{project.projectId}&quot;</code>{" "}
               will appear here.
             </div>
           )}

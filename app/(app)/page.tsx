@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ArrowRight } from "lucide-react";
+import { CheckCircle2, ArrowRight, AlertTriangle } from "lucide-react";
 import { QuickStats } from "@/components/quick-stats";
 import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
@@ -25,55 +25,6 @@ function formatRelativeTime(ts?: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
-}
-
-function SystemHealth({
-  atcState,
-  repos,
-  atcLoading,
-}: {
-  atcState: ReturnType<typeof useATCState>["data"];
-  repos: ReturnType<typeof useRepos>["data"];
-  atcLoading: boolean;
-}) {
-  if (atcLoading) {
-    return (
-      <div className="text-xs text-zinc-400">Loading system status...</div>
-    );
-  }
-
-  const queued = atcState?.queuedItems ?? 0;
-
-  const repoExecCounts: Record<string, number> = {};
-  atcState?.activeExecutions?.forEach((exec) => {
-    repoExecCounts[exec.targetRepo] = (repoExecCounts[exec.targetRepo] ?? 0) + 1;
-  });
-  const topRepo = Object.entries(repoExecCounts).sort((a, b) => b[1] - a[1])[0];
-  const topRepoConfig = topRepo
-    ? repos?.find((r) => r.fullName === topRepo[0] || r.shortName === topRepo[0])
-    : undefined;
-
-  const concurrencyStr = topRepo
-    ? `Concurrency: ${topRepo[1]}/${topRepoConfig?.concurrencyLimit ?? "?"} on ${topRepo[0]}`
-    : `Concurrency: 0 active`;
-
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-xs text-zinc-400 px-1 py-2">
-      <div className="flex items-center gap-1.5">
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-        <span>ATC: {atcState ? "healthy" : "unknown"}</span>
-        <span className="text-zinc-600">
-          &middot; last sweep {formatRelativeTime(atcState?.lastRunAt)}
-        </span>
-      </div>
-      <div className="sm:border-l sm:border-zinc-800 sm:pl-4 flex items-center gap-1.5">
-        <span>{concurrencyStr}</span>
-      </div>
-      <div className="sm:border-l sm:border-zinc-800 sm:pl-4 flex items-center gap-1.5">
-        <span>{queued} queued across all repos</span>
-      </div>
-    </div>
-  );
 }
 
 export default function DashboardPage() {
@@ -137,107 +88,124 @@ export default function DashboardPage() {
     }) ?? [];
 
   return (
-    <div className="space-y-6">
-      {/* Title + System Health */}
-      <div>
-        <h1 className="text-lg font-semibold text-zinc-100">Dashboard</h1>
-        <SystemHealth
-          atcState={atcState}
-          repos={repos}
-          atcLoading={atcLoading || reposLoading}
-        />
-      </div>
-
-      {/* Quick Stats */}
-      {itemsLoading ? (
-        <div className="text-sm text-zinc-400">Loading stats...</div>
-      ) : (
-        <QuickStats workItems={workItems ?? []} />
-      )}
-
-      {/* ATC Performance Metrics */}
-      <ATCMetricsPanel />
-
-      {/* Needs Attention (Escalations) */}
-      {!escalationsLoading && escalations && escalations.length > 0 && (
-        <div className="space-y-2">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-            Needs attention
-          </div>
-          <div className="space-y-2">
-            {escalations.map((esc) => {
-              const workItem = workItems?.find(
-                (wi) => wi.id === esc.workItemId
-              );
-              return (
-                <EscalationCard
-                  key={esc.id}
-                  escalation={esc}
-                  workItemTitle={workItem?.title}
-                  onResolve={() => mutateEscalations()}
-                  onDismiss={() => handleDismiss(esc.id)}
-                />
-              );
-            })}
+    <>
+      <header className="sticky top-0 z-10 glass-header border-b border-border">
+        <div className="flex items-center justify-between px-6 py-3.5">
+          <div>
+            <h1 className="text-lg font-display font-bold text-foreground">Dashboard</h1>
+            <p className="text-[11px] font-medium text-muted-foreground">
+              System overview and active work
+            </p>
           </div>
         </div>
-      )}
+      </header>
 
-      {/* Projects */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-            Projects
-          </div>
-          <button className="text-xs text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1">
-            New work item <ArrowRight size={12} />
-          </button>
-        </div>
-        {projectsLoading ? (
-          <div className="text-sm text-zinc-400">Loading projects...</div>
-        ) : !projects || projects.length === 0 ? (
-          <div className="text-sm text-zinc-400">
-            No projects found. Projects are managed in Notion.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {projects.map((project) => (
-              <ProjectCard
-                key={project.id}
-                project={project}
-                workItems={getProjectWorkItems(project.projectId)}
-                expanded={expandedProjects.has(project.id)}
-                onToggle={() => toggleProject(project.id)}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
+        <div className="max-w-5xl space-y-6">
+          {/* Quick Stats */}
+          {itemsLoading ? (
+            <div className="text-sm text-muted-foreground">Loading stats...</div>
+          ) : (
+            <QuickStats workItems={workItems ?? []} />
+          )}
 
-      {/* Activity Feed */}
-      <ActivityFeed />
+          {/* ATC Performance Metrics */}
+          <ATCMetricsPanel />
 
-      {/* Merged Today */}
-      {mergedToday.length > 0 && (
-        <div className="space-y-2">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
-            Merged today
-          </div>
-          {mergedToday.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center gap-2 text-sm text-zinc-300 py-1 min-w-0"
-            >
-              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
-              <span className="truncate">{item.title}</span>
-              <span className="text-xs text-zinc-500 ml-auto shrink-0">
-                {item.targetRepo} &middot;{" "}
-                {formatRelativeTime(item.execution?.completedAt ?? item.updatedAt)}
-              </span>
+          {/* Needs Attention (Escalations) */}
+          {!escalationsLoading && escalations && escalations.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2.5">
+                <div className="relative flex h-6 w-6 items-center justify-center rounded-lg bg-status-blocked/15">
+                  <AlertTriangle className="h-3.5 w-3.5 text-status-blocked" />
+                </div>
+                <h2 className="text-sm font-display font-bold text-foreground">
+                  Needs Attention
+                </h2>
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-status-blocked text-[10px] font-bold tabular-nums text-white">
+                  {escalations.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {escalations.map((esc) => {
+                  const workItem = workItems?.find(
+                    (wi) => wi.id === esc.workItemId
+                  );
+                  return (
+                    <EscalationCard
+                      key={esc.id}
+                      escalation={esc}
+                      workItemTitle={workItem?.title}
+                      onResolve={() => mutateEscalations()}
+                      onDismiss={() => handleDismiss(esc.id)}
+                    />
+                  );
+                })}
+              </div>
             </div>
-          ))}
+          )}
+
+          {/* Projects */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Projects
+              </h2>
+              <button className="text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1 font-medium">
+                New work item <ArrowRight size={12} />
+              </button>
+            </div>
+            {projectsLoading ? (
+              <div className="text-sm text-muted-foreground">Loading projects...</div>
+            ) : !projects || projects.length === 0 ? (
+              <div className="rounded-xl card-elevated bg-surface-1 p-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No projects found. Projects are managed in Notion.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {projects.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    workItems={getProjectWorkItems(project.projectId)}
+                    expanded={expandedProjects.has(project.id)}
+                    onToggle={() => toggleProject(project.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Activity Feed */}
+          <ActivityFeed />
+
+          {/* Merged Today */}
+          {mergedToday.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Merged today
+              </h2>
+              <div className="rounded-xl card-elevated bg-surface-1 p-4 space-y-1">
+                {mergedToday.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-2.5 text-sm py-1.5 min-w-0"
+                  >
+                    <CheckCircle2 size={14} className="text-status-merged shrink-0" />
+                    <span className="truncate text-foreground">{item.title}</span>
+                    <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0 font-mono">
+                      {item.targetRepo} &middot;{" "}
+                      {formatRelativeTime(item.execution?.completedAt ?? item.updatedAt)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }

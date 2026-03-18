@@ -76,12 +76,12 @@ export function BlockedSummary({ workItems }: BlockedSummaryProps) {
   }
 
   return (
-    <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-3">
-      <div className="text-xs font-medium text-orange-400 mb-1">
+    <div className="rounded-lg border border-status-reviewing/20 bg-status-reviewing/5 p-3">
+      <div className="text-xs font-medium text-status-reviewing mb-1">
         {blockedItems.length} item{blockedItems.length !== 1 ? "s" : ""} blocked
       </div>
       {sentences.map((s, i) => (
-        <div key={i} className="text-xs text-zinc-500">
+        <div key={i} className="text-xs text-muted-foreground/60">
           {s}
         </div>
       ))}

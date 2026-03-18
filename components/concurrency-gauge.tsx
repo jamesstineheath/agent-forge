@@ -20,9 +20,9 @@ export function ConcurrencyGauge({ repoName, active, limit }: ConcurrencyGaugePr
           {active}/{limit}
         </span>
       </div>
-      <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+      <div className="h-2 w-full rounded-full bg-border/50 overflow-hidden">
         <div
-          className="h-full rounded-full bg-blue-500 transition-all duration-300"
+          className="h-full rounded-full bg-primary transition-all duration-300"
           style={{ width: `${pct}%` }}
         />
       </div>

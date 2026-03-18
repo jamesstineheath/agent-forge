@@ -39,23 +39,23 @@ function EventTypeIcon({ type }: { type: ATCEvent["type"] }) {
   const cls = "shrink-0";
   switch (type) {
     case "auto_dispatch":
-      return <Plane size={10} className={`text-blue-400 ${cls}`} />;
+      return <Plane size={10} className={`text-status-reviewing ${cls}`} />;
     case "conflict":
-      return <AlertTriangle size={10} className={`text-amber-400 ${cls}`} />;
+      return <AlertTriangle size={10} className={`text-status-executing ${cls}`} />;
     case "timeout":
-      return <Timer size={10} className={`text-red-400 ${cls}`} />;
+      return <Timer size={10} className={`text-status-blocked ${cls}`} />;
     case "retry":
-      return <RotateCcw size={10} className={`text-amber-400 ${cls}`} />;
+      return <RotateCcw size={10} className={`text-status-executing ${cls}`} />;
     case "parked":
-      return <ParkingCircle size={10} className={`text-zinc-400 ${cls}`} />;
+      return <ParkingCircle size={10} className={`text-muted-foreground ${cls}`} />;
     case "cleanup":
-      return <Trash2 size={10} className={`text-zinc-500 ${cls}`} />;
+      return <Trash2 size={10} className={`text-muted-foreground/60 ${cls}`} />;
     case "project_trigger":
-      return <Layers size={10} className={`text-purple-400 ${cls}`} />;
+      return <Layers size={10} className={`text-primary ${cls}`} />;
     case "escalation_resolved":
-      return <Shield size={10} className={`text-emerald-400 ${cls}`} />;
+      return <Shield size={10} className={`text-status-merged ${cls}`} />;
     default:
-      return <GitBranch size={10} className={`text-zinc-500 ${cls}`} />;
+      return <GitBranch size={10} className={`text-muted-foreground/60 ${cls}`} />;
   }
 }
 
@@ -63,8 +63,8 @@ function MetricPill({ label, value, color }: { label: string; value: number; col
   if (value === 0) return null;
   return (
     <div className="flex items-center gap-1.5 text-xs">
-      <span className={`font-mono font-medium ${color ?? "text-zinc-300"}`}>{value}</span>
-      <span className="text-zinc-500">{label}</span>
+      <span className={`font-mono font-medium ${color ?? "text-foreground"}`}>{value}</span>
+      <span className="text-muted-foreground/60">{label}</span>
     </div>
   );
 }
@@ -74,12 +74,12 @@ export function ATCAgentCard({ metrics, isLoading, error }: ATCAgentCardProps) {
 
   if (isLoading) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4 animate-pulse">
+      <div className="rounded-xl border border-border bg-surface-1 p-4 animate-pulse">
         <div className="flex items-center gap-4">
-          <div className="h-12 w-12 bg-zinc-800 rounded-full" />
+          <div className="h-12 w-12 bg-muted rounded-full" />
           <div className="flex-1 space-y-2">
-            <div className="h-4 w-40 bg-zinc-800 rounded" />
-            <div className="h-3 w-56 bg-zinc-800 rounded" />
+            <div className="h-4 w-40 bg-muted rounded" />
+            <div className="h-3 w-56 bg-muted rounded" />
           </div>
         </div>
       </div>
@@ -88,15 +88,15 @@ export function ATCAgentCard({ metrics, isLoading, error }: ATCAgentCardProps) {
 
   if (error || !metrics) {
     return (
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+      <div className="rounded-xl border border-border bg-surface-1 p-4">
         <div className="flex items-center gap-3">
-          <Plane size={16} className="text-zinc-500" />
-          <span className="text-sm font-medium text-zinc-300">Air Traffic Controller</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-zinc-400/10 text-zinc-500 border-zinc-500/20">
+          <Plane size={16} className="text-muted-foreground/60" />
+          <span className="text-sm font-medium text-foreground">Air Traffic Controller</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full border bg-muted text-muted-foreground/60 border-border">
             no data
           </span>
         </div>
-        <p className="text-xs text-zinc-500 mt-2">
+        <p className="text-xs text-muted-foreground/60 mt-2">
           Unable to load ATC metrics. The cron may not have run yet.
         </p>
       </div>
@@ -107,27 +107,27 @@ export function ATCAgentCard({ metrics, isLoading, error }: ATCAgentCardProps) {
   const hasActivity = metrics.totalEvents > 0;
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
+    <div className="rounded-xl border border-border bg-surface-1 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full text-left p-4 flex items-center gap-4 hover:bg-zinc-800/50 transition-colors"
+        className="w-full text-left p-4 flex items-center gap-4 hover:bg-accent/50 transition-colors"
       >
         <QualityRing rate={metrics.dispatchSuccessRate} size={48} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <Plane size={14} className="text-blue-400" />
-            <span className="font-medium text-zinc-100 text-sm">Air Traffic Controller</span>
+            <Plane size={14} className="text-status-reviewing" />
+            <span className="font-medium text-foreground text-sm">Air Traffic Controller</span>
             <span
               className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
                 isHealthy
-                  ? "bg-emerald-400/10 text-emerald-400 border-emerald-400/20"
-                  : "bg-zinc-400/10 text-zinc-500 border-zinc-500/20"
+                  ? "bg-status-merged/10 text-status-merged border-status-merged/20"
+                  : "bg-muted text-muted-foreground/60 border-border"
               }`}
             >
               {isHealthy ? "active" : "unknown"}
             </span>
           </div>
-          <div className="text-xs text-zinc-500">
+          <div className="text-xs text-muted-foreground/60">
             {hasActivity ? (
               <span>
                 {metrics.totalDispatches} dispatched &middot;{" "}
@@ -143,60 +143,60 @@ export function ATCAgentCard({ metrics, isLoading, error }: ATCAgentCardProps) {
           </div>
         </div>
         {expanded ? (
-          <ChevronDown size={16} className="text-zinc-500" />
+          <ChevronDown size={16} className="text-muted-foreground/60" />
         ) : (
-          <ChevronRight size={16} className="text-zinc-500" />
+          <ChevronRight size={16} className="text-muted-foreground/60" />
         )}
       </button>
 
       {expanded && (
-        <div className="border-t border-zinc-800">
+        <div className="border-t border-border">
           {/* Live status */}
-          <div className="px-4 py-3 border-b border-zinc-800/50">
-            <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-2">
+          <div className="px-4 py-3 border-b border-border">
+            <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
               Live Status
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-1.5">
-                <span className={`h-2 w-2 rounded-full ${metrics.activeExecutionCount > 0 ? "bg-amber-400 animate-pulse" : "bg-zinc-600"}`} />
-                <span className="text-xs text-zinc-400">
+                <span className={`h-2 w-2 rounded-full ${metrics.activeExecutionCount > 0 ? "bg-status-executing animate-pulse" : "bg-muted-foreground/40"}`} />
+                <span className="text-xs text-muted-foreground">
                   {metrics.activeExecutionCount} active
                 </span>
               </div>
-              <div className="text-xs text-zinc-400">
+              <div className="text-xs text-muted-foreground">
                 {metrics.queueDepth} queued
               </div>
             </div>
           </div>
 
           {/* Performance metrics */}
-          <div className="px-4 py-3 border-b border-zinc-800/50">
-            <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-2">
+          <div className="px-4 py-3 border-b border-border">
+            <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
               Performance (last {metrics.totalEvents} events)
             </div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-              <MetricPill label="dispatched" value={metrics.totalDispatches} color="text-blue-400" />
-              <MetricPill label="conflicts blocked" value={metrics.conflictsDetected} color="text-amber-400" />
-              <MetricPill label="timeouts caught" value={metrics.timeoutsDetected} color="text-red-400" />
-              <MetricPill label="retries triggered" value={metrics.retriesTriggered} color="text-amber-400" />
-              <MetricPill label="parked" value={metrics.itemsParked} color="text-zinc-400" />
-              <MetricPill label="auto-cancelled" value={metrics.autoCancellations} color="text-red-400" />
-              <MetricPill label="projects decomposed" value={metrics.projectsDecomposed} color="text-purple-400" />
-              <MetricPill label="projects failed" value={metrics.projectsFailed} color="text-red-400" />
-              <MetricPill label="escalations resolved" value={metrics.escalationsResolved} color="text-emerald-400" />
-              <MetricPill label="escalations timed out" value={metrics.escalationsTimedOut} color="text-red-400" />
-              <MetricPill label="dep blocks detected" value={metrics.dependencyBlocks} color="text-amber-400" />
-              <MetricPill label="branches cleaned" value={metrics.branchesCleanedUp} color="text-zinc-500" />
+              <MetricPill label="dispatched" value={metrics.totalDispatches} color="text-status-reviewing" />
+              <MetricPill label="conflicts blocked" value={metrics.conflictsDetected} color="text-status-executing" />
+              <MetricPill label="timeouts caught" value={metrics.timeoutsDetected} color="text-status-blocked" />
+              <MetricPill label="retries triggered" value={metrics.retriesTriggered} color="text-status-executing" />
+              <MetricPill label="parked" value={metrics.itemsParked} color="text-muted-foreground" />
+              <MetricPill label="auto-cancelled" value={metrics.autoCancellations} color="text-status-blocked" />
+              <MetricPill label="projects decomposed" value={metrics.projectsDecomposed} color="text-primary" />
+              <MetricPill label="projects failed" value={metrics.projectsFailed} color="text-status-blocked" />
+              <MetricPill label="escalations resolved" value={metrics.escalationsResolved} color="text-status-merged" />
+              <MetricPill label="escalations timed out" value={metrics.escalationsTimedOut} color="text-status-blocked" />
+              <MetricPill label="dep blocks detected" value={metrics.dependencyBlocks} color="text-status-executing" />
+              <MetricPill label="branches cleaned" value={metrics.branchesCleanedUp} color="text-muted-foreground/60" />
             </div>
             {metrics.totalDispatches === 0 && metrics.conflictsDetected === 0 && metrics.timeoutsDetected === 0 && (
-              <div className="text-xs text-zinc-600 mt-1">No dispatch activity yet.</div>
+              <div className="text-xs text-muted-foreground/50 mt-1">No dispatch activity yet.</div>
             )}
           </div>
 
           {/* Event type breakdown */}
           {Object.keys(metrics.eventBreakdown).length > 0 && (
-            <div className="px-4 py-3 border-b border-zinc-800/50">
-              <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-2">
+            <div className="px-4 py-3 border-b border-border">
+              <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
                 Event Breakdown
               </div>
               <div className="flex flex-wrap gap-2">
@@ -205,7 +205,7 @@ export function ATCAgentCard({ metrics, isLoading, error }: ATCAgentCardProps) {
                   .map(([type, count]) => (
                     <span
                       key={type}
-                      className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-mono"
+                      className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-mono"
                     >
                       {type.replace(/_/g, " ")} ({count})
                     </span>
@@ -217,7 +217,7 @@ export function ATCAgentCard({ metrics, isLoading, error }: ATCAgentCardProps) {
           {/* Recent events */}
           {metrics.recentEvents.length > 0 && (
             <div className="px-4 py-3">
-              <div className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider mb-2">
+              <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider mb-2">
                 Recent Events
               </div>
               <div className="space-y-1">
@@ -227,8 +227,8 @@ export function ATCAgentCard({ metrics, isLoading, error }: ATCAgentCardProps) {
                   .map((event) => (
                     <div key={event.id} className="flex items-start gap-2 text-xs">
                       <EventTypeIcon type={event.type} />
-                      <span className="text-zinc-400 truncate flex-1">{event.details}</span>
-                      <span className="text-zinc-600 shrink-0 text-[10px]">
+                      <span className="text-muted-foreground truncate flex-1">{event.details}</span>
+                      <span className="text-muted-foreground/50 shrink-0 text-[10px]">
                         {formatRelativeTime(event.timestamp)}
                       </span>
                     </div>

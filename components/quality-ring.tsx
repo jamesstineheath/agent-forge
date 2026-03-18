@@ -44,7 +44,7 @@ export function QualityRing({ rate, size = 56, label }: QualityRingProps) {
       <span className="text-xs font-medium" style={{ color }}>
         {rate != null ? `${Math.round(rate)}%` : "n/a"}
       </span>
-      {label && <span className="text-[10px] text-zinc-600">{label}</span>}
+      {label && <span className="text-[10px] text-muted-foreground/50">{label}</span>}
     </div>
   );
 }

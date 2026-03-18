@@ -6,37 +6,37 @@ import { Badge } from "@/components/ui/badge";
 import type { WorkItem } from "@/lib/types";
 
 const STATUS_COLORS: Record<WorkItem["status"], string> = {
-  filed: "bg-gray-100 text-gray-700",
-  ready: "bg-blue-100 text-blue-700",
-  queued: "bg-blue-50 text-blue-600",
-  generating: "bg-yellow-100 text-yellow-700",
-  executing: "bg-amber-100 text-amber-700",
-  reviewing: "bg-purple-100 text-purple-700",
-  merged: "bg-green-100 text-green-700",
-  failed: "bg-red-100 text-red-700",
-  parked: "bg-slate-100 text-slate-600",
-  blocked: "bg-red-200 text-red-800",
-  cancelled: "bg-gray-200 text-gray-500",
-  escalated: "bg-orange-100 text-orange-700",
-  superseded: "bg-gray-200 text-gray-500",
+  filed: "bg-muted text-muted-foreground",
+  ready: "bg-status-queued/10 text-status-queued",
+  queued: "bg-status-queued/10 text-status-queued",
+  generating: "bg-status-executing/10 text-status-executing",
+  executing: "bg-status-executing/10 text-status-executing",
+  reviewing: "bg-status-reviewing/10 text-status-reviewing",
+  merged: "bg-status-merged/10 text-status-merged",
+  failed: "bg-status-blocked/10 text-status-blocked",
+  parked: "bg-muted text-muted-foreground",
+  blocked: "bg-status-blocked/15 text-status-blocked",
+  cancelled: "bg-muted text-muted-foreground",
+  escalated: "bg-status-reviewing/10 text-status-reviewing",
+  superseded: "bg-muted text-muted-foreground",
 };
 
 const PRIORITY_COLORS: Record<WorkItem["priority"], string> = {
-  high: "bg-red-100 text-red-700",
-  medium: "bg-yellow-100 text-yellow-700",
-  low: "bg-gray-100 text-gray-600",
+  high: "bg-status-blocked/10 text-status-blocked",
+  medium: "bg-status-executing/10 text-status-executing",
+  low: "bg-muted text-muted-foreground",
 };
 
 const COMPLEXITY_COLORS: Record<WorkItem["complexity"], string> = {
-  simple: "bg-green-50 text-green-700",
-  moderate: "bg-blue-50 text-blue-700",
-  complex: "bg-orange-50 text-orange-700",
+  simple: "bg-status-merged/10 text-status-merged",
+  moderate: "bg-status-queued/10 text-status-queued",
+  complex: "bg-status-reviewing/10 text-status-reviewing",
 };
 
 const SOURCE_COLORS: Record<string, string> = {
-  project: "bg-blue-100 text-blue-800",
-  manual: "bg-gray-100 text-gray-700",
-  direct: "bg-green-100 text-green-800",
+  project: "bg-primary/10 text-primary",
+  manual: "bg-muted text-muted-foreground",
+  direct: "bg-status-merged/10 text-status-merged",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -52,7 +52,7 @@ interface WorkItemCardProps {
 export function WorkItemCard({ item }: WorkItemCardProps) {
   return (
     <Link href={`/work-items/${item.id}`}>
-      <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+      <Card className="card-elevated bg-surface-1 hover:shadow-md transition-shadow cursor-pointer h-full">
         <CardHeader className="pb-2">
           <CardTitle className="text-base font-semibold line-clamp-2">
             {item.title}

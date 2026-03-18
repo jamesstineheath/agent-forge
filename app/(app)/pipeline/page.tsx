@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ChevronDown, ChevronRight, GitPullRequest, Clock, Radio, Layers } from "lucide-react";
 import { PipelineStages } from "@/components/pipeline-stages";
 import { BlockedSummary } from "@/components/blocked-summary";
 import { ATCEventLog } from "@/components/atc-event-log";
@@ -42,159 +43,185 @@ export default function PipelinePage() {
 
   const [eventLogOpen, setEventLogOpen] = useState(false);
 
-  // Build concurrency map
   const concurrencyMap = new Map<string, number>();
   for (const exec of activeExecutions) {
     concurrencyMap.set(exec.targetRepo, (concurrencyMap.get(exec.targetRepo) ?? 0) + 1);
   }
 
   return (
-    <div className="px-4 md:px-6 py-6 space-y-6">
-      {/* Header + system health strip */}
-      <div>
-        <h1 className="text-lg font-semibold text-zinc-100 mb-1">Pipeline</h1>
-        <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs text-zinc-500 px-1 py-2">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-            <span>ATC: {atcState ? "healthy" : "unknown"}</span>
-            <span className="text-zinc-700">
-              &middot; last sweep {formatRelativeTime(atcState?.lastRunAt)}
+    <>
+      <header className="sticky top-0 z-10 glass-header border-b border-border">
+        <div className="flex items-center justify-between px-6 py-3.5">
+          <div>
+            <h1 className="text-lg font-display font-bold text-foreground">Pipeline</h1>
+            <p className="text-[11px] font-medium text-muted-foreground">
+              Work item flow &amp; ATC status
+            </p>
+          </div>
+          <div className="flex items-center gap-3 text-[11px]">
+            <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1 font-medium text-muted-foreground ring-1 ring-border">
+              <Radio className={cn("h-3 w-3", activeExecutions.length > 0 ? "text-status-executing animate-status-pulse" : "text-muted-foreground/40")} />
+              {activeExecutions.length} active
+            </span>
+            <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1 font-medium text-muted-foreground ring-1 ring-border">
+              <Layers className="h-3 w-3" />
+              {queueItems.length} queued
             </span>
           </div>
-          {repos && repos.length > 0 && (
-            <div className="border-l border-zinc-800 pl-4 flex items-center gap-1.5">
-              {repos.map((repo) => (
-                <span key={repo.id}>
-                  {concurrencyMap.get(repo.fullName) ?? 0}/{repo.concurrencyLimit} {repo.fullName}
-                </span>
-              ))}
+        </div>
+      </header>
+
+      <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
+        <div className="max-w-5xl space-y-6">
+          {/* ATC health strip */}
+          <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs text-muted-foreground px-1">
+            <div className="flex items-center gap-1.5">
+              <div className={cn("w-2 h-2 rounded-full", atcState ? "bg-status-merged animate-status-pulse" : "bg-status-blocked")} />
+              <span>ATC: {atcState ? "healthy" : "unknown"}</span>
+              <span className="text-muted-foreground/40">
+                &middot; last sweep {formatRelativeTime(atcState?.lastRunAt)}
+              </span>
+            </div>
+            {repos && repos.length > 0 && (
+              <div className="border-l border-border pl-4 flex items-center gap-1.5">
+                {repos.map((repo) => (
+                  <span key={repo.id} className="font-mono">
+                    {concurrencyMap.get(repo.fullName) ?? 0}/{repo.concurrencyLimit} {repo.fullName}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Pipeline Stages */}
+          {!itemsLoading && workItems && (
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Pipeline State
+              </p>
+              <PipelineStages workItems={workItems} />
             </div>
           )}
-        </div>
-      </div>
 
-      {/* Pipeline Stages */}
-      {!itemsLoading && workItems && (
-        <div className="space-y-4">
-          <div className="text-sm text-zinc-400 mb-2">
-            Current pipeline state across all repos
-          </div>
-          <PipelineStages workItems={workItems} />
-        </div>
-      )}
-
-      {/* Blocked Summary */}
-      {!itemsLoading && workItems && (
-        <BlockedSummary workItems={workItems} />
-      )}
-
-      {/* Active Executions */}
-      {(activeExecutions.length > 0 || activeWorkItems.length > 0) && (
-        <div className="space-y-2">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
-            Active Executions
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {activeExecutions.map((exec) => {
-              const workItem = (workItems ?? []).find((i) => i.id === exec.workItemId);
-              return (
-                <div
-                  key={exec.workItemId}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-amber-400/10 text-amber-400 border-amber-400/20 flex-shrink-0">
-                      {exec.status}
-                    </span>
-                  </div>
-                  {workItem ? (
-                    <Link
-                      href={`/work-items/${exec.workItemId}`}
-                      className="text-sm font-medium text-zinc-200 hover:text-zinc-100 line-clamp-2"
-                    >
-                      {workItem.title}
-                    </Link>
-                  ) : (
-                    <span className="text-sm font-medium text-zinc-200 font-mono">
-                      {exec.workItemId.slice(0, 8)}
-                    </span>
-                  )}
-                  <div className="text-xs text-zinc-600 mt-1 truncate">{exec.targetRepo}</div>
-                  <div className="flex flex-wrap items-center justify-between text-xs text-zinc-500 mt-2 gap-1">
-                    <span>{exec.elapsedMinutes}m elapsed</span>
-                    {workItem?.execution?.prUrl && (
-                      <a
-                        href={workItem.execution.prUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-400/70 hover:text-blue-400"
-                      >
-                        PR #{workItem.execution.prNumber}
-                      </a>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Queue */}
-      {queueItems.length > 0 && (
-        <div className="space-y-2">
-          <div className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
-            Queue ({queueItems.length})
-          </div>
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
-            {queueItems.map((item) => (
-              <div key={item.id} className="flex flex-wrap items-center justify-between py-1.5 gap-1">
-                <Link
-                  href={`/work-items/${item.id}`}
-                  className="text-sm text-zinc-300 hover:text-zinc-100 truncate"
-                >
-                  {item.title}
-                </Link>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
-                    item.priority === "high"
-                      ? "bg-red-400/10 text-red-400 border-red-400/20"
-                      : item.priority === "medium"
-                        ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
-                        : "bg-zinc-400/10 text-zinc-500 border-zinc-400/20"
-                  }`}>
-                    {item.priority}
-                  </span>
-                  <span className="text-xs text-zinc-600">{item.targetRepo}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Event Log */}
-      <div className="space-y-2">
-        <button
-          onClick={() => setEventLogOpen(!eventLogOpen)}
-          className="flex items-center gap-2 text-xs font-medium text-zinc-500 uppercase tracking-wider hover:text-zinc-400 transition-colors"
-        >
-          {eventLogOpen ? (
-            <ChevronDown size={14} />
-          ) : (
-            <ChevronRight size={14} />
+          {/* Blocked Summary */}
+          {!itemsLoading && workItems && (
+            <BlockedSummary workItems={workItems} />
           )}
-          Event Log ({events?.length ?? 0} events)
-        </button>
-        {eventLogOpen && (
-          eventsLoading ? (
-            <div className="text-xs text-zinc-500">Loading...</div>
-          ) : (
-            <ATCEventLog events={events ?? []} />
-          )
-        )}
+
+          {/* Active Executions */}
+          {(activeExecutions.length > 0 || activeWorkItems.length > 0) && (
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Active Executions
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {activeExecutions.map((exec) => {
+                  const workItem = (workItems ?? []).find((i) => i.id === exec.workItemId);
+                  return (
+                    <div
+                      key={exec.workItemId}
+                      className="rounded-xl card-elevated bg-surface-1 p-3.5 ring-1 ring-status-executing/10"
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="h-2 w-2 rounded-full bg-status-executing animate-status-pulse flex-shrink-0" />
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border bg-status-executing/10 text-status-executing border-status-executing/20 flex-shrink-0">
+                          {exec.status}
+                        </span>
+                      </div>
+                      {workItem ? (
+                        <Link
+                          href={`/work-items/${exec.workItemId}`}
+                          className="text-[12px] font-medium text-foreground hover:text-primary line-clamp-2 transition-colors"
+                        >
+                          {workItem.title}
+                        </Link>
+                      ) : (
+                        <span className="text-[12px] font-medium text-foreground font-mono">
+                          {exec.workItemId.slice(0, 8)}
+                        </span>
+                      )}
+                      <div className="text-[10px] text-muted-foreground/60 mt-1 truncate font-mono">{exec.targetRepo}</div>
+                      <div className="flex flex-wrap items-center justify-between text-[10px] text-muted-foreground mt-2 gap-1">
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {exec.elapsedMinutes}m elapsed
+                        </span>
+                        {workItem?.execution?.prUrl && (
+                          <a
+                            href={workItem.execution.prUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-0.5 text-primary hover:text-primary/80 font-mono"
+                          >
+                            <GitPullRequest className="h-2.5 w-2.5" />
+                            #{workItem.execution.prNumber}
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Queue */}
+          {queueItems.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Queue ({queueItems.length})
+              </p>
+              <div className="rounded-xl card-elevated bg-surface-1 p-3.5 divide-y divide-border">
+                {queueItems.map((item) => (
+                  <div key={item.id} className="flex flex-wrap items-center justify-between py-2 gap-1">
+                    <Link
+                      href={`/work-items/${item.id}`}
+                      className="text-[12px] font-medium text-foreground hover:text-primary truncate transition-colors"
+                    >
+                      {item.title}
+                    </Link>
+                    <div className="flex items-center gap-2 shrink-0 ml-4">
+                      <span className={cn(
+                        "text-[10px] font-bold px-1.5 py-0.5 rounded-full border",
+                        item.priority === "high"
+                          ? "bg-status-blocked/10 text-status-blocked border-status-blocked/20"
+                          : item.priority === "medium"
+                            ? "bg-status-executing/10 text-status-executing border-status-executing/20"
+                            : "bg-secondary text-muted-foreground border-border"
+                      )}>
+                        {item.priority}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/60 font-mono">{item.targetRepo}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Event Log */}
+          <div className="space-y-2">
+            <button
+              onClick={() => setEventLogOpen(!eventLogOpen)}
+              className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            >
+              {eventLogOpen ? (
+                <ChevronDown size={14} />
+              ) : (
+                <ChevronRight size={14} />
+              )}
+              Event Log ({events?.length ?? 0} events)
+            </button>
+            {eventLogOpen && (
+              eventsLoading ? (
+                <div className="text-xs text-muted-foreground/60">Loading...</div>
+              ) : (
+                <ATCEventLog events={events ?? []} />
+              )
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

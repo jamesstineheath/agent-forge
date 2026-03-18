@@ -3,8 +3,21 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Menu, Zap } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  LayoutDashboard,
+  FolderKanban,
+  GitBranch,
+  BookMarked,
+  Bot,
+  Settings,
+  Zap,
+  AlertTriangle,
+  Menu,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -12,64 +25,178 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { useATCState, useRepos } from "@/lib/hooks";
 
-const navItems = [
-  { href: "/", label: "Dashboard" },
-  { href: "/work-items", label: "Work Items" },
-  { href: "/work-items/escalated", label: "Escalated" },
-  { href: "/agents", label: "Agents" },
-  { href: "/pipeline", label: "Pipeline" },
-  { href: "/repos", label: "Repos" },
-  { href: "/settings", label: "Settings" },
+interface NavItem {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+interface NavSection {
+  label: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
+  {
+    label: "Workflow",
+    items: [
+      { label: "Dashboard", href: "/", icon: LayoutDashboard },
+      { label: "Work Items", href: "/work-items", icon: FolderKanban },
+      { label: "Pipeline", href: "/pipeline", icon: GitBranch },
+    ],
+  },
+  {
+    label: "Infrastructure",
+    items: [
+      { label: "Agents", href: "/agents", icon: Bot },
+      { label: "Repos", href: "/repos", icon: BookMarked },
+      { label: "Settings", href: "/settings", icon: Settings },
+    ],
+  },
 ];
 
-function NavLinks({
-  onNavigate,
-  mobile = false,
-}: {
-  onNavigate?: () => void;
-  mobile?: boolean;
-}) {
+type HealthStatus = "healthy" | "degraded" | "error";
+
+const healthConfig: Record<HealthStatus, { dotClass: string; labelClass: string }> = {
+  healthy: { dotClass: "bg-status-merged animate-status-pulse", labelClass: "text-status-merged" },
+  degraded: { dotClass: "bg-status-reviewing", labelClass: "text-status-reviewing" },
+  error: { dotClass: "bg-status-blocked animate-status-pulse", labelClass: "text-status-blocked" },
+};
+
+function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <nav className={mobile ? "flex flex-col gap-1 p-4" : "flex-1 space-y-1 p-2"}>
-      {navItems.map((item) => {
-        const isActive =
-          item.href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            className={`flex items-center rounded-md px-3 text-sm font-medium transition-colors ${
-              mobile ? "min-h-[44px]" : "py-2"
-            } ${
-              isActive
-                ? "bg-zinc-900 text-amber-400"
-                : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-            }`}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav className="flex-1 px-3 pt-2 space-y-4" aria-label="Main navigation">
+      {navSections.map((section) => (
+        <div key={section.label}>
+          <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+            {section.label}
+          </p>
+          <ul className="space-y-0.5">
+            {section.items.map((item) => {
+              const isActive =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={isActive ? "page" : undefined}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-all duration-150",
+                      isActive
+                        ? "bg-primary/10 text-primary shadow-sm ring-1 ring-primary/10"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className={cn("h-4 w-4", isActive && "text-primary")} />
+                    {item.label}
+                    {isActive && (
+                      <div className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
     </nav>
+  );
+}
+
+function HealthPanel() {
+  const { data: atcState } = useATCState();
+  const { data: repos } = useRepos();
+
+  const activeCount = atcState?.activeExecutions?.length ?? 0;
+  const failingRepos = repos?.filter((r) => {
+    // Check if any active executions have issues
+    return false; // Will be populated by real data
+  }).length ?? 0;
+
+  let status: HealthStatus = "healthy";
+  let label = "Healthy";
+  let detail = `${activeCount} agent${activeCount !== 1 ? "s" : ""} executing.`;
+
+  if (!atcState) {
+    status = "degraded";
+    label = "Unknown";
+    detail = "ATC status unavailable.";
+  } else if (failingRepos > 0) {
+    status = "error";
+    label = "Error";
+    detail = `${failingRepos} repo${failingRepos !== 1 ? "s" : ""} failing. ${activeCount} executing.`;
+  } else if (activeCount > 0) {
+    detail = `${activeCount} agent${activeCount !== 1 ? "s" : ""} executing.`;
+  }
+
+  const health = healthConfig[status];
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg p-3",
+        status === "healthy" && "bg-surface-2",
+        status === "degraded" && "bg-status-reviewing/[0.06] ring-1 ring-status-reviewing/10",
+        status === "error" && "bg-status-blocked/[0.06] ring-1 ring-status-blocked/10"
+      )}
+      role="status"
+      aria-label={`System status: ${label}`}
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        {status === "error" ? (
+          <AlertTriangle className="h-3 w-3 text-status-blocked" aria-hidden="true" />
+        ) : (
+          <div className={cn("h-2 w-2 rounded-full", health.dotClass)} aria-hidden="true" />
+        )}
+        <span className={cn("text-[11px] font-semibold", health.labelClass)}>
+          {label}
+        </span>
+      </div>
+      <p className="text-[10px] text-muted-foreground leading-relaxed">
+        {detail}
+      </p>
+    </div>
   );
 }
 
 function DesktopSidebar() {
   return (
-    <aside className="hidden md:flex h-screen w-56 flex-col border-r border-zinc-800 bg-zinc-950 shrink-0">
-      <div className="flex h-14 items-center border-b border-zinc-800 px-4 gap-2">
-        <Zap size={14} className="text-amber-400" />
-        <Link href="/" className="text-sm font-semibold text-zinc-200">
-          Agent Forge
-        </Link>
+    <aside className="hidden md:flex h-screen w-[220px] flex-col border-r border-border bg-sidebar shrink-0">
+      {/* Wordmark */}
+      <div className="flex items-center gap-3 px-5 pt-5 pb-4">
+        <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
+          <Zap className="h-4 w-4 text-primary-foreground" />
+          <div className="absolute inset-0 rounded-lg bg-primary/20 blur-md" />
+        </div>
+        <div>
+          <Link href="/" className="text-[15px] font-display font-bold tracking-tight text-foreground">
+            Agent Forge
+          </Link>
+          <p className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
+            Orchestrator
+          </p>
+        </div>
       </div>
+
       <NavLinks />
+
+      {/* Footer */}
+      <div className="space-y-3 px-4 pb-4">
+        <HealthPanel />
+        <div className="flex items-center justify-between border-t border-border pt-3">
+          <span className="text-[10px] font-mono font-medium text-muted-foreground/50 tracking-wide">
+            v0.1.0
+          </span>
+          <ThemeToggle />
+        </div>
+      </div>
     </aside>
   );
 }
@@ -78,26 +205,32 @@ function MobileNav() {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex md:hidden sticky top-0 z-40 h-14 items-center border-b border-zinc-800 bg-zinc-950 px-4">
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger aria-label="Open navigation menu">
-          <Menu className="h-5 w-5" />
-        </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-0 bg-zinc-950 border-zinc-800">
-          <SheetHeader className="flex h-14 items-center border-b border-zinc-800 px-4">
-            <SheetTitle className="flex items-center gap-2 font-semibold text-zinc-200">
-              <Zap size={14} className="text-amber-400" />
-              Agent Forge
-            </SheetTitle>
-          </SheetHeader>
-          <NavLinks mobile onNavigate={() => setOpen(false)} />
-        </SheetContent>
-      </Sheet>
-      <span className="ml-3 flex items-center gap-2">
-        <Zap size={14} className="text-amber-400" />
-        <span className="text-sm font-semibold text-zinc-200">Agent Forge</span>
-      </span>
-    </div>
+    <>
+      <div className="flex md:hidden items-center justify-between border-b border-border bg-sidebar px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
+            <Zap className="h-3.5 w-3.5 text-primary-foreground" />
+          </div>
+          <span className="text-[14px] font-display font-bold text-foreground">Agent Forge</span>
+        </div>
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger aria-label={open ? "Close menu" : "Open menu"}>
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </SheetTrigger>
+          <SheetContent side="left" className="w-64 p-0 bg-sidebar border-border">
+            <SheetHeader className="flex h-14 items-center border-b border-border px-4">
+              <SheetTitle className="flex items-center gap-2 font-display font-bold text-foreground">
+                <Zap size={14} className="text-primary" />
+                Agent Forge
+              </SheetTitle>
+            </SheetHeader>
+            <div className="pt-4">
+              <NavLinks onNavigate={() => setOpen(false)} />
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
+    </>
   );
 }
 
