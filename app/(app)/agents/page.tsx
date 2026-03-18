@@ -8,6 +8,7 @@ import { TLMAgentCard } from "@/components/tlm-agent-card";
 import { ATCAgentCard } from "@/components/atc-agent-card";
 import { PAAgentRow } from "@/components/pa-agent-row";
 import { AgentDashboard } from "@/components/agent-dashboard";
+import { AgentTraceViewer } from "@/components/agent-trace-viewer";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -87,6 +88,9 @@ export default function AgentsPage() {
             </div>
             <AgentDashboard />
           </div>
+
+          {/* Agent Traces */}
+          <AgentTraceViewer />
 
           {/* Control Plane */}
           <div className="space-y-3">
