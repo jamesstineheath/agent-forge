@@ -24,9 +24,45 @@ function isWithinDays(dateStr: string, days: number): boolean {
   return d >= cutoff;
 }
 
-/** Actual cost if recorded, otherwise fall back to budget estimate */
+/** Best available cost: actual if recorded, budget estimate otherwise */
 function itemCost(item: WorkItem): number {
   return item.execution?.actualCost ?? item.handoff?.budget ?? 0;
+}
+
+function itemBudget(item: WorkItem): number {
+  return item.handoff?.budget ?? 0;
+}
+
+function hasActualCost(item: WorkItem): boolean {
+  return item.execution?.actualCost != null;
+}
+
+/** Format cost with "est." suffix when based on budget, not actual */
+function CostValue({ actual, estimated, size = "xl" }: { actual: number; estimated: number; size?: "xl" | "lg" }) {
+  const hasActuals = actual !== estimated || actual === 0;
+  const textSize = size === "xl" ? "text-xl" : "text-lg";
+
+  if (estimated === 0 && actual === 0) {
+    return <div className={`${textSize} font-bold text-muted-foreground/40`}>$0</div>;
+  }
+
+  return (
+    <div>
+      <div className={`${textSize} font-bold text-foreground`}>
+        ${actual.toFixed(2)}
+      </div>
+      {estimated !== actual && estimated > 0 && (
+        <div className="text-[10px] text-muted-foreground/40 font-mono">
+          est. ${estimated.toFixed(2)}
+        </div>
+      )}
+      {!hasActuals && actual > 0 && (
+        <div className="text-[10px] text-muted-foreground/40 italic">
+          est.
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function CostSummary({ workItems }: CostSummaryProps) {
@@ -37,50 +73,45 @@ export function CostSummary({ workItems }: CostSummaryProps) {
   const todayItems = executedItems.filter((item) =>
     isToday(item.execution!.startedAt!)
   );
-  const todaySpend = todayItems.reduce(
-    (sum, item) => sum + itemCost(item),
-    0
-  );
+  const todayActual = todayItems.reduce((sum, item) => sum + itemCost(item), 0);
+  const todayEstimated = todayItems.reduce((sum, item) => sum + itemBudget(item), 0);
 
   const weekItems = executedItems.filter((item) =>
     isWithinDays(item.execution!.startedAt!, 7)
   );
-  const weekSpend = weekItems.reduce(
-    (sum, item) => sum + itemCost(item),
-    0
-  );
+  const weekActual = weekItems.reduce((sum, item) => sum + itemCost(item), 0);
+  const weekEstimated = weekItems.reduce((sum, item) => sum + itemBudget(item), 0);
 
-  const avgCost =
+  const avgActual =
     executedItems.length > 0
-      ? executedItems.reduce(
-          (sum, item) => sum + itemCost(item),
-          0
-        ) / executedItems.length
+      ? executedItems.reduce((sum, item) => sum + itemCost(item), 0) / executedItems.length
+      : 0;
+  const avgEstimated =
+    executedItems.length > 0
+      ? executedItems.reduce((sum, item) => sum + itemBudget(item), 0) / executedItems.length
       : 0;
 
   const wasteItems = executedItems.filter(
     (item) =>
       item.status === "failed" || item.execution?.outcome === "failed"
   );
-  const wasteSpend = wasteItems.reduce(
-    (sum, item) => sum + itemCost(item),
-    0
-  );
-  const totalBudget = executedItems.reduce(
-    (sum, item) => sum + itemCost(item),
-    0
-  );
+  const wasteSpend = wasteItems.reduce((sum, item) => sum + itemCost(item), 0);
+  const totalSpend = executedItems.reduce((sum, item) => sum + itemCost(item), 0);
+  const totalBudget = executedItems.reduce((sum, item) => sum + itemBudget(item), 0);
   const wastePct =
-    totalBudget > 0 ? Math.round((wasteSpend / totalBudget) * 100) : 0;
+    totalSpend > 0 ? Math.round((wasteSpend / totalSpend) * 100) : 0;
   const budgetUtil =
-    totalBudget > 0 ? Math.min(1, weekSpend / totalBudget) : 0;
+    totalBudget > 0 ? Math.min(1, weekActual / totalBudget) : 0;
+
+  const itemsWithActual = executedItems.filter(hasActualCost).length;
 
   // Per-repo breakdown
-  const repoMap = new Map<string, { total: number; count: number }>();
+  const repoMap = new Map<string, { actual: number; estimated: number; count: number }>();
   for (const item of executedItems) {
     const repo = item.targetRepo;
-    const existing = repoMap.get(repo) ?? { total: 0, count: 0 };
-    existing.total += itemCost(item);
+    const existing = repoMap.get(repo) ?? { actual: 0, estimated: 0, count: 0 };
+    existing.actual += itemCost(item);
+    existing.estimated += itemBudget(item);
     existing.count += 1;
     repoMap.set(repo, existing);
   }
@@ -90,29 +121,28 @@ export function CostSummary({ workItems }: CostSummaryProps) {
       <div className="flex items-center gap-2 mb-3">
         <DollarSign size={14} className="text-muted-foreground" />
         <span className="text-sm font-medium text-foreground">Cost overview</span>
+        {executedItems.length > 0 && (
+          <span className="text-[10px] text-muted-foreground/40 ml-auto">
+            {itemsWithActual}/{executedItems.length} with actual costs
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-4">
         <div>
-          <div className="text-xl font-bold text-foreground">
-            ${todaySpend.toFixed(2)}
-          </div>
+          <CostValue actual={todayActual} estimated={todayEstimated} />
           <div className="text-[11px] text-muted-foreground/60">
             Today ({todayItems.length} items)
           </div>
         </div>
         <div>
-          <div className="text-xl font-bold text-foreground">
-            ${weekSpend.toFixed(2)}
-          </div>
+          <CostValue actual={weekActual} estimated={weekEstimated} />
           <div className="text-[11px] text-muted-foreground/60">
             This week ({weekItems.length} items)
           </div>
         </div>
         <div>
-          <div className="text-xl font-bold text-foreground">
-            ${avgCost.toFixed(2)}
-          </div>
+          <CostValue actual={avgActual} estimated={avgEstimated} />
           <div className="text-[11px] text-muted-foreground/60">Avg per work item</div>
         </div>
       </div>
@@ -156,8 +186,14 @@ export function CostSummary({ workItems }: CostSummaryProps) {
               className="flex items-center justify-between py-1 text-xs"
             >
               <span className="text-muted-foreground">{repo}</span>
-              <span className="text-muted-foreground/60">
-                ${data.total.toFixed(2)} &middot; {data.count} items
+              <span className="text-muted-foreground/60 font-mono">
+                ${data.actual.toFixed(2)}
+                {data.actual !== data.estimated && (
+                  <span className="text-muted-foreground/30 ml-1">
+                    / ${data.estimated.toFixed(0)} est.
+                  </span>
+                )}
+                <span className="ml-1">&middot; {data.count} items</span>
               </span>
             </div>
           ))}

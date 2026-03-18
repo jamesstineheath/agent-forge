@@ -235,11 +235,12 @@ export function ProjectCard({
               {totalBudget > 0 && (
                 <div className="flex flex-wrap items-center gap-2 sm:gap-4 py-2 mb-1 text-xs border-b border-border">
                   <div className="text-muted-foreground">
-                    <span className="font-medium text-foreground">Total Budget:</span>{" "}
+                    <span className="font-medium text-foreground">Budget:</span>{" "}
                     ${totalBudget.toFixed(2)}
                   </div>
                   <div className="text-status-merged">
-                    Spent: ${spent.toFixed(2)}
+                    Actual: ${spent.toFixed(2)}
+                    {spent === totalBudget && <span className="text-muted-foreground/40 ml-1">(est.)</span>}
                   </div>
                   <div className="text-muted-foreground">
                     Remaining: ${(totalBudget - spent).toFixed(2)}
@@ -260,9 +261,13 @@ export function ProjectCard({
                   >
                     {item.title}
                   </span>
-                  {item.handoff?.budget != null ? (
-                    <span className="text-[11px] text-muted-foreground/60 font-mono">
-                      ${itemCost(item).toFixed(2)}
+                  {item.execution?.actualCost != null ? (
+                    <span className="text-[11px] text-foreground/70 font-mono font-medium">
+                      ${item.execution.actualCost.toFixed(2)}
+                    </span>
+                  ) : item.handoff?.budget != null ? (
+                    <span className="text-[11px] text-muted-foreground/40 font-mono italic">
+                      ~${item.handoff.budget.toFixed(2)}
                     </span>
                   ) : (
                     <span className="text-[11px] text-muted-foreground/40">&mdash;</span>
