@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, GitPullRequest, Clock, Radio, Layers } from 
 import { PipelineStages } from "@/components/pipeline-stages";
 import { BlockedSummary } from "@/components/blocked-summary";
 import { ATCEventLog } from "@/components/atc-event-log";
+import { DebateStatsCard } from "@/components/debate-stats-card";
 import { useATCState, useATCEvents, useWorkItems, useRepos } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
@@ -107,6 +108,9 @@ export default function PipelinePage() {
           {!itemsLoading && workItems && (
             <BlockedSummary workItems={workItems} />
           )}
+
+          {/* Debate Reviews */}
+          <DebateStatsCard />
 
           {/* Active Executions */}
           {(activeExecutions.length > 0 || activeWorkItems.length > 0) && (

@@ -1,5 +1,6 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats } from "@/lib/types";
+import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
 
@@ -144,5 +145,20 @@ export function useWebhookEvents(limit = 20) {
     fetcher,
     { refreshInterval: 30000 }
   );
+  return { data, error, isLoading, mutate };
+}
+
+export function useDebateStats() {
+  const { data, error, isLoading, mutate } = useSWR<DebateStats>(
+    "/api/debates",
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useDebateSessions(repo?: string, pr?: number) {
+  const key = repo && pr ? `/api/debates?repo=${encodeURIComponent(repo)}&pr=${pr}` : null;
+  const { data, error, isLoading, mutate } = useSWR<DebateSession[]>(key, fetcher);
   return { data, error, isLoading, mutate };
 }
