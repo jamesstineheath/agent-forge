@@ -1,7 +1,7 @@
 # ADR-009: Feedback Compiler Agent
 
 **Date:** 2026-03-14
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
