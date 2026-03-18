@@ -37,6 +37,32 @@ After pushing the workflows, work items `ed4c524e` and `52380e5a` need to be res
 5. Reset work items `ed4c524e` and `52380e5a` to `ready` status via the Agent Forge work items API.
 6. No modifications to `.github/actions/tlm-review/src/index.ts` or any files touched by the concurrent work item.
 
-## Execution Steps
+## Escalation Record
+
+**Status:** ESCALATED — workflows are not portable as-is
+**Date:** 2026-03-18
+**Executor:** Claude Code (execute-handoff pipeline)
+
+### Findings
+
+1. **`execute-handoff.yml` already exists in rez-sniper.** The original 404 error described in the Context section may have been resolved by a prior manual push. No action needed for this file.
+
+2. **`tlm-spec-review.yml` is NOT portable.** It references a local composite action at `./.github/actions/tlm-spec-review` (line 34: `uses: ./.github/actions/tlm-spec-review`). This composite action is a multi-file TypeScript package (`action.yml`, `src/index.ts`, `src/spec-review-prompt.ts`, `dist/index.js`, `package.json`, `tsconfig.json`) that does not exist in rez-sniper.
+
+3. **`tlm-review.yml` is NOT portable.** It references a local composite action at `./.github/actions/tlm-review` (line 31: `uses: ./.github/actions/tlm-review`). This composite action is similarly a multi-file TypeScript package (`action.yml`, `src/index.ts`, `src/review-prompt.ts`, `dist/index.js`, `package.json`, `tsconfig.json`) that does not exist in rez-sniper.
+
+### Recommended Resolution
+
+To make rez-sniper a full pipeline participant, one of these approaches is needed:
+
+- **Option A (recommended):** Also push the composite actions (`.github/actions/tlm-spec-review/` and `.github/actions/tlm-review/` with all their files) to rez-sniper. This requires pushing ~12 additional files.
+- **Option B:** Refactor the workflows to use a centralized/reusable workflow pattern (`uses: jamesstineheath/agent-forge/.github/workflows/...@main`) so target repos don't need local copies of composite actions.
+- **Option C:** Create a bootstrap script/action that copies both workflows AND their composite action dependencies to target repos.
+
+### Work Items
+
+Work items `ed4c524e` and `52380e5a` were NOT reset to `ready` status because the original 404 issue may already be resolved (`execute-handoff.yml` exists in rez-sniper). The dispatcher should be checked to confirm whether these work items can now be dispatched successfully.
+
+## Execution Steps (not executed — escalated)
 
 ### Step 0: Pre-flight checks
