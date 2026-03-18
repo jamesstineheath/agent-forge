@@ -4,10 +4,10 @@
 
 ## Currently Executing
 
-- **Add debate types and configuration schema** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-debate-types-and-configuration-schema`
-  - Files: lib/debate/types.ts, lib/debate/config.ts
-  - Started: 2026-03-18T13:36:17.883Z
+- **Implement advocate agent — generates positive case for PR** (jamesstineheath/agent-forge)
+  - Branch: `fix/implement-advocate-agent-generates-positive-case-f`
+  - Files: lib/debate/agents/advocate.ts
+  - Started: 2026-03-18T13:47:00.894Z
 
 - **Disable QA Agent workflow (no-op stub)** (jamesstineheath/agent-forge)
   - Branch: `fix/disable-qa-agent-workflow-no-op-stub`
@@ -37,8 +37,6 @@
 - **Graduation Tracker — Structured PR Verification Markers** (agent-forge)
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
-
-- **Implement advocate agent — generates positive case for PR** (jamesstineheath/agent-forge)
 
 - **Implement critic agent — finds issues and risks in PR** (jamesstineheath/agent-forge)
 
