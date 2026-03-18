@@ -1,6 +1,8 @@
 import { loadJson, saveJson } from "./storage";
-import { listWorkItems } from "./work-items";
-import type { ATCState } from "./types";
+import { listWorkItems, getWorkItem } from "./work-items";
+import type { ATCState, WorkItem } from "./types";
+import { detectDrift, saveDriftSnapshot, formatDriftAlert } from "./drift-detection";
+import { sendEmail } from "./gmail";
 
 // --- Re-exports from extracted modules (backward compatibility) ---
 export { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent, withTimeout, recordAgentRun, getAgentLastRun } from "./atc/utils";
@@ -16,7 +18,7 @@ export { runSupervisor, cleanupStaleBranches } from "./atc/supervisor";
 // --- Import extracted modules for the monolith cycle ---
 import { acquireATCLock, releaseATCLock } from "./atc/lock";
 import { getATCState, persistEvents } from "./atc/events";
-import { withTimeout } from "./atc/utils";
+import { withTimeout, makeEvent } from "./atc/utils";
 import { runDispatcher } from "./atc/dispatcher";
 import { runHealthMonitor } from "./atc/health-monitor";
 import { runProjectManager } from "./atc/project-manager";
@@ -67,6 +69,56 @@ async function _runATCCycleInner(): Promise<ATCState> {
   // Phase 4: Supervision (§10-16, branch cleanup, agent health)
   await runSupervisor(ctx);
 
+  // §17 — Drift Detection (once per 24h)
+  const previousState = await getATCState();
+  let lastDriftCheckAt = previousState.lastDriftCheckAt;
+  const DRIFT_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+  const lastDriftCheck = lastDriftCheckAt
+    ? new Date(lastDriftCheckAt).getTime()
+    : 0;
+  const driftCheckDue = Date.now() - lastDriftCheck > DRIFT_CHECK_INTERVAL_MS;
+
+  if (driftCheckDue) {
+    try {
+      ctx.events.push(makeEvent("drift_check", "system", undefined, undefined, "§17 — Drift Detection: running drift check"));
+      const allIndexEntries = await listWorkItems();
+      const allWorkItems: WorkItem[] = [];
+      for (const entry of allIndexEntries) {
+        const item = await getWorkItem(entry.id);
+        if (item) allWorkItems.push(item);
+      }
+      const driftSnapshot = detectDrift({
+        workItems: allWorkItems,
+        baselinePeriodDays: 30,
+        currentPeriodDays: 7,
+      });
+      await saveDriftSnapshot(driftSnapshot);
+      lastDriftCheckAt = new Date().toISOString();
+
+      if (driftSnapshot.degraded) {
+        const alertBody = formatDriftAlert(driftSnapshot);
+        ctx.events.push(makeEvent("drift_check", "system", undefined, undefined, `§17 — Drift Detection: DEGRADED — driftScore=${driftSnapshot.driftScore.toFixed(3)}`));
+        try {
+          await sendEmail({
+            subject: "[Agent Forge] Pipeline Drift Detected",
+            body: alertBody,
+          });
+          ctx.events.push(makeEvent("drift_check", "system", undefined, undefined, "§17 — Drift Detection: alert email sent"));
+        } catch (emailErr) {
+          console.warn("[ATC §17] Failed to send drift alert email:", emailErr);
+          ctx.events.push(makeEvent("drift_check", "system", undefined, undefined, `§17 — Drift Detection: email send failed: ${String(emailErr)}`));
+        }
+      } else {
+        ctx.events.push(makeEvent("drift_check", "system", undefined, undefined, `§17 — Drift Detection: OK — driftScore=${driftSnapshot.driftScore.toFixed(3)}`));
+      }
+    } catch (driftErr) {
+      console.warn("[ATC §17] Drift detection failed:", driftErr);
+      ctx.events.push(makeEvent("drift_check", "system", undefined, undefined, `§17 — Drift Detection: ERROR — ${String(driftErr)}`));
+    }
+  } else {
+    ctx.events.push(makeEvent("drift_check", "system", undefined, undefined, "§17 — Drift Detection: skipped (last check within 24h)"));
+  }
+
   // Build and save state
   const queuedEntries = await listWorkItems({ status: "queued" });
   const readyEntries = await listWorkItems({ status: "ready" });
@@ -75,6 +127,7 @@ async function _runATCCycleInner(): Promise<ATCState> {
     activeExecutions,
     queuedItems: queuedEntries.length + readyEntries.length,
     recentEvents: ctx.events.slice(-20),
+    lastDriftCheckAt,
   };
   await saveJson(ATC_STATE_KEY, state);
 

@@ -286,7 +286,7 @@ export interface Project {
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved" | "ci_code_retry_triggered" | "ci_code_retry_exhausted";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved" | "ci_code_retry_triggered" | "ci_code_retry_exhausted" | "drift_check";
   workItemId: string;
   details: string;
   previousStatus?: string;
@@ -306,6 +306,7 @@ export interface ATCState {
   }[];
   queuedItems: number;
   recentEvents: ATCEvent[];
+  lastDriftCheckAt?: string; // ISO timestamp of last drift detection run
 }
 
 // Repo Bootstrapper types
