@@ -84,36 +84,45 @@ export async function handleCodeCIFailure(
       return;
     }
 
-    await triggerWorkflow(
-      item.targetRepo,
-      'execute-handoff.yml',
-      branch,
-      {
-        branch,
-        handoff_file: item.handoff?.content ? `handoffs/${item.id}.md` : '',
-        review_feedback: retryContext,
-      }
-    );
+    try {
+      // Dispatch against 'main' (not the PR branch) so the workflow file has the correct inputs.
+      // The handoff_file input tells the executor which branch/handoff to work on.
+      await triggerWorkflow(
+        item.targetRepo,
+        'execute-handoff.yml',
+        'main',
+        {
+          branch,
+          handoff_file: item.handoff?.content ? `handoffs/${item.id}.md` : '',
+        }
+      );
 
-    await updateWorkItem(item.id, {
-      execution: {
-        ...item.execution,
-        retryCount: retryCount + 1,
-      },
-    });
+      await updateWorkItem(item.id, {
+        execution: {
+          ...item.execution,
+          retryCount: retryCount + 1,
+        },
+      });
 
-    const event = makeEvent(
-      'ci_code_retry_triggered' as ATCEvent['type'],
-      item.id,
-      item.status,
-      item.status,
-      `Code CI retry ${retryCount + 1}/${retryBudget}: re-dispatched execute-handoff with error context`
-    );
-    ctx.events.push(event);
+      const event = makeEvent(
+        'ci_code_retry_triggered' as ATCEvent['type'],
+        item.id,
+        item.status,
+        item.status,
+        `Code CI retry ${retryCount + 1}/${retryBudget}: re-dispatched execute-handoff with error context`
+      );
+      ctx.events.push(event);
 
-    console.log(
-      `[HealthMonitor] ci.code_retry_triggered workItem=${item.id} attempt=${retryCount + 1}/${retryBudget}`
-    );
+      console.log(
+        `[HealthMonitor] ci.code_retry_triggered workItem=${item.id} attempt=${retryCount + 1}/${retryBudget}`
+      );
+    } catch (retryErr) {
+      // Non-fatal: log the error but don't crash the entire Health Monitor cycle
+      console.error(
+        `[HealthMonitor] Code CI retry dispatch failed for ${item.id} (non-fatal):`,
+        retryErr instanceof Error ? retryErr.message : String(retryErr)
+      );
+    }
   } else {
     // Budget exhausted — mark failed and escalate
     await updateWorkItem(item.id, { status: 'failed' });
