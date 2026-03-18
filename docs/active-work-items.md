@@ -4,15 +4,15 @@
 
 ## Currently Executing
 
-- **Implement advocate agent — generates positive case for PR** (jamesstineheath/agent-forge)
-  - Branch: `fix/implement-advocate-agent-generates-positive-case-f`
-  - Files: lib/debate/agents/advocate.ts
-  - Started: 2026-03-18T13:47:00.894Z
-
 - **Implement critic agent — finds issues and risks in PR** (jamesstineheath/agent-forge)
   - Branch: `fix/implement-critic-agent-finds-issues-and-risks-in-p`
   - Files: lib/debate/agents/critic.ts
   - Started: 2026-03-18T13:51:28.011Z
+
+- **Implement judge agent — synthesizes debate into verdict** (jamesstineheath/agent-forge)
+  - Branch: `fix/implement-judge-agent-synthesizes-debate-into-verd`
+  - Files: lib/debate/agents/judge.ts
+  - Started: 2026-03-18T13:57:10.087Z
 
 ## Queued for Dispatch
 
@@ -37,8 +37,6 @@
 - **Graduation Tracker — Structured PR Verification Markers** (agent-forge)
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
-
-- **Implement judge agent — synthesizes debate into verdict** (jamesstineheath/agent-forge)
 
 - **Implement debate orchestrator — runs multi-round debate loop** (jamesstineheath/agent-forge)
 
