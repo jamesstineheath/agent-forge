@@ -9,10 +9,10 @@
   - Files: .github/actions/tlm-feedback-compiler/src/change-proposer.ts, .github/actions/tlm-feedback-compiler/src/types.ts, docs/feedback-compiler-history.json
   - Started: 2026-03-18T21:27:32.458Z
 
-- **Auto-retry infra CI failures via GitHub API** (jamesstineheath/agent-forge)
-  - Branch: `feat/auto-retry-infra-ci-failures-via-github-api`
-  - Files: `lib/atc/health-monitor.ts`, `lib/github.ts`, `lib/atc/types.ts`, `lib/atc/events.ts`
-  - Started: 2026-03-18T21:25:05.592Z
+- **Fix HLO retry for code CI failures** (jamesstineheath/agent-forge)
+  - Branch: `feat/fix-hlo-retry-for-code-ci-failures`
+  - Files: `lib/atc/health-monitor.ts`, `lib/atc/types.ts`, `.github/workflows/execute-handoff.yml`, `lib/atc/events.ts`, `lib/escalation.ts`
+  - Started: 2026-03-18T21:26:32.505Z
 
 ## In Review
 
