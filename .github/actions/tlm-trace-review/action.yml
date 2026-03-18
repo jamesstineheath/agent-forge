@@ -1,0 +1,28 @@
+name: 'TLM Trace Reviewer'
+description: 'Analyzes recent agent traces for anomalies, decision quality issues, and error patterns'
+
+inputs:
+  anthropic_api_key:
+    description: 'Anthropic API key for Claude'
+    required: true
+  agent_forge_api_secret:
+    description: 'Bearer token for Agent Forge API'
+    required: true
+  agent_forge_url:
+    description: 'Agent Forge base URL'
+    required: true
+  blob_read_write_token:
+    description: 'Vercel Blob read/write token'
+    required: true
+  lookback_hours:
+    description: 'Hours of traces to look back (default: 24)'
+    required: false
+    default: '24'
+  dry_run:
+    description: 'If true, analyze but do not write findings or file work items'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'node20'
+  main: 'index.js'
