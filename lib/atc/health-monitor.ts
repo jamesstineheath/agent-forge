@@ -22,6 +22,8 @@ import {
 } from "./types";
 import { parseEstimatedFiles, makeEvent } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
+export { classifyCIFailure } from "./ci-classifier";
+export type { CIFailureClassification } from "./ci-classifier";
 
 /**
  * Health Monitor agent: ensures every active execution progresses or gets unstuck.
