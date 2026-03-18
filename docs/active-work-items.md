@@ -4,10 +4,10 @@
 
 ## Currently Executing
 
-- **Daily email digest of pipeline activity** (jamesstineheath/agent-forge)
-  - Branch: `fix/daily-email-digest-of-pipeline-activity`
-  - Files: `app/api/agents/digest/cron/route.ts`, `lib/digest.ts`, `vercel.json`
-  - Started: 2026-03-18T19:29:40.837Z
+- **Agent heartbeat dashboard in Agents tab** (jamesstineheath/agent-forge)
+  - Branch: `fix/agent-heartbeat-dashboard-in-agents-tab`
+  - Files: `app/api/agents/dashboard/route.ts`, `app/(app)/agents/page.tsx`, `lib/agent-dashboard.ts`, `lib/hooks.ts`
+  - Started: 2026-03-18T19:30:36.343Z
 
 ## In Review
 
@@ -20,3 +20,8 @@
   - Branch: `fix/bootstrap-rez-sniper-push-execute-handoffyml-via-g`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/277
   - Files: handoffs/bootstrap-rez-sniper-push-execute-handoffyml-via-g.md
+
+## Queued for Dispatch
+
+- **Daily email digest of pipeline activity** (jamesstineheath/agent-forge)
+  - Estimated files: `app/api/agents/digest/cron/route.ts`, `lib/digest.ts`, `vercel.json`
