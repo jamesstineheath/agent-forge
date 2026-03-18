@@ -4,24 +4,11 @@
 
 ## Currently Executing
 
-- **UI — Map View Component with Mapbox GL JS** (jamesstineheath/personal-assistant)
-  - Branch: `feat/ui-map-view-component-with-mapbox-gl-js`
-  - Files: components/realestate/map-view.tsx, components/realestate/map-marker-popup.tsx, package.json
-  - Started: 2026-03-18T23:42:26.093Z
-
-- **UI — Preference Editor Panel Component** (jamesstineheath/personal-assistant)
-  - Branch: `fix/ui-preference-editor-panel-component`
-  - Files: components/realestate/preference-editor.tsx, app/api/realestate/preferences/route.ts
-  - Started: 2026-03-18T23:44:17.095Z
-
-## In Review
-
-- **Trace Reviewing Agent — autonomous agent trace evaluation and improvement proposals** (jamesstineheath/agent-forge)
-  - Branch: `fix/trace-reviewing-agent-autonomous-agent-trace-evalu`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/294
+- **UI — Listing Detail Enhancements (Proximity, Cost Estimator)** (jamesstineheath/personal-assistant)
+  - Branch: `fix/ui-listing-detail-enhancements-proximity-cost-esti`
+  - Files: components/realestate/proximity-section.tsx, components/realestate/cost-estimator-section.tsx, app/api/realestate/proximity/route.ts
+  - Started: 2026-03-18T23:52:41.725Z
 
 ## Queued for Dispatch
-
-- **UI — Listing Detail Enhancements (Proximity, Cost Estimator)** (jamesstineheath/personal-assistant)
 
 - **UI — Integrate New Components into Realestate Page** (jamesstineheath/personal-assistant)
