@@ -101,6 +101,7 @@ function bfsTraverse(
  * Execute a query against the graph with AND semantics for multiple filters.
  */
 export function queryGraph(graph: KnowledgeGraph, query: GraphQuery): GraphQueryResult {
+  if (!graph || !graph.entities) return { entities: [], relationships: [], totalCount: 0 };
   let entities = getAllEntities(graph);
 
   // Apply namePattern filter
@@ -154,6 +155,7 @@ export function findRelated(
   entityId: string,
   options?: { depth?: number; relationshipTypes?: RelationshipType[] },
 ): GraphQueryResult {
+  if (!graph || !graph.entities || !entityId) return { entities: [], relationships: [], totalCount: 0 };
   const depth = options?.depth ?? 1;
   const result = bfsTraverse(graph, entityId, depth, options?.relationshipTypes);
 
@@ -168,6 +170,7 @@ export function findRelated(
  * Find all entities that depend on (point TO) the given entity.
  */
 export function findDependents(graph: KnowledgeGraph, entityId: string): CodeEntity[] {
+  if (!graph || !graph.relationships || !entityId) return [];
   const dependentIds = new Set<string>();
   for (const rel of graph.relationships) {
     if (rel.targetId === entityId) {
@@ -187,6 +190,7 @@ export function findDependents(graph: KnowledgeGraph, entityId: string): CodeEnt
  * Find all entities that the given entity depends on (points TO).
  */
 export function findDependencies(graph: KnowledgeGraph, entityId: string): CodeEntity[] {
+  if (!graph || !graph.relationships || !entityId) return [];
   const depIds = new Set<string>();
   for (const rel of graph.relationships) {
     if (rel.sourceId === entityId) {
@@ -206,6 +210,7 @@ export function findDependencies(graph: KnowledgeGraph, entityId: string): CodeE
  * Get all entities defined in a given file.
  */
 export function getFileEntities(graph: KnowledgeGraph, filePath: string): CodeEntity[] {
+  if (!graph || !graph.entities || !filePath) return [];
   return getAllEntities(graph).filter((e) => e.filePath === filePath);
 }
 
@@ -224,7 +229,7 @@ export function getCallChain(
   direction: 'callers' | 'callees',
   maxDepth = 5,
 ): CodeEntity[][] {
-  if (!graph.entities.has(entityId)) return [];
+  if (!graph || !graph.entities || !entityId || !graph.entities.has(entityId)) return [];
 
   const callRels = graph.relationships.filter((r) => r.type === 'calls');
   const paths: string[][] = [];

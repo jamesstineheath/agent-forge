@@ -295,6 +295,12 @@ describe('Knowledge Graph Query Engine', () => {
       expect(chains).toHaveLength(0);
     });
 
+    it('returns empty for null/undefined graph or entityId', () => {
+      expect(getCallChain(null as unknown as KnowledgeGraph, 'x', 'callees')).toEqual([]);
+      expect(getCallChain(graph, '', 'callees')).toEqual([]);
+      expect(getCallChain(graph, undefined as unknown as string, 'callers')).toEqual([]);
+    });
+
     it('handles cycles without infinite loop', () => {
       // Create a graph with a cycle: X calls Y, Y calls X
       const X = makeEntity('X', 'function', 'src/cycle.ts', 1, 5);
@@ -319,6 +325,45 @@ describe('Knowledge Graph Query Engine', () => {
       for (const chain of chains) {
         expect(chain.map((e) => e.name)).not.toContain('X');
       }
+    });
+  });
+
+  // --- Graceful handling of invalid inputs ---
+
+  describe('graceful null/undefined handling', () => {
+    const nullGraph = null as unknown as KnowledgeGraph;
+    const undefinedId = undefined as unknown as string;
+
+    it('queryGraph returns empty for null graph', () => {
+      const result = queryGraph(nullGraph, {});
+      expect(result.entities).toHaveLength(0);
+      expect(result.totalCount).toBe(0);
+    });
+
+    it('findRelated returns empty for null graph', () => {
+      const result = findRelated(nullGraph, 'x');
+      expect(result.entities).toHaveLength(0);
+    });
+
+    it('findRelated returns empty for undefined entityId', () => {
+      const result = findRelated(graph, undefinedId);
+      expect(result.entities).toHaveLength(0);
+    });
+
+    it('findDependents returns empty for null graph', () => {
+      expect(findDependents(nullGraph, 'x')).toEqual([]);
+    });
+
+    it('findDependencies returns empty for undefined entityId', () => {
+      expect(findDependencies(graph, undefinedId)).toEqual([]);
+    });
+
+    it('getFileEntities returns empty for null graph', () => {
+      expect(getFileEntities(nullGraph, 'x')).toEqual([]);
+    });
+
+    it('getFileEntities returns empty for empty filePath', () => {
+      expect(getFileEntities(graph, '')).toEqual([]);
     });
   });
 });
