@@ -100,7 +100,9 @@ export default auth(async (request) => {
   const isPublicRoute =
     pathname.startsWith('/sign-in') ||
     pathname.startsWith('/api/auth') ||
-    pathname.startsWith('/api/');
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/.well-known/') ||
+    pathname.startsWith('/oauth/');
 
   if (!isAuthenticated && !isPublicRoute) {
     const signInUrl = new URL('/sign-in', request.nextUrl.origin);
