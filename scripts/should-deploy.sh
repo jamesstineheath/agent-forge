@@ -13,11 +13,15 @@ if [ -z "${VERCEL_GIT_PREVIOUS_SHA:-}" ] || [ -z "${VERCEL_GIT_COMMIT_SHA:-}" ];
 fi
 
 # Get list of changed files between the two commits
-# Vercel uses shallow clones, so VERCEL_GIT_PREVIOUS_SHA may not exist
-# (especially after squash merges). Fall back to proceeding with build.
+# Vercel uses shallow clones, so VERCEL_GIT_PREVIOUS_SHA may not exist.
+# Try to deepen history before falling back to HEAD~1.
 CHANGED_FILES=$(git diff --name-only "$VERCEL_GIT_PREVIOUS_SHA" "$VERCEL_GIT_COMMIT_SHA" 2>/dev/null) || {
-  echo "Could not diff commits (shallow clone), proceeding with build"
-  exit 1
+  echo "Could not diff commits (shallow clone), deepening history..."
+  git fetch --deepen=2 2>/dev/null || true
+  CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null) || {
+    echo "Still could not diff, proceeding with build"
+    exit 1
+  }
 }
 
 if [ -z "$CHANGED_FILES" ]; then
