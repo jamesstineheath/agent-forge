@@ -4,6 +4,11 @@
 
 ## Currently Executing
 
+- **Deprecate ATC monolith cron — verify agents cover all responsibilities then disable** (jamesstineheath/agent-forge)
+  - Branch: `feat/deprecate-atc-monolith-cron-verify-agents-cover-al`
+  - Files: vercel.json, lib/atc.ts, docs/SYSTEM_MAP.md, lib/orchestrator.ts, lib/decomposer.ts, lib/atc/dispatcher.ts, lib/atc/health-monitor.ts, lib/pm-agent.ts, app/api/agents/supervisor/cron/route.ts
+  - Started: 2026-03-18T22:27:17.683Z
+
 - **Preference Profile Types and Storage Layer** (jamesstineheath/personal-assistant)
   - Branch: `fix/preference-profile-types-and-storage-layer`
   - Files: lib/realestate/preferences.ts, lib/realestate/types.ts
