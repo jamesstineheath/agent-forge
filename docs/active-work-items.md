@@ -4,10 +4,6 @@
 
 ## In Review
 
-- **Action Ledger Logger — Log QA Agent Results to Structured Ledger** (jamesstineheath/agent-forge)
-  - Branch: `fix/action-ledger-logger-log-qa-agent-results-to-struc`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/259
-
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
