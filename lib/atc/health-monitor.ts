@@ -91,7 +91,7 @@ export async function handleCodeCIFailure(
       {
         branch,
         handoff_file: item.handoff?.content ? `handoffs/${item.id}.md` : '',
-        retry_context: retryContext,
+        review_feedback: retryContext,
       }
     );
 
