@@ -4,18 +4,15 @@
 
 ## In Review
 
-- **Deterministic Scoring Engine** (jamesstineheath/personal-assistant)
-  - Branch: `fix/deterministic-scoring-engine`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/332
+- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
+  - Branch: `feat/enhance-realestate-scout-cron-web-search-and-price`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/338
 
-- **Listing Data Model Enhancement — priceHistory and coordinates** (jamesstineheath/personal-assistant)
-  - Branch: `feat/listing-data-model-enhancement-pricehistory-and-co`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/334
+- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
+  - Branch: `feat/tool-registry-integration-register-all-new-real-es`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/336
 
 ## Queued for Dispatch
-
-- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
-  - Estimated files: app/api/cron/realestate-scout/route.ts, lib/agents/definitions/realestate-scout.ts, lib/realestate/scout-phases.ts
 
 - **UI — Map View Component with Mapbox GL JS** (jamesstineheath/personal-assistant)
 
@@ -24,6 +21,3 @@
 - **UI — Listing Detail Enhancements (Proximity, Cost Estimator)** (jamesstineheath/personal-assistant)
 
 - **UI — Integrate New Components into Realestate Page** (jamesstineheath/personal-assistant)
-
-- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
-  - Estimated files: lib/tools/index.ts, prompts/sections/realestate.ts, app/api/chat/route.ts
