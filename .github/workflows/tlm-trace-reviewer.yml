@@ -1,0 +1,50 @@
+name: TLM Trace Reviewer
+
+on:
+  schedule:
+    # Daily at 6am UTC — before Outcome Tracker (9am) so findings are available
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: 'Hours of traces to analyze (default: 24)'
+        required: false
+        default: '24'
+      dry_run:
+        description: 'Dry run — analyze but do not write findings or file work items'
+        required: false
+        default: 'false'
+
+jobs:
+  trace-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Trace Reviewer
+        uses: ./.github/actions/tlm-trace-review
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          agent_forge_api_secret: ${{ secrets.AGENT_FORGE_API_SECRET }}
+          agent_forge_url: ${{ secrets.AGENT_FORGE_URL }}
+          blob_read_write_token: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+          lookback_hours: ${{ github.event.inputs.lookback_hours || '24' }}
+          dry_run: ${{ github.event.inputs.dry_run || 'false' }}
+
+      - name: Commit findings to TLM memory
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git config user.name "TLM Trace Reviewer"
+          git config user.email "tlm-trace-reviewer@agent-forge"
+          git add docs/tlm-memory.md
+          git diff --staged --quiet || git commit -m "chore: trace review findings $(date -u +%Y-%m-%d)"
+          git push origin main || echo "Nothing to push or push failed (non-fatal)"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
