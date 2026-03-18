@@ -9,7 +9,10 @@ import {
   rebasePR,
   closePRWithReason,
   deleteBranch,
+  rerunFailedJobs,
 } from "../github";
+import { classifyCIFailure } from "../ci-failure-classifier";
+import { escalate } from "../escalation";
 import { incrementalIndex } from "../knowledge-graph/indexer";
 import type { ATCState } from "../types";
 import type { CycleContext } from "./types";
@@ -20,6 +23,7 @@ import {
   CONFLICT_CHECK_DELAY_MINUTES,
   MAX_RETRIES,
 } from "./types";
+import { getWorkItemEvents } from "./events";
 import { parseEstimatedFiles, makeEvent } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
 
@@ -294,23 +298,113 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         latestRun.conclusion !== "skipped" &&
         latestRun.conclusion !== null
       ) {
-        const event = makeEvent(
-          "status_change",
-          item.id,
-          "executing",
-          "failed",
-          `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion} (reason: workflow_failed)`
-        );
-        await updateWorkItem(item.id, {
-          status: "failed",
-          execution: {
-            ...item.execution,
-            workflowRunId: latestRun.id,
-            completedAt: now.toISOString(),
-            outcome: "failed",
-          },
-        });
-        events.push(event);
+        // Classify CI failure and attempt infra retry if applicable
+        const ciCategory = await classifyCIFailure(item.targetRepo, latestRun.id);
+        addDecision(trace, { workItemId: item.id, action: 'classify_ci_failure', reason: `CI failure classified as '${ciCategory}' (run ${latestRun.id})` });
+
+        if (ciCategory === 'infra') {
+          // Dedup guard: check if an infra retry was already triggered for this work item
+          const itemEvents = await getWorkItemEvents(item.id);
+          const alreadyRetried = itemEvents.some((e) => e.type === 'ci_infra_retry_triggered');
+
+          if (alreadyRetried) {
+            // Retry already attempted — escalate and mark exhausted
+            addDecision(trace, { workItemId: item.id, action: 'infra_retry_exhausted', reason: 'Infra retry already attempted — escalating' });
+            try {
+              await escalate(
+                item.id,
+                'Infra CI failure persists after auto-retry',
+                0.8,
+                { runId: latestRun.id, repo: item.targetRepo, conclusion: latestRun.conclusion }
+              );
+            } catch (escErr) {
+              console.warn(`[health-monitor] Escalation failed for ${item.id}:`, escErr);
+            }
+            const exhaustedEvent = makeEvent(
+              "ci_infra_retry_exhausted",
+              item.id,
+              "executing",
+              "failed",
+              `Infra retry exhausted for workflow run ${latestRun.id} — escalated`
+            );
+            await updateWorkItem(item.id, {
+              status: "failed",
+              failureCategory: "transient",
+              execution: {
+                ...item.execution,
+                workflowRunId: latestRun.id,
+                completedAt: now.toISOString(),
+                outcome: "failed",
+              },
+            });
+            events.push(exhaustedEvent);
+          } else {
+            // First infra failure — trigger rerun of failed jobs
+            try {
+              await rerunFailedJobs(item.targetRepo, latestRun.id);
+              const retryEvent = makeEvent(
+                "ci_infra_retry_triggered",
+                item.id,
+                "executing",
+                "executing",
+                `Infra CI failure detected on run ${latestRun.id} — rerun-failed-jobs triggered`
+              );
+              events.push(retryEvent);
+              addDecision(trace, { workItemId: item.id, action: 'infra_retry_triggered', reason: `Rerun-failed-jobs triggered for run ${latestRun.id}` });
+              // Keep item in "executing" — do not mark as failed
+            } catch (rerunErr) {
+              // Rerun API call failed — escalate immediately
+              addDecision(trace, { workItemId: item.id, action: 'infra_retry_failed', reason: `Rerun API call failed: ${rerunErr}` });
+              try {
+                await escalate(
+                  item.id,
+                  'Infra CI failure rerun API call failed',
+                  0.9,
+                  { runId: latestRun.id, repo: item.targetRepo, error: String(rerunErr) }
+                );
+              } catch (escErr) {
+                console.warn(`[health-monitor] Escalation failed for ${item.id}:`, escErr);
+              }
+              const exhaustedEvent = makeEvent(
+                "ci_infra_retry_exhausted",
+                item.id,
+                "executing",
+                "failed",
+                `Infra retry failed for run ${latestRun.id}: ${rerunErr} — escalated`
+              );
+              await updateWorkItem(item.id, {
+                status: "failed",
+                failureCategory: "transient",
+                execution: {
+                  ...item.execution,
+                  workflowRunId: latestRun.id,
+                  completedAt: now.toISOString(),
+                  outcome: "failed",
+                },
+              });
+              events.push(exhaustedEvent);
+            }
+          }
+        } else {
+          // Non-infra failure — mark as failed (existing behavior)
+          const event = makeEvent(
+            "status_change",
+            item.id,
+            "executing",
+            "failed",
+            `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion} (reason: workflow_failed, category: ${ciCategory})`
+          );
+          await updateWorkItem(item.id, {
+            status: "failed",
+            execution: {
+              ...item.execution,
+              workflowRunId: latestRun.id,
+              completedAt: now.toISOString(),
+              outcome: "failed",
+            },
+          });
+          events.push(event);
+        }
       } else if (
         latestRun &&
         latestRun.status !== "completed" &&
