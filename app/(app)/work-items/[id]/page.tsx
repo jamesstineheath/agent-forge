@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +46,14 @@ interface Props {
 }
 
 export default function WorkItemDetailPage({ params }: Props) {
+  return (
+    <Suspense fallback={<div className="p-6 text-[12px] text-muted-foreground">Loading...</div>}>
+      <WorkItemDetailContent params={params} />
+    </Suspense>
+  );
+}
+
+function WorkItemDetailContent({ params }: Props) {
   const { id } = use(params);
   const router = useRouter();
   const { data: item, isLoading, error, mutate } = useWorkItem(id);
