@@ -58,6 +58,20 @@
 │                    └──────────────┘  │ memory)      │  │
 │                                      └──────────────┘  │
 └─────────────────────────────────────────────────────────┘
+
+### Event Bus (Agent Forge control plane)
+
+```
+GitHub Webhooks ──→ /api/webhooks/github (signature verification)
+                            │
+                     Event Bus (lib/event-bus.ts)
+                     Durable log: hourly-partitioned Vercel Blob
+                     (events/YYYY-MM-DD-HH, 7-day retention)
+                            │
+                     /api/events (authenticated query API)
+                            │
+                     Dashboard webhook event feed
+```
 ```
 
 ## Data Flow
@@ -161,6 +175,10 @@ Until graduation, QA Agent results are advisory only and do not block auto-merge
 | Types | `lib/types.ts` | Shared types (WorkItem, Project, source types including "project") |
 | Repos | `lib/repos.ts` | Multi-repo registry with per-repo concurrency limits |
 | GitHub helper | `lib/github.ts` | GitHub API wrapper for branches, pushes, workflow triggers, PR lookups |
+| Event Bus Types | `lib/event-bus-types.ts` | WebhookEvent interface, GitHubEventType union |
+| Event Bus | `lib/event-bus.ts` | Durable event log: append, query, cleanup (hourly-partitioned Vercel Blob) |
+| Webhook Handler | `app/api/webhooks/github/route.ts` | GitHub webhook receiver with HMAC-SHA256 signature verification |
+| Event Query API | `app/api/events/route.ts` | Authenticated event query endpoint |
 | Hooks (SWR) | `lib/hooks.ts` | React data fetching hooks for dashboard |
 | Handoffs | `handoffs/` | Version-controlled handoff files |
 
@@ -193,6 +211,7 @@ Until graduation, QA Agent results are advisory only and do not block auto-merge
 | ATC State | Vercel Blob `af-data/atc/*` | Active executions, queue, dedup guards |
 | Repo Config | Vercel Blob `af-data/repos/*` | Registered repo metadata |
 | Escalations | Vercel Blob `escalations/*` | Escalation records + index |
+| Event Bus | Vercel Blob `af-data/events/YYYY-MM-DD-HH` | Durable webhook event log (hourly partitions, 7-day retention) |
 | TLM Memory | `docs/tlm-memory.md` (in-repo) | Review patterns and lessons (rolling 20) |
 | TLM Action Ledger | `docs/tlm-action-ledger.json` (in-repo, in pipeline) | Never-pruned outcome history |
 | Feedback Compiler History | `docs/feedback-compiler-history.json` (in-repo, in pipeline) | Change effectiveness tracking |
@@ -204,6 +223,7 @@ Until graduation, QA Agent results are advisory only and do not block auto-merge
 |------|-----|-----------|
 | Agent Forge | Target repos | GitHub API (read files, create branches, push, trigger workflows) |
 | Target repos | Agent Forge | Polling (workflow run status, PR status, CI checks) |
+| GitHub | Agent Forge | Webhooks → `/api/webhooks/github` (PR, CI, push events → durable event log) |
 | PA | Agent Forge | `file_work_item` tool → `POST /api/work-items` (Bearer token auth) |
 | Agent Forge | Notion | Notion API (read project plans, poll project status) |
 | Agent Forge | Gmail | Gmail API OAuth2 (escalation emails, decomposition summaries, reply polling) |
@@ -226,6 +246,7 @@ Until graduation, QA Agent results are advisory only and do not block auto-merge
 | `WORK_ITEMS_API_KEY` | Bearer token for PA → AF work item filing |
 | `GH_PAT` | Fine-grained PAT for GitHub API (avoids token suppression) |
 | `QA_BYPASS_SECRET` | Shared secret for QA Agent to bypass auth on protected routes during smoke tests |
+| `GITHUB_WEBHOOK_SECRET` | HMAC-SHA256 secret for verifying GitHub webhook payloads |
 
 ### Target Repos (GitHub Secrets)
 

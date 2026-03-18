@@ -89,6 +89,7 @@ handoffs/           # Handoff file directory
 - `CRON_SECRET` -- Vercel cron authentication
 - `WORK_ITEMS_API_KEY` -- Bearer token auth for `/api/work-items` (server-to-server calls from PA)
 - `AGENT_FORGE_API_SECRET` -- Bearer token auth for `/api/escalations` (pipeline agent calls)
+- `GITHUB_WEBHOOK_SECRET` -- HMAC-SHA256 secret for verifying GitHub webhook payloads at `/api/webhooks/github`
 
 ### GitHub Secrets
 - `ANTHROPIC_API_KEY` -- For TLM agents in GitHub Actions
