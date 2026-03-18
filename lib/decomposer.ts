@@ -520,7 +520,21 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     : project.id;
   const planContent = await fetchPageContent(pageId);
 
+  console.log(
+    `[Decomposer] Fetched plan content for project "${project.title}" (${project.projectId}). ` +
+    `Content length: ${planContent?.length ?? 0} chars, pageId: ${pageId}`
+  );
+
   if (!planContent || planContent.trim().length < 50) {
+    console.error(
+      `[Decomposer] Plan content too short or empty for project "${project.title}" (${project.projectId}).`,
+      JSON.stringify({
+        projectId: project.projectId,
+        pageId,
+        contentLength: planContent?.length ?? 0,
+        contentPreview: planContent?.slice(0, 200) ?? "(null)",
+      }, null, 2)
+    );
     await escalate(
       `project:${project.projectId}`,
       "Plan page is empty or lacks an identifiable problem statement",
@@ -630,6 +644,17 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   }
 
   if (!decomposedItems) {
+    console.error(
+      `[Decomposer] Decomposition produced 0 valid items after 2 attempts for project "${project.title}" (${project.projectId}).`,
+      JSON.stringify({
+        projectId: project.projectId,
+        projectName: project.title,
+        lastError,
+        planContentLength: planContent.length,
+        primaryRepo,
+        referencedRepoCount: referencedRepos.length,
+      }, null, 2)
+    );
     await escalate(
       `project:${project.projectId}`,
       `Decomposition failed after 2 attempts: ${lastError}`,
