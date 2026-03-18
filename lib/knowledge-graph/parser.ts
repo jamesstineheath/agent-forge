@@ -58,7 +58,7 @@ function typeNodeToString(typeNode: ts.TypeNode | undefined, sourceFile: ts.Sour
 }
 
 function getFunctionSignature(
-  node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction,
+  node: ts.FunctionDeclaration | ts.MethodDeclaration | ts.ArrowFunction | ts.FunctionExpression,
   sourceFile: ts.SourceFile,
 ): string {
   const params = node.parameters
@@ -152,8 +152,9 @@ export function parseFile(filePath: string, content: string, repo: string): Pars
     else if (ts.isInterfaceDeclaration(node)) {
       const name = node.name.getText(sourceFile);
       const { startLine, endLine } = getLineNumbers(node, sourceFile);
+      const id = makeId(repo, filePath, 'type', name);
       entities.push({
-        id: makeId(repo, filePath, 'type', name),
+        id,
         name,
         type: 'type',
         filePath,
@@ -162,6 +163,22 @@ export function parseFile(filePath: string, content: string, repo: string): Pars
         endLine,
         docstring: getJsDoc(node, sourceFile),
       });
+
+      // Interface extends relationships
+      if (node.heritageClauses) {
+        for (const clause of node.heritageClauses) {
+          for (const hType of clause.types) {
+            const targetName = hType.expression.getText(sourceFile);
+            const targetId = `unresolved:${targetName}`;
+            localRelationships.push({
+              id: `${id}:extends:${targetId}`,
+              sourceId: id,
+              targetId,
+              type: 'extends',
+            });
+          }
+        }
+      }
     }
 
     // --- TypeAliasDeclaration ---
@@ -202,6 +219,16 @@ export function parseFile(filePath: string, content: string, repo: string): Pars
         if (ts.isIdentifier(decl.name)) {
           const name = decl.name.getText(sourceFile);
           const { startLine, endLine } = getLineNumbers(node, sourceFile);
+
+          // Extract signature for arrow functions and function expressions
+          let signature: string | undefined;
+          if (
+            decl.initializer &&
+            (ts.isArrowFunction(decl.initializer) || ts.isFunctionExpression(decl.initializer))
+          ) {
+            signature = getFunctionSignature(decl.initializer, sourceFile);
+          }
+
           entities.push({
             id: makeId(repo, filePath, 'variable', name),
             name,
@@ -210,6 +237,7 @@ export function parseFile(filePath: string, content: string, repo: string): Pars
             repo,
             startLine,
             endLine,
+            signature,
             docstring: getJsDoc(node, sourceFile),
           });
         }
