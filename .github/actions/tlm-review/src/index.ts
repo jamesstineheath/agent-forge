@@ -832,47 +832,44 @@ async function run(): Promise<void> {
       }
 
       try {
-        // Enable auto-merge (GitHub will merge once all required checks pass)
-        await octokit.rest.pulls.merge({
-          owner,
-          repo,
-          pull_number: prNumber,
-          merge_method: "squash",
-        });
-        core.info(`Auto-merge initiated for PR #${prNumber}`);
-      } catch (mergeErr: unknown) {
-        const mergeError = mergeErr as { status?: number; message?: string };
-        if (mergeError.status === 405) {
-          // PR not mergeable yet (CI still running, branch protections, etc.)
-          // Try enabling auto-merge instead
-          core.info(
-            "PR not mergeable yet, attempting to enable auto-merge via GraphQL..."
-          );
-          try {
-            const { data: prData } = await octokit.rest.pulls.get({
-              owner,
-              repo,
-              pull_number: prNumber,
-            });
-            await octokit.graphql(
-              `mutation EnableAutoMerge($pullRequestId: ID!) {
-                enablePullRequestAutoMerge(input: {
-                  pullRequestId: $pullRequestId,
-                  mergeMethod: SQUASH
-                }) {
-                  pullRequest { autoMergeRequest { enabledAt } }
+        await octokit.graphql<{
+          enablePullRequestAutoMerge: {
+            pullRequest: {
+              autoMergeRequest: { enabledAt: string } | null;
+            };
+          };
+        }>(
+          `mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+            enablePullRequestAutoMerge(input: {
+              pullRequestId: $pullRequestId,
+              mergeMethod: $mergeMethod
+            }) {
+              pullRequest {
+                autoMergeRequest {
+                  enabledAt
                 }
-              }`,
-              { pullRequestId: prData.node_id }
-            );
-            core.info("Auto-merge enabled, will merge when CI passes.");
-          } catch (graphqlErr) {
-            core.warning(
-              `Could not enable auto-merge: ${graphqlErr}. PR is approved but will need manual merge or auto-merge may not be enabled for this repo.`
-            );
+              }
+            }
+          }`,
+          {
+            pullRequestId: pr.node_id,
+            mergeMethod: 'SQUASH',
           }
+        );
+        console.log(`[TLM-REVIEW] Auto-merge enabled for PR #${prNumber} (merges when CI passes)`);
+      } catch (mergeErr: unknown) {
+        const message = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
+
+        if (message.toLowerCase().includes('auto-merge is already enabled')) {
+          console.log(`[TLM-REVIEW] Auto-merge already enabled for PR #${prNumber}, skipping`);
+        } else if (
+          message.toLowerCase().includes('conflict') ||
+          message.toLowerCase().includes('not mergeable')
+        ) {
+          console.log(`[TLM-REVIEW] PR #${prNumber} has merge conflicts, skipping auto-merge`);
         } else {
-          core.warning(`Auto-merge failed: ${mergeError.message}`);
+          console.error(`[TLM-REVIEW] Failed to enable auto-merge for PR #${prNumber}: ${message}`);
+          core.warning(`Failed to enable auto-merge for PR #${prNumber}: ${message}`);
         }
       }
     }
