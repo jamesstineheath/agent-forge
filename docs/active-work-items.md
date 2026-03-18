@@ -9,6 +9,7 @@
   - Files: components/realestate/proximity-section.tsx, components/realestate/cost-estimator-section.tsx, app/api/realestate/proximity/route.ts
   - Started: 2026-03-18T23:52:41.725Z
 
-## Queued for Dispatch
-
-- **UI — Integrate New Components into Realestate Page** (jamesstineheath/personal-assistant)
+- **Add retrying/verified/partial status lifecycle to work items** (jamesstineheath/agent-forge)
+  - Branch: `fix/add-retryingverifiedpartial-status-lifecycle-to-wo`
+  - Files: lib/types.ts, lib/atc/health-monitor.ts, lib/atc/dispatcher.ts, app/(app)/work-items/page.tsx, app/(app)/page.tsx, components/quick-stats.tsx, components/project-card.tsx
+  - Started: 2026-03-18T23:56:51.289Z
