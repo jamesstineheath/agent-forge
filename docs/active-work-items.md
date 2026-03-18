@@ -9,6 +9,11 @@
   - Files: .github/actions/tlm-feedback-compiler/src/types.ts
   - Started: 2026-03-18T21:01:49.581Z
 
+- **Deploy QA Agent Workflow + Composite Action to personal-assistant** (jamesstineheath/personal-assistant)
+  - Branch: `fix/deploy-qa-agent-workflow-composite-action-to-perso`
+  - Files: .github/actions/tlm-qa-agent/action.yml, .github/actions/tlm-qa-agent/src/index.ts, .github/actions/tlm-qa-agent/src/action-ledger.ts, .github/actions/tlm-qa-agent/dist/index.js, .github/workflows/tlm-qa-agent.yml
+  - Started: 2026-03-18T21:04:14.551Z
+
 ## In Review
 
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
