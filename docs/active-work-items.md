@@ -9,15 +9,13 @@
   - Files: app/api/cron/realestate-scout/route.ts, lib/agents/definitions/realestate-scout.ts, lib/realestate/scout-phases.ts
   - Started: 2026-03-18T23:05:25.187Z
 
-- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
-  - Branch: `feat/tool-registry-integration-register-all-new-real-es`
-  - Files: lib/tools/index.ts, prompts/sections/realestate.ts, app/api/chat/route.ts
-  - Started: 2026-03-18T23:02:03.949Z
-
-## Queued for Dispatch
+## In Review
 
 - **Deterministic Scoring Engine** (jamesstineheath/personal-assistant)
-  - Estimated files: lib/realestate/scoring.ts
+  - Branch: `fix/deterministic-scoring-engine`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/332
+
+## Queued for Dispatch
 
 - **Listing Data Model Enhancement — priceHistory and coordinates** (jamesstineheath/personal-assistant)
   - Estimated files: lib/realestate/properties.ts, lib/realestate/geocoding.ts, lib/realestate/types.ts
@@ -29,3 +27,6 @@
 - **UI — Listing Detail Enhancements (Proximity, Cost Estimator)** (jamesstineheath/personal-assistant)
 
 - **UI — Integrate New Components into Realestate Page** (jamesstineheath/personal-assistant)
+
+- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
+  - Estimated files: lib/tools/index.ts, prompts/sections/realestate.ts, app/api/chat/route.ts
