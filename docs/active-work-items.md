@@ -9,14 +9,13 @@
   - Files: `.github/actions/tlm-review/src/index.ts`
   - Started: 2026-03-18T18:16:25.476Z
 
-- **Bootstrap rez-sniper: push execute-handoff.yml via GitHub API** (jamesstineheath/agent-forge)
-  - Branch: `fix/bootstrap-rez-sniper-push-execute-handoffyml-via-g`
-  - Files: `handoffs/bootstrap-rez-sniper-workflows.md`, `scripts/bootstrap-rez-sniper.sh` (ephemeral, not committed)
-  - Started: 2026-03-18T18:18:35.515Z
-
 ## In Review
 
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
   - Files: handoffs/pa-auth-bypass-middleware-for-qa-agent-smoke-tests.md, proxy.ts
+
+- **Bootstrap rez-sniper: push execute-handoff.yml via GitHub API** (jamesstineheath/agent-forge)
+  - Branch: `fix/bootstrap-rez-sniper-push-execute-handoffyml-via-g`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/277
