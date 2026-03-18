@@ -10,6 +10,7 @@ import {
   closePRWithReason,
   deleteBranch,
 } from "../github";
+import { incrementalIndex } from "../knowledge-graph/indexer";
 import type { ATCState } from "../types";
 import type { CycleContext } from "./types";
 import {
@@ -132,6 +133,22 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           },
         });
         events.push(event);
+
+        // Trigger incremental re-index on PR merge
+        try {
+          const mergedPrFiles = await getPRFiles(item.targetRepo, pr.number);
+          if (mergedPrFiles.length > 0) {
+            const indexResult = await incrementalIndex(item.targetRepo, mergedPrFiles);
+            console.log(
+              `[health-monitor] Incremental re-index for ${item.targetRepo}: ${mergedPrFiles.length} files from PR #${pr.number}, ${indexResult.entitiesUpdated} entities updated`
+            );
+          }
+        } catch (indexErr) {
+          console.warn(
+            `[health-monitor] Incremental re-index failed for PR #${pr.number}:`,
+            indexErr instanceof Error ? indexErr.message : String(indexErr)
+          );
+        }
       } else if (pr?.state === "closed" && !pr.mergedAt) {
         const event = makeEvent(
           "status_change",
@@ -245,6 +262,22 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           },
         });
         events.push(event);
+
+        // Trigger incremental re-index on PR merge
+        try {
+          const mergedPrFiles = await getPRFiles(item.targetRepo, pr.number);
+          if (mergedPrFiles.length > 0) {
+            const indexResult = await incrementalIndex(item.targetRepo, mergedPrFiles);
+            console.log(
+              `[health-monitor] Incremental re-index for ${item.targetRepo}: ${mergedPrFiles.length} files from PR #${pr.number}, ${indexResult.entitiesUpdated} entities updated`
+            );
+          }
+        } catch (indexErr) {
+          console.warn(
+            `[health-monitor] Incremental re-index failed for PR #${pr.number}:`,
+            indexErr instanceof Error ? indexErr.message : String(indexErr)
+          );
+        }
       } else if (pr?.state === "closed" && !pr.mergedAt) {
         const event = makeEvent(
           "status_change",
@@ -389,6 +422,22 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
             `Reconciled: work item was "failed" but PR #${pr.number} is merged (merged at ${pr.mergedAt})`
           )
         );
+
+        // §2.8 extension: trigger incremental re-index on PR merge
+        try {
+          const prFiles = await getPRFiles(item.targetRepo, pr.number);
+          if (prFiles.length > 0) {
+            const result = await incrementalIndex(item.targetRepo, prFiles);
+            console.log(
+              `[health-monitor §2.8] Incremental re-index triggered for ${item.targetRepo} (${prFiles.length} files from PR #${pr.number}, ${result.entitiesUpdated} entities updated)`
+            );
+          }
+        } catch (indexErr) {
+          console.warn(
+            `[health-monitor §2.8] Incremental re-index failed for PR #${pr.number}:`,
+            indexErr instanceof Error ? indexErr.message : String(indexErr)
+          );
+        }
       } else if (!pr || (pr.state === "closed" && !pr.mergedAt)) {
         // Genuinely failed, leave as-is
       } else if (pr.state === "open") {
