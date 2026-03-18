@@ -4,15 +4,15 @@
 
 ## Currently Executing
 
-- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
-  - Branch: `fix/create-compiler-prompt-module-srccompiler-promptts`
-  - Files: .github/actions/tlm-feedback-compiler/src/compiler-prompt.ts
-  - Started: 2026-03-18T21:22:52.505Z
+- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `feat/create-change-proposer-module-srcchange-proposerts`
+  - Files: .github/actions/tlm-feedback-compiler/src/change-proposer.ts, .github/actions/tlm-feedback-compiler/src/types.ts, docs/feedback-compiler-history.json
+  - Started: 2026-03-18T21:27:32.458Z
 
-- **Agent trace viewer UI in dashboard Agents tab** (jamesstineheath/agent-forge)
-  - Branch: `fix/agent-trace-viewer-ui-in-dashboard-agents-tab`
-  - Files: `app/(app)/agents/page.tsx`, `components/agent-trace-viewer.tsx`, `components/agent-trace-detail.tsx`, `lib/hooks.ts`, `app/api/agents/traces/route.ts`
-  - Started: 2026-03-18T21:21:07.031Z
+- **Auto-retry infra CI failures via GitHub API** (jamesstineheath/agent-forge)
+  - Branch: `feat/auto-retry-infra-ci-failures-via-github-api`
+  - Files: `lib/atc/health-monitor.ts`, `lib/github.ts`, `lib/atc/types.ts`, `lib/atc/events.ts`
+  - Started: 2026-03-18T21:25:05.592Z
 
 ## In Review
 
@@ -32,8 +32,6 @@
   - Files: app/api/agents/digest/cron/route.ts, handoffs/daily-email-digest-of-pipeline-activity.md, lib/digest.ts, lib/gmail.ts, vercel.json
 
 ## Queued for Dispatch
-
-- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
 
 - **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
 
