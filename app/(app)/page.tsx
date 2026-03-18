@@ -43,6 +43,8 @@ export default function DashboardPage() {
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     new Set()
   );
+  const [hideCompleteProjects, setHideCompleteProjects] = useState(true);
+  const [projectSearch, setProjectSearch] = useState("");
 
   const toggleProject = (id: string) => {
     setExpandedProjects((prev) => {
@@ -151,13 +153,28 @@ export default function DashboardPage() {
           {/* Projects */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Projects
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Projects
+                </h2>
+                <button
+                  onClick={() => setHideCompleteProjects(!hideCompleteProjects)}
+                  className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                >
+                  {hideCompleteProjects ? "Show complete" : "Hide complete"}
+                </button>
+              </div>
               <button className="text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1 font-medium">
                 New work item <ArrowRight size={12} />
               </button>
             </div>
+            <input
+              type="text"
+              placeholder="Search projects..."
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
             {projectsLoading ? (
               <div className="text-sm text-muted-foreground">Loading projects...</div>
             ) : !projects || projects.length === 0 ? (
@@ -168,7 +185,14 @@ export default function DashboardPage() {
               </div>
             ) : (
               <div className="space-y-2">
-                {projects.map((project) => (
+                {projects.filter((p) => {
+                  if (hideCompleteProjects && p.status === "Complete") return false;
+                  if (projectSearch) {
+                    const q = projectSearch.toLowerCase();
+                    return p.title.toLowerCase().includes(q) || p.projectId.toLowerCase().includes(q) || (p.targetRepo?.toLowerCase().includes(q) ?? false);
+                  }
+                  return true;
+                }).map((project) => (
                   <ProjectCard
                     key={project.id}
                     project={project}

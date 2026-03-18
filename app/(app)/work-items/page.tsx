@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { MultiSelectFilter } from "@/components/multi-select-filter";
 import { WorkItemsTable } from "@/components/work-items-table";
 import { WorkItemsKanban } from "@/components/work-items-kanban";
-import { useWorkItems, useRepos } from "@/lib/hooks";
+import { useWorkItems, useRepos, useProjects } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
 const STATUS_OPTIONS: { label: string; value: WorkItem["status"] }[] = [
@@ -37,20 +37,41 @@ export default function WorkItemsPage() {
   const [statusFilters, setStatusFilters] = useState<WorkItem["status"][]>([]);
   const [priorityFilters, setPriorityFilters] = useState<WorkItem["priority"][]>([]);
   const [repoFilters, setRepoFilters] = useState<string[]>([]);
+  const [projectFilters, setProjectFilters] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<"" | "direct">("");
 
   const { data: items, isLoading, error } = useWorkItems();
   const { data: repos } = useRepos();
+  const { data: projects } = useProjects();
 
   const repoOptions = (repos ?? []).map((r) => ({
     label: r.fullName.split("/").pop() ?? r.fullName,
     value: r.fullName,
   }));
 
+  const projectOptions = (projects ?? []).map((p) => ({
+    label: p.title,
+    value: p.projectId,
+  }));
+
+  // Build a map of projectId -> matching targetRepo prefixes for filtering
+  const projectRepoMap = new Map(
+    (projects ?? [])
+      .filter((p) => p.targetRepo)
+      .map((p) => [p.projectId, `jamesstineheath/${p.targetRepo}`])
+  );
+
   const filteredItems = items?.filter((item) => {
     if (statusFilters.length > 0 && !statusFilters.includes(item.status)) return false;
     if (priorityFilters.length > 0 && !priorityFilters.includes(item.priority)) return false;
     if (repoFilters.length > 0 && !repoFilters.includes(item.targetRepo)) return false;
+    if (projectFilters.length > 0) {
+      const matchesProject = projectFilters.some((pid) =>
+        (item.source?.type === "project" && item.source?.sourceId === pid) ||
+        item.targetRepo === projectRepoMap.get(pid)
+      );
+      if (!matchesProject) return false;
+    }
     if (sourceFilter === "direct" && item.source?.type !== "direct") return false;
     return true;
   });
@@ -291,6 +312,12 @@ export default function WorkItemsPage() {
               options={repoOptions}
               selected={repoFilters}
               onChange={setRepoFilters}
+            />
+            <MultiSelectFilter
+              label="Projects"
+              options={projectOptions}
+              selected={projectFilters}
+              onChange={setProjectFilters}
             />
             <button
               className={cn(
