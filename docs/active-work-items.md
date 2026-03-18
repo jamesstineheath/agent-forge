@@ -9,6 +9,11 @@
   - Files: lib/debate/types.ts, lib/debate/config.ts
   - Started: 2026-03-18T13:36:17.883Z
 
+- **Disable QA Agent workflow (no-op stub)** (jamesstineheath/agent-forge)
+  - Branch: `fix/disable-qa-agent-workflow-no-op-stub`
+  - Files: .github/workflows/tlm-qa-agent.yml
+  - Started: 2026-03-18T13:40:52.281Z
+
 ## Queued for Dispatch
 
 - **Action Ledger Logger — Log QA Agent Results to Structured Ledger** (agent-forge)
