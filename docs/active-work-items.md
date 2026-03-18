@@ -4,46 +4,26 @@
 
 ## Currently Executing
 
-- **Action Ledger Logger — Log QA Agent Results to Structured Ledger** (jamesstineheath/agent-forge)
-  - Branch: `fix/action-ledger-logger-log-qa-agent-results-to-struc`
-  - Files: .github/actions/tlm-qa-agent/src/action-ledger.ts, .github/actions/tlm-qa-agent/src/index.ts, .github/actions/tlm-qa-agent/dist/index.js
-  - Started: 2026-03-18T16:25:57.158Z
-
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - Files: middleware.ts
   - Started: 2026-03-18T16:21:53.685Z
 
-- **PA Repo-Specific Acceptance Criteria Template** (jamesstineheath/personal-assistant)
-  - Branch: `fix/pa-repo-specific-acceptance-criteria-template`
-  - Files: docs/qa-acceptance-criteria-template.md
-  - Started: 2026-03-18T16:23:31.049Z
-
-- **Build TypeScript AST parser for code entity extraction** (jamesstineheath/agent-forge)
-  - Branch: `feat/build-typescript-ast-parser-for-code-entity-extrac`
-  - Files: lib/knowledge-graph/parser.ts, lib/__tests__/knowledge-graph-parser.test.ts
-  - Started: 2026-03-18T16:27:23.689Z
-
-- **Fix execute-handoff.yml: workflow concludes 'skipped' after committing code, causing false failures** (jamesstineheath/agent-forge)
-  - Branch: `feat/fix-execute-handoffyml-workflow-concludes-skipped-`
-  - Files: .github/workflows/execute-handoff.yml, lib/atc/health-monitor.ts, lib/atc/dispatcher.ts, lib/atc/types.ts
-  - Started: 2026-03-18T16:27:36.510Z
+- **Implement graph query engine** (jamesstineheath/agent-forge)
+  - Branch: `feat/implement-graph-query-engine`
+  - Files: lib/knowledge-graph/query.ts, lib/__tests__/knowledge-graph-query.test.ts
+  - Started: 2026-03-18T16:28:43.351Z
 
 ## Queued for Dispatch
 
-- **Deploy QA Agent Workflow + Composite Action to personal-assistant** (jamesstineheath/personal-assistant)
+- **Action Ledger Logger — Log QA Agent Results to Structured Ledger** (jamesstineheath/agent-forge)
+  - Estimated files: .github/actions/tlm-qa-agent/src/action-ledger.ts, .github/actions/tlm-qa-agent/src/index.ts, .github/actions/tlm-qa-agent/dist/index.js
 
 - **Deploy QA Agent Workflow + Composite Action to rez-sniper** (jamesstineheath/rez-sniper)
 
 - **Rez-Sniper Repo-Specific Acceptance Criteria Template** (jamesstineheath/rez-sniper)
 
-- **Dashboard QA Results Section — API Route** (jamesstineheath/agent-forge)
-
 - **Dashboard QA Results Section — UI Component** (jamesstineheath/agent-forge)
-
-- **Graduation Tracker — Structured PR Verification Markers** (jamesstineheath/agent-forge)
-
-- **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (jamesstineheath/agent-forge)
 
 - **Add debate stats to pipeline dashboard API** (jamesstineheath/agent-forge)
   - Estimated files: app/api/debates/route.ts, app/(app)/pipeline/page.tsx, lib/hooks.ts
