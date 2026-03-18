@@ -4,32 +4,17 @@
 
 ## Currently Executing
 
-- **Preference Profile Types and Storage Layer** (jamesstineheath/personal-assistant)
-  - Branch: `fix/preference-profile-types-and-storage-layer`
-  - Files: lib/realestate/preferences.ts, lib/realestate/types.ts
-  - Started: 2026-03-18T22:22:03.043Z
-
-## In Review
-
-- **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
-  - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
-  - Files: handoffs/pa-auth-bypass-middleware-for-qa-agent-smoke-tests.md, proxy.ts
-
-- **Dashboard QA Results Section — API Route** (jamesstineheath/agent-forge)
-  - Branch: `fix/dashboard-qa-results-section-api-route`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/287
-  - Files: app/api/qa-results/route.ts, handoffs/dashboard-qa-results-section-api-route.md
-
-- **Deprecate ATC monolith cron — verify agents cover all responsibilities then disable** (jamesstineheath/agent-forge)
-  - Branch: `feat/deprecate-atc-monolith-cron-verify-agents-cover-al`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/293
-
-## Queued for Dispatch
-
 - **Deterministic Scoring Engine** (jamesstineheath/personal-assistant)
+  - Branch: `fix/deterministic-scoring-engine`
+  - Files: lib/realestate/scoring.ts
+  - Started: 2026-03-18T22:37:27.864Z
 
 - **Listing Data Model Enhancement — priceHistory and coordinates** (jamesstineheath/personal-assistant)
+  - Branch: `feat/listing-data-model-enhancement-pricehistory-and-co`
+  - Files: lib/realestate/properties.ts, lib/realestate/geocoding.ts, lib/realestate/types.ts
+  - Started: 2026-03-18T22:39:03.506Z
+
+## Queued for Dispatch
 
 - **Proximity Analysis Module** (jamesstineheath/personal-assistant)
 
