@@ -281,7 +281,7 @@ async function checkCIStatus(
     core.info(`CI failing: ${failedChecks.map((c) => c.name).join(", ")}`);
 
     const alreadyPostedFailing = await hasRecentTLMComment(
-      octokit, owner, repo, prNumber, "TLM Review: CI Failing"
+      octokit, owner, repo, prNumber, "TLM Review: CI_BLOCKED"
     );
     if (!alreadyPostedFailing) {
       await octokit.rest.pulls.createReview({
@@ -289,9 +289,9 @@ async function checkCIStatus(
         repo,
         pull_number: prNumber,
         body: [
-          "## TLM Review: CI Failing",
+          "## TLM Review: CI_BLOCKED",
           "",
-          "CI is failing. Deferring code review until CI passes.",
+          "CI is failing. Code review deferred until CI passes.",
           "",
           "Failing checks:",
           ...failedChecks.map((c) => `- \`${c.name}\`: ${c.conclusion}`),
@@ -301,7 +301,7 @@ async function checkCIStatus(
         event: "COMMENT",
       });
     } else {
-      core.info("Skipping duplicate CI Failing comment (recent one exists).");
+      core.info("Skipping duplicate CI_BLOCKED comment (recent one exists).");
     }
     return "failing";
   }
@@ -447,7 +447,7 @@ async function run(): Promise<void> {
       const hasFullReview = existingReviews.some(
         (r) =>
           r.body?.includes("## TLM Review:") &&
-          !r.body?.includes("CI Failing") &&
+          !r.body?.includes("CI_BLOCKED") &&
           !r.body?.includes("CI Pending") &&
           r.commit_id === pr.head.sha
       );
@@ -499,9 +499,15 @@ async function run(): Promise<void> {
       }
     }
 
-    if (ciStatus === "failing" || ciStatus === "pending") {
-      core.setOutput("decision", `ci_${ciStatus}`);
-      core.setOutput("summary", `CI is ${ciStatus}, deferring review.`);
+    if (ciStatus === "failing") {
+      core.setOutput("decision", "ci_blocked");
+      core.setOutput("summary", "CI is failing, review recorded as CI_BLOCKED.");
+      return;
+    }
+
+    if (ciStatus === "pending") {
+      core.setOutput("decision", "ci_pending");
+      core.setOutput("summary", "CI is pending, deferring review.");
       return;
     }
 
