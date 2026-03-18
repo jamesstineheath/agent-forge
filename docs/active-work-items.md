@@ -4,15 +4,10 @@
 
 ## Currently Executing
 
-- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
-  - Branch: `feat/create-change-proposer-module-srcchange-proposerts`
-  - Files: .github/actions/tlm-feedback-compiler/src/change-proposer.ts, .github/actions/tlm-feedback-compiler/src/types.ts, docs/feedback-compiler-history.json
-  - Started: 2026-03-18T21:27:32.458Z
-
-- **Fix HLO retry for code CI failures** (jamesstineheath/agent-forge)
-  - Branch: `feat/fix-hlo-retry-for-code-ci-failures`
-  - Files: `lib/atc/health-monitor.ts`, `lib/atc/types.ts`, `.github/workflows/execute-handoff.yml`, `lib/atc/events.ts`, `lib/escalation.ts`
-  - Started: 2026-03-18T21:26:32.505Z
+- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
+  - Branch: `feat/build-distindexjs-bundle-via-ncc`
+  - Files: .github/actions/tlm-feedback-compiler/dist/index.js, .github/actions/tlm-feedback-compiler/dist/licenses.txt
+  - Started: 2026-03-18T21:31:58.485Z
 
 ## In Review
 
@@ -32,8 +27,6 @@
   - Files: app/api/agents/digest/cron/route.ts, handoffs/daily-email-digest-of-pipeline-activity.md, lib/digest.ts, lib/gmail.ts, vercel.json
 
 ## Queued for Dispatch
-
-- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
 
 - **Integration test: validate full action build and workflow YAML** (jamesstineheath/personal-assistant)
 
