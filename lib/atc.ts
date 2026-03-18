@@ -297,7 +297,9 @@ async function _runATCCycleInner(): Promise<ATCState> {
       }
     }
 
-    // Direct-source item dispatch
+    // --- Standalone item dispatch (fast lane) ---
+    // Standalone items (any source except 'project') have no project parent.
+    // Pick up 'filed' or 'ready' items and dispatch if repo has capacity.
     const [directFiledEntries, directReadyEntries] = await Promise.all([
       listWorkItems({ status: "filed" }),
       listWorkItems({ status: "ready" }),
@@ -314,14 +316,15 @@ async function _runATCCycleInner(): Promise<ATCState> {
       if (slotsRemaining <= 0) break;
 
       const item = await getWorkItem(entry.id);
-      if (!item || item.source.type !== "direct") continue;
+      // Skip project-decomposed items — they're dispatched via the project loop above
+      if (!item || item.source.type === "project") continue;
 
       const activeForRepo = concurrencyMap.get(item.targetRepo) ?? 0;
       const repoConfig = repoConfigByName.get(item.targetRepo);
       const limit = repoConfig?.concurrencyLimit ?? 1;
 
       if (activeForRepo >= limit) {
-        console.log(`[ATC] Repo ${item.targetRepo} at concurrency limit, skipping direct item: ${item.id}`);
+        console.log(`[ATC] Repo ${item.targetRepo} at concurrency limit, skipping standalone item: ${item.id}`);
         continue;
       }
 
@@ -329,12 +332,12 @@ async function _runATCCycleInner(): Promise<ATCState> {
         await updateWorkItem(item.id, { status: "ready" });
       }
 
-      console.log(`[ATC] Dispatching direct item: ${item.id}`);
+      console.log(`[ATC] Dispatching standalone item: ${item.id} (source: ${item.source.type})`);
       try {
         const result = await dispatchWorkItem(item.id);
         events.push(makeEvent(
           "auto_dispatch", item.id, item.status, "executing",
-          `Auto-dispatched direct item to ${item.targetRepo} (branch: ${result.branch})`
+          `Auto-dispatched standalone item (source: ${item.source.type}) to ${item.targetRepo} (branch: ${result.branch})`
         ));
         slotsRemaining--;
         concurrencyMap.set(item.targetRepo, (concurrencyMap.get(item.targetRepo) ?? 0) + 1);
@@ -350,7 +353,7 @@ async function _runATCCycleInner(): Promise<ATCState> {
         });
         events.push(makeEvent(
           "error", item.id, "ready", "failed",
-          `Direct item auto-dispatch failed: ${msg}`
+          `Standalone item auto-dispatch failed: ${msg}`
         ));
       }
     }
