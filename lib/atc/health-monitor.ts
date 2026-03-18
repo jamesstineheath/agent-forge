@@ -24,6 +24,8 @@ import {
 } from "./types";
 import { parseEstimatedFiles, makeEvent } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
+export { classifyCIFailure } from "./ci-classifier";
+export type { CIFailureClassification } from "./ci-classifier";
 
 // Default code-CI retry budget (distinct from general MAX_RETRIES which resets to ready)
 const CODE_CI_RETRY_BUDGET_DEFAULT = 1;
