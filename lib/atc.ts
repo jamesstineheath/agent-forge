@@ -1,17 +1,16 @@
 import { randomUUID } from "crypto";
 import { loadJson, saveJson, deleteJson } from "./storage";
-import { listWorkItems, getWorkItem, updateWorkItem, getNextDispatchable, getAllDispatchable, reconcileWorkItemIndex } from "./work-items";
+import { listWorkItems, getWorkItem, updateWorkItem, getAllDispatchable, reconcileWorkItemIndex } from "./work-items";
 import { listRepos, getRepo } from "./repos";
-import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, listBranches, deleteBranch, getBranchLastCommitDate, getPRLifecycleState, getPRMergeability, rebasePR, closePRWithReason, pushFile } from "./github";
+import { getWorkflowRuns, getPRByBranch, getPRByNumber, getPRFiles, deleteBranch, getPRMergeability, rebasePR, closePRWithReason, pushFile } from "./github";
 import { dispatchWorkItem } from "./orchestrator";
-import type { ATCEvent, ATCState, WorkItem, HLOLifecycleState } from "./types";
-import type { PR } from "./github";
-import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject, writeOutcomeSummary, getRetryProjects, clearRetryFlag, markProjectFailedFromRetry } from "./projects";
-import { decomposeProject } from "./decomposer";
-import { validatePlan } from "./plan-validator";
-import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation, escalate, findPendingProjectEscalation } from "./escalation";
-import { summarizeDailyCacheMetrics } from "./cache-metrics";
-import { reviewBacklog, assessProjectHealth, composeDigest } from "./pm-agent";
+import type { ATCEvent, ATCState, WorkItem } from "./types";
+import { runProjectManager } from "./atc/project-manager";
+import { runSupervisor } from "./atc/supervisor";
+import type { CycleContext } from "./atc/utils";
+export { cleanupStaleBranches } from "./atc/branch-cleanup";
+export type { CycleContext } from "./atc/utils";
+export type { HLOStateEntry } from "./atc/supervisor";
 
 /**
  * Parse "Estimated files:" from handoff markdown content.
@@ -28,30 +27,16 @@ export function parseEstimatedFiles(content: string): string[] {
 
 const ATC_STATE_KEY = "atc/state";
 const ATC_EVENTS_KEY = "atc/events";
-const ATC_BRANCH_CLEANUP_KEY = "atc/last-branch-cleanup";
 
-// Projects with human-authored plans that predate the PM quality gate.
-// These bypass the plan quality gate check in §4.5.
-// Remove entries once they have a proper PM-agent plan or are completed.
-const QUALITY_GATE_EXEMPT_PROJECTS = new Set([
-  "PRJ-9",  // PA Real Estate Agent v2 — human-authored plan
-]);
 const ATC_LOCK_KEY = "atc/cycle-lock";
 const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const LOCK_HARD_CEILING_MS = 10 * 60 * 1000; // 10 minutes — force-clear zombie locks
 const CYCLE_TIMEOUT_MS = 240 * 1000; // 240s — abort before Vercel's 300s Fluid Compute limit
-// Stage-aware stall timeouts:
-// - Executing (no workflow run yet): GHA queue delays can be 5-15 min
-// - Executing (workflow running): 35 min from workflow start covers most handoffs
-// - Reviewing (no PR): something went wrong — shorter timeout
 const STALL_TIMEOUT_EXECUTING_NO_RUN_MINUTES = 20;
 const STALL_TIMEOUT_EXECUTING_WITH_RUN_MINUTES = 35;
 const STALL_TIMEOUT_REVIEWING_NO_PR_MINUTES = 30;
-const CONFLICT_CHECK_DELAY_MINUTES = 15; // Don't check mergeability until PR has been in "reviewing" for this long
+const CONFLICT_CHECK_DELAY_MINUTES = 15;
 const MAX_EVENTS = 1000;
-const CLEANUP_THROTTLE_MINUTES = 60;
-const STALE_BRANCH_HOURS = 48;
-const MAX_BRANCHES_PER_REPO = 20;
 
 /**
  * Optimistic distributed lock using Vercel Blob.
@@ -965,229 +950,9 @@ async function _runATCCycleInner(): Promise<ATCState> {
     }
   }
 
-  // §4 — Project retry processing
-  // Process projects flagged for retry before decomposition picks them up
-  try {
-    const retryProjects = await getRetryProjects();
-    if (retryProjects.length > 0) {
-      console.log(`[atc] §4: found ${retryProjects.length} project(s) flagged for retry`);
-    }
-
-    for (const project of retryProjects) {
-      const retryCount = project.retryCount ?? 0;
-
-      // Check retry cap
-      if (retryCount >= 3) {
-        console.log(`[atc] §4: project ${project.projectId} has hit retry cap (retryCount=${retryCount}), marking failed`);
-        await markProjectFailedFromRetry(project.id);
-        events.push(makeEvent(
-          "project_retry", project.projectId, undefined, "Failed",
-          `Retry cap exceeded (retryCount=${retryCount}), marked Failed`
-        ));
-        continue;
-      }
-
-      // Clear the dedup guard so §4.5 will re-decompose this project
-      try {
-        await deleteJson(`atc/project-decomposed/${project.projectId}`);
-        console.log(`[atc] §4: cleared dedup guard for project ${project.projectId}`);
-      } catch {
-        // Guard may not exist; not an error
-        console.log(`[atc] §4: no dedup guard to clear for project ${project.projectId} (ok)`);
-      }
-
-      // Cancel stale work items from previous attempt
-      const staleStates: WorkItem["status"][] = ["failed", "parked", "blocked", "ready", "filed", "queued"];
-      const allEntries = await listWorkItems({});
-      const projectItems: WorkItem[] = [];
-      for (const entry of allEntries) {
-        const wi = await getWorkItem(entry.id);
-        if (wi && wi.source.type === "project" && wi.source.sourceId === project.projectId) {
-          projectItems.push(wi);
-        }
-      }
-      const itemsToCancel = projectItems.filter((item) => staleStates.includes(item.status));
-
-      for (const item of itemsToCancel) {
-        await updateWorkItem(item.id, { status: "cancelled" });
-      }
-      console.log(`[atc] §4: cancelled ${itemsToCancel.length} stale work items for project ${project.projectId}`);
-
-      // Reset retry flag, increment count, set status to Execute
-      await clearRetryFlag(project.id, retryCount);
-
-      // Log ATC event
-      events.push(makeEvent(
-        "project_retry", project.projectId, undefined, "Execute",
-        `Retry initiated (newRetryCount=${retryCount + 1}, cancelledItems=${itemsToCancel.length})`
-      ));
-
-      console.log(`[atc] §4: project ${project.projectId} reset for retry (attempt ${retryCount + 1})`);
-    }
-  } catch (err) {
-    console.error(`[atc] §4 error:`, err);
-  }
-
-  // 4.5: Detect Notion projects with Status = "Execute", transition, and decompose
-  try {
-    const executeProjects = await getExecuteProjects();
-    for (const project of executeProjects) {
-      const success = await transitionToExecuting(project);
-      if (!success) continue;
-
-      // Dedup guard: O(1) check via dedicated dedup key per project
-      const dedupKey = `atc/project-decomposed/${project.projectId}`;
-      const alreadyDecomposed = await loadJson<{ decomposedAt: string }>(dedupKey);
-
-      // Partial-failure recovery: project has dedup guard but zero work items
-      if (alreadyDecomposed) {
-        const existingItems = await listWorkItems({});
-        const projectWorkItems: WorkItem[] = [];
-        for (const entry of existingItems) {
-          const wi = await getWorkItem(entry.id);
-          if (wi && wi.source.type === "project" && wi.source.sourceId === project.projectId) {
-            projectWorkItems.push(wi);
-          }
-        }
-
-        if (projectWorkItems.length === 0) {
-          console.warn(`[atc] Partial-failure recovery: project ${project.projectId} has dedup guard but 0 work items. Clearing guard.`);
-          await deleteJson(dedupKey);
-          // Fall through to re-decompose
-        } else {
-          events.push(makeEvent(
-            "project_trigger", project.projectId, undefined, undefined,
-            `Dedup guard: project "${project.title}" already decomposed at ${alreadyDecomposed.decomposedAt}, skipping`
-          ));
-          continue;
-        }
-      }
-
-      events.push(makeEvent(
-        "status_change", project.projectId, "Execute", "Executing",
-        `Project "${project.title}" (${project.projectId}) transitioned to Executing`
-      ));
-
-      // §4.5 Plan Quality Gate
-      // Loop-detection guard: count decomposition attempts per project
-      const loopGuardKey = `atc/decomp-attempts/${project.projectId}`;
-      const loopGuard = await loadJson<{ attempts: number }>(loopGuardKey);
-      const currentAttempts = (loopGuard?.attempts ?? 0) + 1;
-      await saveJson(loopGuardKey, { attempts: currentAttempts });
-
-      if (currentAttempts > 3) {
-        console.error(
-          `[ATC §4.5 Loop Guard] Project "${project.title}" (${project.projectId}) has attempted decomposition ${currentAttempts} times without success. Forcing to Failed.`
-        );
-        await transitionToFailed(project);
-        await deleteJson(loopGuardKey);
-        events.push(makeEvent(
-          "error", project.projectId, "Executing", "Failed",
-          `Decomposition loop detected after ${currentAttempts} attempts for "${project.title}". Forced to Failed.`
-        ));
-        continue;
-      }
-
-      // Bypass quality gate for exempt projects (human-authored plans)
-      const isExempt = QUALITY_GATE_EXEMPT_PROJECTS.has(project.projectId);
-      if (isExempt) {
-        console.log(`[ATC §4.5] Project "${project.title}" (${project.projectId}) is exempt from quality gate — proceeding to decomposition.`);
-      }
-
-      if (!isExempt) {
-        const validation = await validatePlan(project.id);
-        if (!validation.valid) {
-          const failedChecks = validation.issues
-            .map((i) => `[${i.severity.toUpperCase()}]${i.section ? ` ${i.section}:` : ''} ${i.message}`);
-          const issueList = failedChecks.join('\n');
-
-          const rejectionReason =
-            `Plan quality gate rejected project "${project.title}" (${project.projectId}). ` +
-            `Checks failed: ${failedChecks.join("; ")}. ` +
-            `Project will be transitioned to Failed to prevent infinite loop. ` +
-            `If this project has a human-authored plan, add its projectId to QUALITY_GATE_EXEMPT_PROJECTS in lib/atc.ts to bypass.`;
-          console.error(`[ATC §4.5 Quality Gate] ${rejectionReason}`);
-
-          const escalationReason = `Plan validation found ${validation.issues.length} issue(s):\n\n${issueList}\n\nProject transitioned to Failed. Fix the plan and re-trigger, or add to QUALITY_GATE_EXEMPT_PROJECTS if this is a human-authored plan.`;
-
-          // Check for existing pending escalation for same project+reason before creating
-          const existingEscalation = await findPendingProjectEscalation(project.projectId, escalationReason);
-          if (existingEscalation) {
-            console.log(`[ATC §4.5] Pending escalation already exists for project ${project.projectId}, skipping email`);
-          } else {
-            try {
-              // Create escalation record first
-              await escalate(
-                `project-${project.projectId}`,
-                escalationReason,
-                0.9,
-                { projectTitle: project.title, issues: validation.issues },
-                project.projectId
-              );
-            } catch (emailErr) {
-              console.error(`[ATC §4.5] Failed to send escalation email for ${project.title}:`, emailErr);
-            }
-          }
-
-          await transitionToFailed(project);
-          events.push(makeEvent(
-            "error", project.projectId, "Executing", "Failed",
-            `Plan quality gate rejected "${project.title}": ${validation.issues.length} issue(s). Transitioned to Failed.`
-          ));
-          continue;
-        }
-      }
-
-      console.log(`[ATC §4.5] Plan validated for ${project.title}, proceeding to decomposition`);
-
-      try {
-        const result = await decomposeProject(project);
-        const workItems = result.workItems;
-
-        if (workItems.length === 0) {
-          console.error(
-            `[ATC] Decomposition produced 0 work items for "${project.title}" (${project.projectId}). ` +
-            `Transitioning to Failed. Check Notion plan page format and decomposer logs.`
-          );
-          await transitionToFailed(project);
-          events.push(makeEvent(
-            "error", project.projectId, "Executing", "Failed",
-            `Decomposition produced 0 work items for "${project.title}", transitioning to Failed`
-          ));
-          continue;
-        }
-
-        // Save dedup key after successful decomposition
-        await saveJson(dedupKey, { decomposedAt: now.toISOString(), workItemCount: workItems.length });
-
-        // Clear loop-detection counter on success
-        await deleteJson(loopGuardKey);
-
-        events.push(makeEvent(
-          "project_trigger", project.projectId, undefined, undefined,
-          `Project "${project.title}" decomposed into ${workItems.length} work items`
-        ));
-
-        // Send decomposition summary email
-        try {
-          const { sendDecompositionSummary } = await import("./gmail");
-          await sendDecompositionSummary(project, workItems, result.phases ?? undefined, result.phaseBreakdown);
-        } catch (emailErr) {
-          console.error("[atc] Decomposition summary email failed:", emailErr);
-        }
-      } catch (decomposeErr) {
-        const msg = decomposeErr instanceof Error ? decomposeErr.message : String(decomposeErr);
-        console.error(`[atc] Decomposition failed for project ${project.projectId}:`, decomposeErr);
-        await transitionToFailed(project);
-        events.push(makeEvent(
-          "error", project.projectId, "Executing", "Failed",
-          `Decomposition failed for "${project.title}": ${msg}`
-        ));
-      }
-    }
-  } catch (err) {
-    console.error("[atc] Project sweep failed:", err);
-  }
+  // §4 + §4.5 + §13: Delegated to Project Manager agent
+  const pmCtx: CycleContext = { now, events };
+  await runProjectManager(pmCtx);
 
   // 5. Count queued items
   const queuedEntries = await listWorkItems({ status: "queued" });
@@ -1228,23 +993,6 @@ async function _runATCCycleInner(): Promise<ATCState> {
     }
   }
 
-  // 8. Periodic branch cleanup
-  try {
-    const cleanupResult = await cleanupStaleBranches();
-    if (cleanupResult && cleanupResult.deletedCount > 0) {
-      events.push(makeEvent(
-        "cleanup", "system", undefined, undefined,
-        `Branch cleanup: deleted ${cleanupResult.deletedCount}, skipped ${cleanupResult.skipped}, errors ${cleanupResult.errors}`
-      ));
-      // Re-save events since we added cleanup events
-      const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
-      const updated = [...existing, ...events.filter(e => e.type === "cleanup")].slice(-MAX_EVENTS);
-      await saveJson(ATC_EVENTS_KEY, updated);
-    }
-  } catch (err) {
-    console.error("[atc] Branch cleanup failed:", err);
-  }
-
   // 9.5: Work item blob-index reconciliation (hourly)
   const RECONCILIATION_KEY = "atc/last-reconciliation";
   try {
@@ -1260,22 +1008,19 @@ async function _runATCCycleInner(): Promise<ATCState> {
         const blobIds = new Set(
           blobs
             .map(b => b.pathname.replace("af-data/work-items/", "").replace(".json", ""))
-            .filter(id => id && id !== "index") // Exclude the index file itself
+            .filter(id => id && id !== "index")
         );
 
         const indexEntries = await listWorkItems({});
         const indexIds = new Set(indexEntries.map(e => e.id));
 
-        // Safety guard: if index is empty but blobs exist, skip to prevent data loss
         if (indexEntries.length === 0 && blobs.length > 0) {
           console.warn(`[atc] Reconciliation safety: index is empty but ${blobs.length} blob(s) exist. Skipping to prevent data loss.`);
           await saveJson(RECONCILIATION_KEY, { lastRunAt: now.toISOString() });
-          // DO NOT proceed to delete any blobs
         } else {
-          // Find dangling blobs (in blob store but not in index)
           const danglingIds = [...blobIds].filter(id => id && !indexIds.has(id));
           if (danglingIds.length > 0 && danglingIds.length > blobIds.size * 0.5) {
-            console.error(`[atc] Reconciliation safety: ${danglingIds.length}/${blobIds.size} blobs flagged as dangling (>50%). Refusing to delete. Likely index corruption.`);
+            console.error(`[atc] Reconciliation safety: ${danglingIds.length}/${blobIds.size} blobs flagged as dangling (>50%). Refusing to delete.`);
           } else if (danglingIds.length > 0) {
             for (const id of danglingIds) {
               await deleteJson(`work-items/${id}`);
@@ -1286,7 +1031,6 @@ async function _runATCCycleInner(): Promise<ATCState> {
             ));
           }
 
-          // Reverse reconciliation: remove stale index entries pointing to missing blobs
           const staleIndexEntries = indexEntries.filter(e => !blobIds.has(e.id));
           if (staleIndexEntries.length > 0 && staleIndexEntries.length < indexEntries.length) {
             const cleanedIndex = indexEntries.filter(e => blobIds.has(e.id));
@@ -1307,414 +1051,11 @@ async function _runATCCycleInner(): Promise<ATCState> {
     console.error("[atc] Blob-index reconciliation failed:", err);
   }
 
-  // 10. Escalation timeout monitoring: flag escalations older than 24h
-  try {
-    const pending = await getPendingEscalations();
-    const ESCALATION_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-    for (const esc of pending) {
-      const createdTime = new Date(esc.createdAt).getTime();
-      const age = now.getTime() - createdTime;
-
-      if (age > ESCALATION_TIMEOUT_MS) {
-        // Mark as expired but don't auto-resolve
-        await expireEscalation(esc.id);
-        const event = makeEvent(
-          "escalation_timeout",
-          esc.workItemId,
-          "pending",
-          "expired",
-          `Escalation ${esc.id} timed out after 24h without resolution. Reason: ${esc.reason}`
-        );
-        events.push(event);
-        console.log(`[atc] Escalation timeout: ${esc.id} for work item ${esc.workItemId}`);
-      }
-    }
-  } catch (err) {
-    console.error("[atc] Escalation monitoring failed:", err);
-  }
-
-  // Save events if escalation timeouts were detected
-  if (events.some(e => e.type === "escalation_timeout")) {
-    const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
-    const updated = [...existing, ...events.filter(e => e.type === "escalation_timeout")].slice(-MAX_EVENTS);
-    await saveJson(ATC_EVENTS_KEY, updated);
-  }
-
-  // Section 11: Poll Gmail for escalation replies
-  try {
-    console.log('[atc] Section 11: Polling Gmail for escalation replies...');
-    const pendingForGmail = await getPendingEscalations();
-    const { checkForReply, parseReplyContent } = await import('./gmail');
-
-    for (const esc of pendingForGmail) {
-      if (!esc.threadId) {
-        // No thread ID means email was not sent (graceful degradation)
-        continue;
-      }
-
-      const replyMessage = await checkForReply(esc.threadId);
-      if (replyMessage) {
-        // Reply found! Parse content and resolve
-        const replyContent = await parseReplyContent(replyMessage.id);
-        console.log(`[atc] Found reply to escalation ${esc.id}:`, replyContent);
-
-        const resolved = await resolveEscalation(esc.id, replyContent);
-        if (resolved) {
-          events.push(makeEvent(
-            "escalation_resolved",
-            esc.workItemId,
-            "pending",
-            "resolved",
-            `Escalation ${esc.id} auto-resolved via Gmail reply: ${replyContent.slice(0, 100)}`
-          ));
-        }
-      }
-    }
-  } catch (err) {
-    console.error("[atc] Gmail reply polling failed:", err);
-  }
-
-  // Section 12: Send reminder emails for old escalations
-  try {
-    console.log('[atc] Section 12: Checking for escalation reminders...');
-    const escalationsForReminder = await getPendingEscalations();
-    const REMINDER_THRESHOLD = 24 * 60 * 60 * 1000; // 24 hours
-
-    for (const esc of escalationsForReminder) {
-      const ageMs = Date.now() - new Date(esc.createdAt).getTime();
-      if (ageMs > REMINDER_THRESHOLD && !esc.reminderSentAt) {
-        const workItem = await getWorkItem(esc.workItemId);
-        if (workItem) {
-          const { sendEscalationEmail } = await import('./gmail');
-          const threadId = await sendEscalationEmail(esc, workItem, true);
-          if (threadId) {
-            await updateEscalation(esc.id, { reminderSentAt: new Date().toISOString() });
-            events.push(makeEvent(
-              "escalation_resolved", // reuse type for reminder events
-              esc.workItemId,
-              undefined,
-              undefined,
-              `Reminder email sent for escalation ${esc.id} (thread: ${threadId})`
-            ));
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error("[atc] Escalation reminder check failed:", err);
-  }
-
-  // Section 13: Project lifecycle management
-  // 13a: Stuck "Executing" recovery — projects that transitioned to Executing but never decomposed
-  //      (e.g., ATC cycle timed out before reaching Section 4.5). Reset to "Execute" so next cycle retries.
-  // 13b: Project completion detection — when all work items reach terminal state, update Notion accordingly.
-  try {
-    const { listProjects } = await import("./projects");
-    const { updateProjectStatus } = await import("./notion");
-    const executingProjects = await listProjects("Executing");
-
-    // Cache the full work item list once (avoid repeated list calls per project)
-    const allItemEntries = await listWorkItems({});
-    const allItemsById = new Map<string, WorkItem>();
-    for (const entry of allItemEntries) {
-      const item = await getWorkItem(entry.id);
-      if (item) allItemsById.set(item.id, item);
-    }
-
-    for (const project of executingProjects) {
-      // Find all work items for this project
-      const projectItems = [...allItemsById.values()].filter(
-        (item) => item.source.type === "project" && item.source.sourceId === project.projectId
-      );
-
-      // 13a: Stuck Executing recovery
-      if (projectItems.length === 0) {
-        const dedupKey = `atc/project-decomposed/${project.projectId}`;
-        const hasDedup = await loadJson<{ decomposedAt: string }>(dedupKey);
-        if (!hasDedup) {
-          // No dedup guard + no work items = decomposition never ran. Reset to Execute.
-          await updateProjectStatus(project.id, "Execute");
-          events.push(makeEvent(
-            "project_trigger", project.projectId, "Executing", "Execute",
-            `Stuck recovery: project "${project.title}" was Executing with no work items and no dedup guard. Reset to Execute for re-decomposition.`
-          ));
-        }
-        // If dedup exists but 0 items, the partial-failure recovery in Section 4.5 handles it
-        continue;
-      }
-
-      // 13b: Project completion detection
-      const result = await checkProjectCompletion(project.projectId, [...allItemsById.values()]);
-
-      if (result.isTerminal && result.status) {
-        await transitionProject(project.id, result.status, result.summary);
-
-        events.push(makeEvent(
-          "project_completion", project.projectId, "Executing", result.status,
-          `Project "${project.title}" → ${result.status}: ${result.summary}`
-        ));
-
-        console.log(
-          `[ATC §13b] Project ${project.projectId} transitioned to ${result.status}: ${result.summary}`
-        );
-
-        // Write outcome summary to Notion (non-blocking)
-        try {
-          await writeOutcomeSummary(project.projectId, result.status);
-          console.log(`[ATC §13b] Outcome summary written for project ${project.projectId} → ${result.status}`);
-        } catch (summaryErr) {
-          console.error(`[ATC §13b] Failed to write outcome summary for project ${project.projectId}: ${summaryErr}`);
-        }
-      }
-    }
-  } catch (err) {
-    console.error("[atc] Project lifecycle management failed:", err);
-  }
-
-  // Save events if Gmail sections produced any
-  const gmailEventTypes = events.filter(e =>
-    e.details.includes("auto-resolved via Gmail") || e.details.includes("Reminder email sent")
-  );
-  if (gmailEventTypes.length > 0) {
-    const existing = (await loadJson<ATCEvent[]>(ATC_EVENTS_KEY)) ?? [];
-    const updated = [...existing, ...gmailEventTypes].slice(-MAX_EVENTS);
-    await saveJson(ATC_EVENTS_KEY, updated);
-  }
-
-  // §15: Poll HLO Lifecycle State from Open PRs
-  try {
-    const reviewingForHLO = await listWorkItems({ status: "reviewing" });
-    const reviewingWorkItems: WorkItem[] = [];
-    for (const entry of reviewingForHLO) {
-      const wi = await getWorkItem(entry.id);
-      if (wi) reviewingWorkItems.push(wi);
-    }
-    const hloStateMap = await pollHLOStateFromOpenPRs(reviewingWorkItems);
-    // hloStateMap is available for downstream sections in this same cycle
-    void hloStateMap; // Will be consumed by future SLA/remediation sections
-  } catch (err) {
-    console.error("[ATC §15] HLO state polling failed:", err);
-  }
-
-  // Cache metrics summary (observability)
-  await summarizeDailyCacheMetrics().catch((err) =>
-    console.error("[ATC] cache metrics summary failed:", err)
-  );
-
-  // § 14 — PM Agent Daily Sweep
-  try {
-    await runPMAgentSweep();
-  } catch (error) {
-    console.error('[ATC §14] Unexpected error in PM Agent sweep:', error);
-  }
+  // §10-§15 + branch cleanup + cache metrics + PM sweep: Delegated to Supervisor agent
+  const supCtx: CycleContext = { now, events };
+  await runSupervisor(supCtx);
 
   return state;
-}
-
-// § 14 — PM Agent Daily Sweep
-// Only runs once per day (check last run timestamp in Vercel Blob)
-async function runPMAgentSweep() {
-  const SWEEP_KEY = 'pm-agent/last-sweep';
-  const lastSweep = await loadJson<{ timestamp: string }>(SWEEP_KEY);
-
-  if (lastSweep) {
-    const lastRun = new Date(lastSweep.timestamp);
-    const hoursSinceLastRun = (Date.now() - lastRun.getTime()) / (1000 * 60 * 60);
-    if (hoursSinceLastRun < 20) {
-      console.log(`[ATC §14] PM Agent sweep: skipped (last run ${hoursSinceLastRun.toFixed(1)}h ago)`);
-      return;
-    }
-  }
-
-  console.log('[ATC §14] PM Agent sweep: starting');
-
-  try {
-    // Run backlog review
-    const review = await reviewBacklog();
-    console.log(`[ATC §14] Backlog review complete: ${review.recommendations.length} recommendations`);
-
-    // Run health assessment for all projects
-    const healths = await assessProjectHealth();
-    const atRisk = healths.filter(h => h.status === 'at-risk' || h.status === 'stalling' || h.status === 'blocked');
-    console.log(`[ATC §14] Health assessment: ${healths.length} projects, ${atRisk.length} at risk`);
-
-    // Compose and send digest
-    await composeDigest({
-      includeHealth: true,
-      includeBacklog: true,
-      includeRecommendations: true,
-      recipientEmail: 'james.stine.heath@gmail.com',
-    });
-    console.log('[ATC §14] Digest sent');
-
-    // Record sweep timestamp
-    await saveJson(SWEEP_KEY, { timestamp: new Date().toISOString() });
-  } catch (error) {
-    console.error('[ATC §14] PM Agent sweep failed:', error);
-    // Don't throw — sweep failure shouldn't break the ATC cycle
-  }
-}
-
-// === §15: Poll HLO Lifecycle State from Open PRs ===
-// Reads HLO lifecycle state for all work items in 'reviewing' status.
-// Returns a map for downstream sections (SLA tracking, remediation, etc.)
-
-export interface HLOStateEntry {
-  workItem: WorkItem;
-  hloState: HLOLifecycleState | null;
-  prInfo: PR | null;
-}
-
-async function pollHLOStateFromOpenPRs(
-  workItems: WorkItem[]
-): Promise<Map<number, HLOStateEntry>> {
-  const reviewingItems = workItems.filter(
-    (wi) => wi.status === 'reviewing' && wi.execution?.prNumber != null
-  );
-
-  const resultMap = new Map<number, HLOStateEntry>();
-
-  await Promise.all(
-    reviewingItems.map(async (wi) => {
-      const prNumber = wi.execution!.prNumber!;
-      const targetRepo = wi.targetRepo; // "owner/repo" format
-      const [owner, repo] = targetRepo.split('/');
-
-      if (!owner || !repo) {
-        console.warn(`ATC §15: Work item ${wi.id} missing owner/repo, skipping`);
-        return;
-      }
-
-      let hloState: HLOLifecycleState | null = null;
-      let prInfo: PR | null = null;
-
-      try {
-        hloState = await getPRLifecycleState(owner, repo, prNumber);
-      } catch (err) {
-        console.warn(`ATC §15: Failed to get HLO state for PR #${prNumber}:`, err);
-      }
-
-      try {
-        prInfo = await getPRByNumber(targetRepo, prNumber);
-      } catch (err) {
-        console.warn(`ATC §15: Failed to get PR info for PR #${prNumber}:`, err);
-      }
-
-      resultMap.set(prNumber, { workItem: wi, hloState, prInfo });
-    })
-  );
-
-  const withLifecycle = [...resultMap.values()].filter((e) => e.hloState !== null).length;
-  const withoutLifecycle = resultMap.size - withLifecycle;
-
-  console.log(
-    `ATC §15: Polled HLO state for ${resultMap.size} PRs (${withLifecycle} with lifecycle data, ${withoutLifecycle} without)`
-  );
-
-  return resultMap;
-}
-
-export async function cleanupStaleBranches(): Promise<{ deletedCount: number; skipped: number; errors: number }> {
-  const now = new Date();
-
-  // Throttle check
-  const lastRun = await loadJson<{ lastRunAt: string }>(ATC_BRANCH_CLEANUP_KEY);
-  if (lastRun) {
-    const elapsed = (now.getTime() - new Date(lastRun.lastRunAt).getTime()) / 60_000;
-    if (elapsed < CLEANUP_THROTTLE_MINUTES) {
-      return { deletedCount: 0, skipped: 0, errors: 0 };
-    }
-  }
-
-  let deletedCount = 0;
-  let skipped = 0;
-  let errors = 0;
-
-  // --- Phase A: Clean branches for work items in terminal/failed states ---
-  // This catches branches from failed executions that may not yet be 48h old.
-  const CLEANUP_ELIGIBLE_STATUSES = ["failed", "parked", "cancelled"] as const;
-  for (const status of CLEANUP_ELIGIBLE_STATUSES) {
-    const entries = await listWorkItems({ status });
-    for (const entry of entries) {
-      const item = await getWorkItem(entry.id);
-      if (!item || !item.handoff?.branch) continue;
-
-      // Guard: skip if the work item has an associated PR (open PR = branch still needed)
-      if (item.execution?.prNumber != null) {
-        skipped++;
-        continue;
-      }
-
-      try {
-        const deleted = await deleteBranch(item.targetRepo, item.handoff.branch);
-        if (deleted) {
-          deletedCount++;
-          console.log(`[atc] Deleted branch for ${status} work item ${item.id}: ${item.handoff.branch} from ${item.targetRepo}`);
-        }
-        // deleteBranch returns false for 404 (branch already gone) — not an error
-      } catch {
-        errors++;
-      }
-    }
-  }
-
-  // --- Phase B: Time-based stale branch cleanup (existing logic) ---
-  const repoIndex = await listRepos();
-  for (const repoEntry of repoIndex) {
-    const repo = await getRepo(repoEntry.id);
-    if (!repo) continue;
-
-    let branches: string[];
-    try {
-      branches = await listBranches(repo.fullName);
-    } catch {
-      errors++;
-      continue;
-    }
-
-    if (branches.length > MAX_BRANCHES_PER_REPO) {
-      console.log(`[atc] ${repo.fullName} has ${branches.length} branches, capping at ${MAX_BRANCHES_PER_REPO}. Remaining will be processed next cycle.`);
-      branches = branches.slice(0, MAX_BRANCHES_PER_REPO);
-    }
-
-    for (const branch of branches) {
-      try {
-        const pr = await getPRByBranch(repo.fullName, branch);
-        if (pr && pr.state === "open") {
-          skipped++;
-          continue;
-        }
-
-        const lastCommitDate = await getBranchLastCommitDate(repo.fullName, branch);
-        if (!lastCommitDate) {
-          skipped++;
-          continue;
-        }
-
-        const ageHours = (now.getTime() - new Date(lastCommitDate).getTime()) / 3_600_000;
-        if (ageHours < STALE_BRANCH_HOURS) {
-          skipped++;
-          continue;
-        }
-
-        const deleted = await deleteBranch(repo.fullName, branch);
-        if (deleted) {
-          deletedCount++;
-          console.log(`[atc] Deleted stale branch: ${branch} from ${repo.fullName} (last commit: ${lastCommitDate})`);
-        } else {
-          errors++;
-        }
-      } catch {
-        errors++;
-      }
-    }
-  }
-
-  // Save timestamp
-  await saveJson(ATC_BRANCH_CLEANUP_KEY, { lastRunAt: now.toISOString() });
-
-  return { deletedCount, skipped, errors };
 }
 
 export async function getATCState(): Promise<ATCState> {

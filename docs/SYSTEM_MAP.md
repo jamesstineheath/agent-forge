@@ -81,6 +81,37 @@ Filed → Ready → Queued → Generating → Executing → Reviewing → Merged
 8. **Blocked**: Escalation created, awaiting human resolution via email
 9. **Parked**: File conflict detected or execution failed, waiting for retry
 
+### ATC 4-Agent Architecture
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                  ATC Agent Architecture                      │
+│                                                              │
+│  ┌─────────────┐  ┌────────────────┐  ┌──────────────────┐ │
+│  │  Dispatcher  │  │ Health Monitor │  │ Project Manager  │ │
+│  │  (*/5 min)   │  │   (*/5 min)    │  │   (*/15 min)     │ │
+│  │ Dispatch WIs │  │ Monitor GH API │  │ §4/§4.5/§13a/b  │ │
+│  │ to repos     │  │ Timeout/stall  │  │ Retry, quality   │ │
+│  │              │  │ PR reconcile   │  │ gate, completion  │ │
+│  └──────────────┘  └────────────────┘  └──────────────────┘ │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                    Supervisor                          │   │
+│  │                    (*/10 min)                          │   │
+│  │  Gmail polling (§11) · Reminders (§12) · HLO (§15)   │   │
+│  │  Branch cleanup · PM sweep (§14) · Agent health       │   │
+│  │                                                        │   │
+│  │  Self-healing loop:                                    │   │
+│  │  Supervisor detects stale agent → logs warning         │   │
+│  │  → (future: files work item → Dispatcher picks it up) │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  Feature flag: AGENT_SPLIT_ENABLED                          │
+│  - false (default): unified cron calls all agents           │
+│  - true: each agent has its own cron route                  │
+└────────────────────────────────────────────────────────────┘
+```
+
 ### ATC Self-Healing Sections
 
 - **§2.8 — Failed Work Item PR Reconciliation**: Checks all "failed" work items with a `prNumber`. If the PR is actually merged on GitHub, transitions the work item to "merged". If the PR is still open, moves back to "reviewing". Catches cases where a workflow step failed (e.g., bash parsing error in "Report results") but the code change actually landed.
@@ -149,7 +180,10 @@ Until graduation, QA Agent results are advisory only and do not block auto-merge
 
 | Subsystem | Path | Purpose |
 |-----------|------|---------|
-| ATC | `lib/atc.ts` | Air Traffic Controller cron: dispatch, monitoring, PR reconciliation (§2.8), project lifecycle (§13) |
+| ATC (wrapper) | `lib/atc.ts` | Backward-compat wrapper: calls all 4 agents sequentially. Dispatcher + Health Monitor inline (pending H40 extraction). |
+| Project Manager | `lib/atc/project-manager.ts` | Agent 3: project retry (§4), quality gate (§4.5), stuck recovery (§13a), completion detection (§13b) |
+| Supervisor | `lib/atc/supervisor.ts` | Agent 4: Gmail polling (§11), reminders (§12), HLO polling (§15), branch cleanup, PM sweep (§14), agent health monitoring |
+| ATC Utils | `lib/atc/utils.ts` | Shared CycleContext, makeEvent, agent health tracking (recordAgentRun/getAgentLastRun) |
 | Orchestrator | `lib/orchestrator.ts` | Handoff generation + dispatch to target repos |
 | Work Items | `lib/work-items.ts` | CRUD + dependency-aware dispatch (`getNextDispatchable`) |
 | Decomposer | `lib/decomposer.ts` | Plan page → ordered work items with dependency DAG |
