@@ -7,6 +7,7 @@ import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
 import { ATCMetricsPanel } from "@/components/atc-metrics-panel";
 import { ActivityFeed } from "@/components/activity-feed";
+import { WebhookEventFeed } from "@/components/webhook-event-feed";
 import {
   useWorkItems,
   useRepos,
@@ -177,6 +178,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Webhook Event Feed */}
+          <WebhookEventFeed />
 
           {/* Activity Feed */}
           <ActivityFeed />

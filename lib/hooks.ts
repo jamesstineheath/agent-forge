@@ -1,6 +1,7 @@
 import useSWR from "swr";
 import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory } from "@/lib/types";
 import type { Escalation } from "@/lib/escalation";
+import type { WebhookEvent } from "@/lib/event-bus-types";
 
 const fetcher = (url: string) =>
   fetch(url).then((res) => {
@@ -131,6 +132,15 @@ export function useWorkItemEvents(workItemId: string | null) {
 export function useATCEvents(limit = 50) {
   const { data, error, isLoading, mutate } = useSWR<ATCEvent[]>(
     `/api/atc/events?limit=${limit}`,
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useWebhookEvents(limit = 20) {
+  const { data, error, isLoading, mutate } = useSWR<WebhookEvent[]>(
+    `/api/events?limit=${limit}`,
     fetcher,
     { refreshInterval: 30000 }
   );
