@@ -9,6 +9,11 @@
   - Files: .github/actions/tlm-feedback-compiler/src/compiler-prompt.ts
   - Started: 2026-03-18T21:22:52.505Z
 
+- **Agent trace viewer UI in dashboard Agents tab** (jamesstineheath/agent-forge)
+  - Branch: `fix/agent-trace-viewer-ui-in-dashboard-agents-tab`
+  - Files: `app/(app)/agents/page.tsx`, `components/agent-trace-viewer.tsx`, `components/agent-trace-detail.tsx`, `lib/hooks.ts`, `app/api/agents/traces/route.ts`
+  - Started: 2026-03-18T21:21:07.031Z
+
 ## In Review
 
 - **PA Auth Bypass Middleware for QA Agent Smoke Tests** (jamesstineheath/personal-assistant)
