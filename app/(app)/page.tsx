@@ -56,11 +56,12 @@ export default function DashboardPage() {
     });
   };
 
-  const getProjectWorkItems = (projectId: string): WorkItem[] => {
+  const getProjectWorkItems = (project: { projectId: string; targetRepo: string | null }): WorkItem[] => {
     return (
       workItems?.filter(
         (wi) =>
-          wi.source?.type === "project" && wi.source?.sourceId === projectId
+          (wi.source?.type === "project" && wi.source?.sourceId === project.projectId) ||
+          (project.targetRepo && wi.targetRepo === `jamesstineheath/${project.targetRepo}`)
       ) ?? []
     );
   };
@@ -171,7 +172,7 @@ export default function DashboardPage() {
                   <ProjectCard
                     key={project.id}
                     project={project}
-                    workItems={getProjectWorkItems(project.projectId)}
+                    workItems={getProjectWorkItems(project)}
                     expanded={expandedProjects.has(project.id)}
                     onToggle={() => toggleProject(project.id)}
                   />

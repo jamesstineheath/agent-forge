@@ -3,15 +3,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { FolderKanban, Zap } from "lucide-react";
+import { FolderKanban, Zap, TableProperties, Columns3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { WorkItemCard } from "@/components/work-item-card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { MultiSelectFilter } from "@/components/multi-select-filter";
+import { WorkItemsTable } from "@/components/work-items-table";
+import { WorkItemsKanban } from "@/components/work-items-kanban";
 import { useWorkItems, useRepos } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
-const STATUS_OPTIONS: { label: string; value: WorkItem["status"] | "" }[] = [
-  { label: "All Statuses", value: "" },
+const STATUS_OPTIONS: { label: string; value: WorkItem["status"] }[] = [
   { label: "Filed", value: "filed" },
   { label: "Ready", value: "ready" },
   { label: "Queued", value: "queued" },
@@ -24,35 +26,34 @@ const STATUS_OPTIONS: { label: string; value: WorkItem["status"] | "" }[] = [
   { label: "Escalated", value: "escalated" },
 ];
 
-const PRIORITY_OPTIONS: { label: string; value: WorkItem["priority"] | "" }[] =
-  [
-    { label: "All Priorities", value: "" },
-    { label: "High", value: "high" },
-    { label: "Medium", value: "medium" },
-    { label: "Low", value: "low" },
-  ];
+const PRIORITY_OPTIONS: { label: string; value: WorkItem["priority"] }[] = [
+  { label: "High", value: "high" },
+  { label: "Medium", value: "medium" },
+  { label: "Low", value: "low" },
+];
 
 export default function WorkItemsPage() {
   const router = useRouter();
-  const [statusFilter, setStatusFilter] = useState<
-    WorkItem["status"] | ""
-  >("");
-  const [priorityFilter, setPriorityFilter] = useState<
-    WorkItem["priority"] | ""
-  >("");
-  const [repoFilter, setRepoFilter] = useState("");
+  const [statusFilters, setStatusFilters] = useState<WorkItem["status"][]>([]);
+  const [priorityFilters, setPriorityFilters] = useState<WorkItem["priority"][]>([]);
+  const [repoFilters, setRepoFilters] = useState<string[]>([]);
   const [sourceFilter, setSourceFilter] = useState<"" | "direct">("");
 
-  const { data: items, isLoading, error } = useWorkItems({
-    status: statusFilter || undefined,
-    priority: priorityFilter || undefined,
-    targetRepo: repoFilter || undefined,
-  });
+  const { data: items, isLoading, error } = useWorkItems();
   const { data: repos } = useRepos();
 
-  const filteredItems = items?.filter((item) =>
-    sourceFilter === "direct" ? item.source?.type === "direct" : true
-  );
+  const repoOptions = (repos ?? []).map((r) => ({
+    label: r.fullName.split("/").pop() ?? r.fullName,
+    value: r.fullName,
+  }));
+
+  const filteredItems = items?.filter((item) => {
+    if (statusFilters.length > 0 && !statusFilters.includes(item.status)) return false;
+    if (priorityFilters.length > 0 && !priorityFilters.includes(item.priority)) return false;
+    if (repoFilters.length > 0 && !repoFilters.includes(item.targetRepo)) return false;
+    if (sourceFilter === "direct" && item.source?.type !== "direct") return false;
+    return true;
+  });
 
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -122,9 +123,9 @@ export default function WorkItemsPage() {
       </header>
 
       <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
-        <div className="max-w-5xl space-y-6">
+        <div className="space-y-6">
           {showForm && (
-            <div className="rounded-xl card-elevated bg-surface-1 p-5">
+            <div className="max-w-5xl rounded-xl card-elevated bg-surface-1 p-5">
               <h2 className="text-sm font-display font-bold text-foreground mb-4">New Work Item</h2>
               <form onSubmit={handleCreateItem} className="space-y-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -272,48 +273,28 @@ export default function WorkItemsPage() {
           )}
 
           {/* Filter bar */}
-          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:gap-3">
-            <select
-              className="w-full md:w-auto rounded-lg border border-input bg-background px-3 py-2 text-sm"
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as WorkItem["status"] | "")
-              }
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="w-full md:w-auto rounded-lg border border-input bg-background px-3 py-2 text-sm"
-              value={priorityFilter}
-              onChange={(e) =>
-                setPriorityFilter(e.target.value as WorkItem["priority"] | "")
-              }
-            >
-              {PRIORITY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="w-full md:w-auto rounded-lg border border-input bg-background px-3 py-2 text-sm"
-              value={repoFilter}
-              onChange={(e) => setRepoFilter(e.target.value)}
-            >
-              <option value="">All Repos</option>
-              {repos?.map((r) => (
-                <option key={r.id} value={r.fullName}>
-                  {r.fullName}
-                </option>
-              ))}
-            </select>
+          <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
+            <MultiSelectFilter
+              label="Statuses"
+              options={STATUS_OPTIONS}
+              selected={statusFilters}
+              onChange={setStatusFilters}
+            />
+            <MultiSelectFilter
+              label="Priorities"
+              options={PRIORITY_OPTIONS}
+              selected={priorityFilters}
+              onChange={setPriorityFilters}
+            />
+            <MultiSelectFilter
+              label="Repos"
+              options={repoOptions}
+              selected={repoFilters}
+              onChange={setRepoFilters}
+            />
             <button
               className={cn(
-                "w-full md:w-auto rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                "rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
                 sourceFilter === "direct"
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-input bg-background text-muted-foreground hover:bg-accent"
@@ -327,6 +308,7 @@ export default function WorkItemsPage() {
             </button>
           </div>
 
+          {/* Content */}
           {isLoading ? (
             <p className="text-sm text-muted-foreground">Loading...</p>
           ) : error ? (
@@ -348,11 +330,24 @@ export default function WorkItemsPage() {
               </Button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {filteredItems.map((item) => (
-                <WorkItemCard key={item.id} item={item} />
-              ))}
-            </div>
+            <Tabs defaultValue="table">
+              <TabsList>
+                <TabsTrigger value="table">
+                  <TableProperties className="h-3.5 w-3.5" />
+                  Table
+                </TabsTrigger>
+                <TabsTrigger value="board">
+                  <Columns3 className="h-3.5 w-3.5" />
+                  Board
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="table">
+                <WorkItemsTable items={filteredItems} />
+              </TabsContent>
+              <TabsContent value="board">
+                <WorkItemsKanban items={filteredItems} />
+              </TabsContent>
+            </Tabs>
           )}
         </div>
       </div>
