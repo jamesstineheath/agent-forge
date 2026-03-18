@@ -4,6 +4,14 @@
     {
       "path": "/api/atc/cron",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/agents/dispatcher/cron",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/agents/health-monitor/cron",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
