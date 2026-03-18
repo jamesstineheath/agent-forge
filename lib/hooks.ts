@@ -148,6 +148,45 @@ export function useWebhookEvents(limit = 20) {
   return { data, error, isLoading, mutate };
 }
 
+export interface QARunRecord {
+  id: string;
+  repo: string;
+  timestamp: string;
+  passed: boolean;
+  durationMs: number;
+  failureCategories?: string[];
+  isFalseNegative?: boolean;
+}
+
+export interface QAResultsResponse {
+  runs: QARunRecord[];
+  summary: {
+    totalRuns: number;
+    passRate: number;
+    avgDurationMs: number;
+    failureCategories: Record<string, number>;
+    byRepo: Array<{
+      repo: string;
+      runs: number;
+      passRate: number;
+    }>;
+    graduation: {
+      runsCompleted: number;
+      runsRequired: number;
+      falseNegativeRate: number;
+    };
+  };
+}
+
+export function useQAResults() {
+  const { data, error, isLoading } = useSWR<QAResultsResponse>(
+    "/api/qa-results",
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data, isLoading, error };
+}
+
 export function useDebateStats() {
   const { data, error, isLoading, mutate } = useSWR<DebateStats>(
     "/api/debates",
