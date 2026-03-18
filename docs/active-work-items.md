@@ -4,10 +4,15 @@
 
 ## Currently Executing
 
-- **Build import/dependency resolver for cross-file relationships** (jamesstineheath/agent-forge)
-  - Branch: `feat/build-importdependency-resolver-for-cross-file-rel`
-  - Files: lib/knowledge-graph/resolver.ts, lib/__tests__/knowledge-graph-resolver.test.ts
-  - Started: 2026-03-18T14:22:08.598Z
+- **Add debate session persistence to storage** (jamesstineheath/agent-forge)
+  - Branch: `fix/add-debate-session-persistence-to-storage`
+  - Files: lib/debate/storage.ts
+  - Started: 2026-03-18T14:33:41.329Z
+
+- **Implement graph query engine** (jamesstineheath/agent-forge)
+  - Branch: `feat/implement-graph-query-engine`
+  - Files: lib/knowledge-graph/query.ts, lib/__tests__/knowledge-graph-query.test.ts
+  - Started: 2026-03-18T14:32:35.208Z
 
 ## Queued for Dispatch
 
@@ -33,8 +38,6 @@
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
 
-- **Add debate session persistence to storage** (jamesstineheath/agent-forge)
-
 - **Add risk level detection utility for PRs** (jamesstineheath/agent-forge)
 
 - **Integrate debate into TLM code review action** (jamesstineheath/personal-assistant)
@@ -46,8 +49,6 @@
 - **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
 
 - **Integration test: end-to-end debate flow with mock PR data** (jamesstineheath/agent-forge)
-
-- **Implement graph query engine** (jamesstineheath/agent-forge)
 
 - **Create Knowledge Graph API routes** (jamesstineheath/agent-forge)
 
