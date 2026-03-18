@@ -2,7 +2,7 @@ name: TLM Feedback Compiler
 
 on:
   schedule:
-    - cron: '0 22 * * 0'  # Weekly on Sunday at 10pm UTC
+    - cron: '0 22 * * *'  # Daily at 10pm UTC
   workflow_dispatch: {}
 
 # Only one compiler run at a time
