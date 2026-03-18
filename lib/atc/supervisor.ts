@@ -23,6 +23,7 @@ import type { CycleContext } from "./types";
 import {
   ATC_EVENTS_KEY,
   ATC_BRANCH_CLEANUP_KEY,
+  SUPERVISOR_LAST_DRIFT_CHECK_KEY,
   MAX_EVENTS,
   CLEANUP_THROTTLE_MINUTES,
   STALE_BRANCH_HOURS,
@@ -369,6 +370,16 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   }
 
   addPhase(trace, { name: 'agent_staleness_check', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
+  // §18 — Drift Detection (at most once per 24h)
+  try {
+    await runDriftDetectionPhase(ctx);
+  } catch (err) {
+    console.warn('[supervisor §18] Drift detection phase failed (non-fatal):', err);
+  }
+
+  addPhase(trace, { name: 'drift_detection', durationMs: Date.now() - phaseStart });
 
   completeTrace(trace, 'success');
 
@@ -532,6 +543,66 @@ export async function cleanupStaleBranches(): Promise<{ deletedCount: number; sk
   await saveJson(ATC_BRANCH_CLEANUP_KEY, { lastRunAt: now.toISOString() });
 
   return { deletedCount, skipped, errors };
+}
+
+// §18 — Drift Detection (at most once per 24h)
+async function runDriftDetectionPhase(ctx: CycleContext): Promise<void> {
+  const DRIFT_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+  const lastCheck = await loadJson<{ lastRunAt: string }>(SUPERVISOR_LAST_DRIFT_CHECK_KEY);
+  if (lastCheck) {
+    const elapsed = ctx.now.getTime() - new Date(lastCheck.lastRunAt).getTime();
+    if (elapsed < DRIFT_CHECK_INTERVAL_MS) {
+      console.log(`[supervisor §18] Drift check skipped — last ran ${Math.round(elapsed / 3600000)}h ago`);
+      return;
+    }
+  }
+
+  console.log('[supervisor §18] Running drift detection...');
+
+  const { detectDrift, saveDriftSnapshot, formatDriftAlert } = await import('../drift-detection');
+
+  // Load all work items
+  const indexEntries = await listWorkItems({});
+  const allItems: WorkItem[] = [];
+  for (const entry of indexEntries) {
+    const wi = await getWorkItem(entry.id);
+    if (wi) allItems.push(wi);
+  }
+
+  const snapshot = detectDrift({
+    workItems: allItems,
+    baselinePeriodDays: 30,
+    currentPeriodDays: 7,
+  });
+
+  // Persist snapshot
+  try {
+    await saveDriftSnapshot(snapshot);
+  } catch (snapErr) {
+    console.warn('[supervisor §18] Failed to save drift snapshot:', snapErr);
+  }
+
+  if (snapshot.degraded) {
+    console.warn(`[supervisor §18] Drift DETECTED — JSD=${snapshot.driftScore.toFixed(4)} (threshold=${snapshot.threshold})`);
+    ctx.events.push(makeEvent(
+      'error', 'system', undefined, undefined,
+      `Drift detected: JSD=${snapshot.driftScore.toFixed(4)} exceeds threshold ${snapshot.threshold}`
+    ));
+    try {
+      const { sendEmail } = await import('../gmail');
+      await sendEmail({
+        subject: `[Agent Forge] Drift Alert — JSD=${snapshot.driftScore.toFixed(4)}`,
+        body: formatDriftAlert(snapshot),
+      });
+    } catch (emailErr) {
+      console.warn('[supervisor §18] Failed to send drift alert email:', emailErr);
+    }
+  } else {
+    console.log(`[supervisor §18] No drift detected — JSD=${snapshot.driftScore.toFixed(4)}`);
+  }
+
+  await saveJson(SUPERVISOR_LAST_DRIFT_CHECK_KEY, { lastRunAt: ctx.now.toISOString() });
 }
 
 // §14 — PM Agent Daily Sweep

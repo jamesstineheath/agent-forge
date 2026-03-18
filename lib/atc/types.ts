@@ -17,6 +17,7 @@ export interface CycleContext {
 export const ATC_STATE_KEY = "atc/state";
 export const ATC_EVENTS_KEY = "atc/events";
 export const ATC_BRANCH_CLEANUP_KEY = "atc/last-branch-cleanup";
+export const SUPERVISOR_LAST_DRIFT_CHECK_KEY = "supervisor/last-drift-check";
 export const ATC_LOCK_KEY = "atc/cycle-lock";
 
 export const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
