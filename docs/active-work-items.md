@@ -4,15 +4,15 @@
 
 ## Currently Executing
 
-- **Implement debate orchestrator — runs multi-round debate loop** (jamesstineheath/agent-forge)
-  - Branch: `feat/implement-debate-orchestrator-runs-multi-round-deb`
-  - Files: lib/debate/orchestrator.ts
-  - Started: 2026-03-18T14:06:30.040Z
-
 - **Implement Knowledge Graph storage layer** (jamesstineheath/agent-forge)
   - Branch: `fix/implement-knowledge-graph-storage-layer`
   - Files: lib/knowledge-graph/storage.ts, lib/__tests__/knowledge-graph-storage.test.ts
   - Started: 2026-03-18T14:12:10.601Z
+
+- **Build TypeScript AST parser for code entity extraction** (jamesstineheath/agent-forge)
+  - Branch: `feat/build-typescript-ast-parser-for-code-entity-extrac`
+  - Files: lib/knowledge-graph/parser.ts, lib/__tests__/knowledge-graph-parser.test.ts
+  - Started: 2026-03-18T14:17:33.837Z
 
 ## Queued for Dispatch
 
@@ -51,8 +51,6 @@
 - **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
 
 - **Integration test: end-to-end debate flow with mock PR data** (jamesstineheath/agent-forge)
-
-- **Build TypeScript AST parser for code entity extraction** (jamesstineheath/agent-forge)
 
 - **Build import/dependency resolver for cross-file relationships** (jamesstineheath/agent-forge)
 
