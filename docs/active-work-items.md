@@ -4,29 +4,23 @@
 
 ## Currently Executing
 
-- **Deterministic Scoring Engine** (jamesstineheath/personal-assistant)
-  - Branch: `fix/deterministic-scoring-engine`
-  - Files: lib/realestate/scoring.ts
-  - Started: 2026-03-18T22:37:27.864Z
+- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
+  - Branch: `feat/enhance-realestate-scout-cron-web-search-and-price`
+  - Files: app/api/cron/realestate-scout/route.ts, lib/agents/definitions/realestate-scout.ts, lib/realestate/scout-phases.ts
+  - Started: 2026-03-18T23:05:25.187Z
 
-- **Listing Data Model Enhancement — priceHistory and coordinates** (jamesstineheath/personal-assistant)
-  - Branch: `feat/listing-data-model-enhancement-pricehistory-and-co`
-  - Files: lib/realestate/properties.ts, lib/realestate/geocoding.ts, lib/realestate/types.ts
-  - Started: 2026-03-18T22:39:03.506Z
+- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
+  - Branch: `feat/tool-registry-integration-register-all-new-real-es`
+  - Files: lib/tools/index.ts, prompts/sections/realestate.ts, app/api/chat/route.ts
+  - Started: 2026-03-18T23:02:03.949Z
 
 ## Queued for Dispatch
 
-- **Proximity Analysis Module** (jamesstineheath/personal-assistant)
+- **Deterministic Scoring Engine** (jamesstineheath/personal-assistant)
+  - Estimated files: lib/realestate/scoring.ts
 
-- **Real Estate Tools — Preference Management** (jamesstineheath/personal-assistant)
-
-- **Real Estate Tools — Listing Management** (jamesstineheath/personal-assistant)
-
-- **Real Estate Tools — Comps and Market Analysis** (jamesstineheath/personal-assistant)
-
-- **Real Estate Tools — Cost Estimator and Proximity** (jamesstineheath/personal-assistant)
-
-- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
+- **Listing Data Model Enhancement — priceHistory and coordinates** (jamesstineheath/personal-assistant)
+  - Estimated files: lib/realestate/properties.ts, lib/realestate/geocoding.ts, lib/realestate/types.ts
 
 - **UI — Map View Component with Mapbox GL JS** (jamesstineheath/personal-assistant)
 
@@ -35,7 +29,3 @@
 - **UI — Listing Detail Enhancements (Proximity, Cost Estimator)** (jamesstineheath/personal-assistant)
 
 - **UI — Integrate New Components into Realestate Page** (jamesstineheath/personal-assistant)
-
-- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
-
-- **Integration Test — End-to-End Real Estate V2 Flows** (jamesstineheath/personal-assistant)
