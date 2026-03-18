@@ -17,14 +17,13 @@
 - **CI failure classifier in Health Monitor** (jamesstineheath/agent-forge)
   - Branch: `fix/ci-failure-classifier-in-health-monitor`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/280
+  - Files: handoffs/ci-failure-classifier-in-health-monitor.md, lib/__tests__/ci-failure-classifier.test.ts, lib/atc/ci-classifier.ts, lib/atc/health-monitor.ts
 
 ## Queued for Dispatch
 
 - **Add drift detection to ATC cron cycle** (jamesstineheath/agent-forge)
 
 - **Dashboard QA Results Section — API Route** (jamesstineheath/agent-forge)
-
-- **Graduation Tracker — Structured PR Verification Markers** (jamesstineheath/agent-forge)
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (jamesstineheath/agent-forge)
 
