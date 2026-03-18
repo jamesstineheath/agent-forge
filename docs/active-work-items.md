@@ -4,11 +4,6 @@
 
 ## Currently Executing
 
-- **Add drift detection to ATC cron cycle** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-drift-detection-to-atc-cron-cycle`
-  - Files: lib/atc.ts
-  - Started: 2026-03-18T21:46:39.391Z
-
 - **Dashboard QA Results Section — API Route** (jamesstineheath/agent-forge)
   - Branch: `fix/dashboard-qa-results-section-api-route`
   - Files: app/api/qa-results/route.ts
