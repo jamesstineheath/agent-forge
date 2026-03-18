@@ -615,6 +615,21 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
 
     try {
       const parsed = JSON.parse(cleaned);
+
+      // Sanitize self-references before validation (LLM artifact)
+      if (Array.isArray(parsed)) {
+        for (let i = 0; i < parsed.length; i++) {
+          const deps = parsed[i]?.dependencies;
+          if (Array.isArray(deps)) {
+            const before = deps.length;
+            parsed[i].dependencies = deps.filter((d: number) => d !== i);
+            if (parsed[i].dependencies.length < before) {
+              console.warn(`[decomposer] Removed self-reference from item ${i} dependencies`);
+            }
+          }
+        }
+      }
+
       const validationError = validateDecomposition(parsed);
       if (validationError) {
         lastError = validationError;
