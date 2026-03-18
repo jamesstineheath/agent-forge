@@ -510,6 +510,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     const item = await getWorkItem(entry.id);
     if (!item || !item.execution?.prNumber) continue;
 
+    // Guard: skip if item blob status diverges from index (already updated by MCP or another process)
+    if (item.status !== 'failed') {
+      console.log(`[health-monitor] Skipping reconciliation for ${item.id} — blob status is "${item.status}", not "failed" (index stale)`);
+      continue;
+    }
+
     try {
       const pr = await getPRByNumber(item.targetRepo, item.execution.prNumber);
       if (pr?.mergedAt) {

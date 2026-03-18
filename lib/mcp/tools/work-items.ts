@@ -115,6 +115,16 @@ export function registerWorkItemTools(server: McpServer) {
           isError: true,
         };
       }
+      // Surface blocked terminal-state transitions clearly
+      if (params.status && result.status !== params.status) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            id: result.id,
+            status: result.status,
+            _warning: `Status transition blocked: item is in terminal status "${result.status}". Cannot transition to "${params.status}".`,
+          }, null, 2) }],
+        };
+      }
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ id: result.id, status: result.status }, null, 2) }],
       };
