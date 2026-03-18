@@ -196,6 +196,20 @@ function validateDecomposition(items: DecomposedItem[]): string | null {
   if (!Array.isArray(items)) return "Output is not an array";
   if (items.length === 0) return "Output array is empty";
 
+  // Auto-correct self-references before validation and cycle detection
+  for (let i = 0; i < items.length; i++) {
+    if (Array.isArray(items[i].dependencies)) {
+      const before = items[i].dependencies.length;
+      items[i].dependencies = items[i].dependencies.filter((dep) => {
+        if (dep === i) {
+          console.warn(`[decomposer] WARN: item ${i} self-references itself in dependencies, removing`);
+          return false;
+        }
+        return true;
+      });
+    }
+  }
+
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (!item.title) return `Item ${i}: missing title`;
@@ -215,7 +229,6 @@ function validateDecomposition(items: DecomposedItem[]): string | null {
     // Validate dependency indices
     for (const dep of item.dependencies) {
       if (typeof dep !== "number") return `Item ${i}: dependency ${dep} is not a number`;
-      if (dep === i) return `Item ${i}: self-reference in dependencies`;
       if (dep < 0 || dep >= items.length) return `Item ${i}: dependency index ${dep} out of bounds`;
     }
   }
