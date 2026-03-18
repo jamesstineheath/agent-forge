@@ -4,15 +4,15 @@
 
 ## Currently Executing
 
-- **Implement critic agent — finds issues and risks in PR** (jamesstineheath/agent-forge)
-  - Branch: `fix/implement-critic-agent-finds-issues-and-risks-in-p`
-  - Files: lib/debate/agents/critic.ts
-  - Started: 2026-03-18T13:51:28.011Z
-
 - **Implement judge agent — synthesizes debate into verdict** (jamesstineheath/agent-forge)
   - Branch: `fix/implement-judge-agent-synthesizes-debate-into-verd`
   - Files: lib/debate/agents/judge.ts
   - Started: 2026-03-18T13:57:10.087Z
+
+- **Define Knowledge Graph core types and schema** (jamesstineheath/agent-forge)
+  - Branch: `fix/define-knowledge-graph-core-types-and-schema`
+  - Files: lib/knowledge-graph/types.ts
+  - Started: 2026-03-18T14:01:55.543Z
 
 ## Queued for Dispatch
 
@@ -53,8 +53,6 @@
 - **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
 
 - **Integration test: end-to-end debate flow with mock PR data** (jamesstineheath/agent-forge)
-
-- **Define Knowledge Graph core types and schema** (jamesstineheath/agent-forge)
 
 - **Implement Knowledge Graph storage layer** (jamesstineheath/agent-forge)
 
