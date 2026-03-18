@@ -69,10 +69,14 @@ export interface DebateOutcome {
    * - `escalate`: human review required due to unresolvable disagreement or risk
    */
   finalVerdict: 'approve' | 'request_changes' | 'escalate';
+  /** Concise explanation of the verdict */
+  reasoning: string;
   /** Issues that were raised and resolved during the debate */
   resolvedIssues: string[];
   /** Disagreements that could not be resolved across all rounds */
   unresolvedDisagreements: string[];
+  /** Judge's confidence in the verdict, between 0 and 1 */
+  confidenceScore: number;
   /** Token usage breakdown for cost tracking */
   tokenUsage: DebateTokenUsage;
 }
