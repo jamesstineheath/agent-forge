@@ -9,10 +9,10 @@
   - Files: lib/debate/agents/advocate.ts
   - Started: 2026-03-18T13:47:00.894Z
 
-- **Disable QA Agent workflow (no-op stub)** (jamesstineheath/agent-forge)
-  - Branch: `fix/disable-qa-agent-workflow-no-op-stub`
-  - Files: .github/workflows/tlm-qa-agent.yml
-  - Started: 2026-03-18T13:40:52.281Z
+- **Implement critic agent — finds issues and risks in PR** (jamesstineheath/agent-forge)
+  - Branch: `fix/implement-critic-agent-finds-issues-and-risks-in-p`
+  - Files: lib/debate/agents/critic.ts
+  - Started: 2026-03-18T13:51:28.011Z
 
 ## Queued for Dispatch
 
@@ -38,8 +38,6 @@
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
 
-- **Implement critic agent — finds issues and risks in PR** (jamesstineheath/agent-forge)
-
 - **Implement judge agent — synthesizes debate into verdict** (jamesstineheath/agent-forge)
 
 - **Implement debate orchestrator — runs multi-round debate loop** (jamesstineheath/agent-forge)
@@ -57,3 +55,27 @@
 - **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
 
 - **Integration test: end-to-end debate flow with mock PR data** (jamesstineheath/agent-forge)
+
+- **Define Knowledge Graph core types and schema** (jamesstineheath/agent-forge)
+
+- **Implement Knowledge Graph storage layer** (jamesstineheath/agent-forge)
+
+- **Build TypeScript AST parser for code entity extraction** (jamesstineheath/agent-forge)
+
+- **Build import/dependency resolver for cross-file relationships** (jamesstineheath/agent-forge)
+
+- **Implement graph query engine** (jamesstineheath/agent-forge)
+
+- **Build repo indexer that fetches and indexes a full repository** (jamesstineheath/agent-forge)
+
+- **Create Knowledge Graph API routes** (jamesstineheath/agent-forge)
+
+- **Create Knowledge Graph barrel export and index module** (jamesstineheath/agent-forge)
+
+- **Integrate Knowledge Graph into Plan Decomposer** (jamesstineheath/agent-forge)
+
+- **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
+
+- **Add Knowledge Graph dashboard page** (jamesstineheath/agent-forge)
+
+- **Integration test: end-to-end Knowledge Graph indexing and querying** (jamesstineheath/agent-forge)
