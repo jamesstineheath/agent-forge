@@ -12,9 +12,16 @@ interface ReviewIssue {
   message: string;
 }
 
+interface PatternMatch {
+  pattern: string;
+  matched: boolean;
+  justification: string;
+}
+
 interface ReviewResult {
   decision: "approve" | "request_changes" | "flag_for_human";
   summary: string;
+  pattern_matches?: PatternMatch[];
   issues: ReviewIssue[];
   auto_merge_safe: boolean;
   reasoning: string;
@@ -687,6 +694,18 @@ async function run(): Promise<void> {
       for (const issue of review.issues) {
         lines.push(
           `${severityEmoji[issue.severity] || "\u26AA"} \`${issue.file}:${issue.line}\` (${issue.category || "general"}) - ${issue.message}`
+        );
+      }
+      lines.push("");
+    }
+
+    if (review.pattern_matches && review.pattern_matches.length > 0) {
+      lines.push("### Pattern Check");
+      lines.push("| Pattern | Matched | Justification |");
+      lines.push("|---------|---------|---------------|");
+      for (const pm of review.pattern_matches) {
+        lines.push(
+          `| ${pm.pattern} | ${pm.matched ? "Yes" : "No"} | ${pm.matched ? pm.justification : "—"} |`
         );
       }
       lines.push("");

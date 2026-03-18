@@ -17,6 +17,19 @@ All of these must be true:
 - Changes are consistent with the existing codebase patterns
 - Changes align with the system architecture and relevant ADRs
 
+### Hot Pattern Enforcement (MANDATORY)
+
+Before making any decision, you MUST check the Review Memory's Hot Patterns section.
+For EACH hot pattern:
+1. Determine if this PR matches the pattern (e.g., modifies files mentioned, matches the category)
+2. If it matches, you MUST either:
+   a. Explain specifically why this PR is safe despite matching the pattern, OR
+   b. Set decision to "flag_for_human" with a clear explanation of which pattern matched
+
+You MUST include a "pattern_matches" array in your JSON response listing each hot pattern checked and whether it matched.
+
+PRs that match HIGH severity hot patterns should ONLY be approved if the code explicitly addresses the risk documented in the pattern (e.g., a workflow change that includes recursion guards when the pattern flags workflow recursion risk).
+
 ### REQUEST_CHANGES (needs fixes before merge)
 Any of these are true:
 - Security vulnerability detected (exposed secrets, SQL/NoSQL injection, XSS, SSRF)
@@ -46,6 +59,13 @@ You MUST respond with valid JSON matching this exact schema:
 {
   "decision": "approve" | "request_changes" | "flag_for_human",
   "summary": "2-3 sentence summary of what the PR does and your assessment",
+  "pattern_matches": [
+    {
+      "pattern": "name of the hot pattern",
+      "matched": true | false,
+      "justification": "Why this PR is safe despite matching, or '—' if not matched"
+    }
+  ],
   "issues": [
     {
       "file": "path/to/file.ts",
