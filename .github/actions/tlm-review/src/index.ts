@@ -21,6 +21,7 @@ interface PatternMatch {
 interface ReviewResult {
   decision: "approve" | "request_changes" | "flag_for_human";
   summary: string;
+  pattern_check?: string;
   pattern_matches?: PatternMatch[];
   issues: ReviewIssue[];
   auto_merge_safe: boolean;
@@ -705,8 +706,13 @@ async function run(): Promise<void> {
       lines.push("");
     }
 
+    if (review.pattern_check) {
+      lines.push(review.pattern_check);
+      lines.push("");
+    }
+
     if (review.pattern_matches && review.pattern_matches.length > 0) {
-      lines.push("### Pattern Check");
+      lines.push("### Pattern Match Details");
       lines.push("| Pattern | Matched | Justification |");
       lines.push("|---------|---------|---------------|");
       for (const pm of review.pattern_matches) {
