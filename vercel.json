@@ -2,10 +2,6 @@
   "ignoreCommand": "bash scripts/should-deploy.sh",
   "crons": [
     {
-      "path": "/api/atc/cron",
-      "schedule": "*/5 * * * *"
-    },
-    {
       "path": "/api/agents/dispatcher/cron",
       "schedule": "*/5 * * * *"
     },

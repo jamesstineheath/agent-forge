@@ -1,3 +1,7 @@
+// DEPRECATED: ATC monolith cron disabled 2026-03-18. All responsibilities handled by
+// independent agents (Dispatcher, Health Monitor, Project Manager, Supervisor).
+// This file kept for utility imports only.
+
 import { loadJson, saveJson } from "./storage";
 import { listWorkItems } from "./work-items";
 import type { ATCState } from "./types";
