@@ -191,23 +191,45 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         latestRun.conclusion !== "success" &&
         latestRun.conclusion !== null
       ) {
-        const event = makeEvent(
-          "status_change",
-          item.id,
-          "executing",
-          "failed",
-          `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion} (reason: workflow_failed)`
-        );
-        await updateWorkItem(item.id, {
-          status: "failed",
-          execution: {
-            ...item.execution,
-            workflowRunId: latestRun.id,
-            completedAt: now.toISOString(),
-            outcome: "failed",
-          },
-        });
-        events.push(event);
+        // Before marking failed, check if a PR was actually opened for this work item.
+        // This handles the case where execute-handoff concludes 'skipped' but work was done.
+        if (latestRun.conclusion === "skipped" && pr?.state === "open") {
+          const event = makeEvent(
+            "status_change",
+            item.id,
+            "executing",
+            "reviewing",
+            `Workflow run ${latestRun.id} concluded '${latestRun.conclusion}' but PR #${pr.number} is open — transitioning to reviewing`
+          );
+          await updateWorkItem(item.id, {
+            status: "reviewing",
+            execution: {
+              ...item.execution,
+              workflowRunId: latestRun.id,
+              prNumber: pr.number,
+              prUrl: pr.htmlUrl,
+            },
+          });
+          events.push(event);
+        } else {
+          const event = makeEvent(
+            "status_change",
+            item.id,
+            "executing",
+            "failed",
+            `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion} (reason: workflow_failed)`
+          );
+          await updateWorkItem(item.id, {
+            status: "failed",
+            execution: {
+              ...item.execution,
+              workflowRunId: latestRun.id,
+              completedAt: now.toISOString(),
+              outcome: "failed",
+            },
+          });
+          events.push(event);
+        }
       } else if (
         latestRun &&
         latestRun.status !== "completed" &&
@@ -569,6 +591,35 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         `[health-monitor] Skipping retry for ${item.id} — has PR #${item.execution.prNumber}, deferring to reconciler`
       );
       continue;
+    }
+
+    // Check if a PR was opened on the branch even though prNumber wasn't saved
+    // (e.g., workflow concluded 'skipped' before reporting back)
+    if (item.handoff?.branch) {
+      const branchPR = await getPRByBranch(item.targetRepo, item.handoff.branch);
+      if (branchPR?.state === "open") {
+        console.log(
+          `[health-monitor] Recovering ${item.id} — found open PR #${branchPR.number} on branch ${item.handoff.branch}, transitioning to reviewing`
+        );
+        await updateWorkItem(item.id, {
+          status: "reviewing",
+          execution: {
+            ...item.execution,
+            prNumber: branchPR.number,
+            prUrl: branchPR.htmlUrl,
+          },
+        });
+        events.push(
+          makeEvent(
+            "work_item_reconciled",
+            item.id,
+            "failed",
+            "reviewing",
+            `Retry guard: found open PR #${branchPR.number} on branch ${item.handoff.branch}, recovered to reviewing`
+          )
+        );
+        continue;
+      }
     }
 
     const retryCount = item.execution?.retryCount ?? 0;
