@@ -4,11 +4,6 @@
 
 ## Currently Executing
 
-- **Extend event bus retention from 7 days to 30 days** (jamesstineheath/agent-forge)
-  - Branch: `fix/extend-event-bus-retention-from-7-days-to-30-days`
-  - Files: lib/event-bus.ts
-  - Started: 2026-03-18T17:03:05.483Z
-
 - **Add structured agent trace logging to all autonomous agents** (jamesstineheath/agent-forge)
   - Branch: `fix/add-structured-agent-trace-logging-to-all-autonomo`
   - Files: lib/atc/tracing.ts, lib/atc/dispatcher.ts, lib/atc/health-monitor.ts, lib/atc/project-manager.ts, lib/atc/supervisor.ts (or equivalent), app/api/agents/traces/route.ts
@@ -20,3 +15,7 @@
   - Branch: `feat/pa-auth-bypass-middleware-for-qa-agent-smoke-tests`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/315
   - Files: handoffs/pa-auth-bypass-middleware-for-qa-agent-smoke-tests.md, proxy.ts
+
+- **Extend event bus retention from 7 days to 30 days** (jamesstineheath/agent-forge)
+  - Branch: `fix/extend-event-bus-retention-from-7-days-to-30-days`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/271
