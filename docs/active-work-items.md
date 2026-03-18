@@ -9,6 +9,11 @@
   - Files: lib/atc/dispatcher.ts, lib/atc/health-monitor.ts, lib/atc/types.ts, app/api/agents/atc-metrics/route.ts, app/(app)/agents/page.tsx, lib/hooks.ts
   - Started: 2026-03-18T22:23:05.610Z
 
+- **Move drift detection from ATC to Supervisor agent** (jamesstineheath/agent-forge)
+  - Branch: `fix/move-drift-detection-from-atc-to-supervisor-agent`
+  - Files: lib/atc/supervisor.ts, lib/drift.ts (read-only reference)
+  - Started: 2026-03-18T22:23:34.097Z
+
 - **Preference Profile Types and Storage Layer** (jamesstineheath/personal-assistant)
   - Branch: `fix/preference-profile-types-and-storage-layer`
   - Files: lib/realestate/preferences.ts, lib/realestate/types.ts
