@@ -16,11 +16,13 @@ export interface WorkItemFilters {
   targetRepo?: string;
 }
 
-export function useWorkItems(filters?: WorkItemFilters) {
+export function useWorkItems(filters?: WorkItemFilters & { full?: boolean }) {
   const params = new URLSearchParams();
   if (filters?.status) params.set("status", filters.status);
   if (filters?.priority) params.set("priority", filters.priority);
   if (filters?.targetRepo) params.set("targetRepo", filters.targetRepo);
+  // Default to full=true so dashboard components get handoff/execution data
+  params.set("full", filters?.full === false ? "false" : "true");
   const query = params.toString();
   const url = `/api/work-items${query ? `?${query}` : ""}`;
 
