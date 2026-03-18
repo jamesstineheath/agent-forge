@@ -7,7 +7,17 @@
 - **Add debate session persistence to storage** (jamesstineheath/agent-forge)
   - Branch: `fix/add-debate-session-persistence-to-storage`
   - Files: lib/debate/storage.ts
-  - Started: 2026-03-18T14:33:41.329Z
+  - Started: 2026-03-18T14:42:39.211Z
+
+- **Add risk level detection utility for PRs** (jamesstineheath/agent-forge)
+  - Branch: `fix/add-risk-level-detection-utility-for-prs`
+  - Files: lib/debate/risk-detector.ts, lib/__tests__/debate-risk-detector.test.ts
+  - Started: 2026-03-18T14:44:02.045Z
+
+- **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
+  - Branch: `fix/update-personal-assistant-systemmap-and-claudemd-f`
+  - Files: docs/SYSTEM_MAP.md, CLAUDE.md
+  - Started: 2026-03-18T14:41:38.588Z
 
 ## Queued for Dispatch
 
@@ -32,18 +42,6 @@
 - **Graduation Tracker — Structured PR Verification Markers** (agent-forge)
 
 - **Integration Test — End-to-End QA Agent Evaluation Pipeline Verification** (agent-forge)
-
-- **Add risk level detection utility for PRs** (jamesstineheath/agent-forge)
-
-- **Integrate debate into TLM code review action** (jamesstineheath/personal-assistant)
-
-- **Add debate stats to pipeline dashboard API** (jamesstineheath/agent-forge)
-
-- **Add debate barrel export and update SYSTEM_MAP documentation** (jamesstineheath/agent-forge)
-
-- **Update personal-assistant SYSTEM_MAP and CLAUDE.md for debate review** (jamesstineheath/personal-assistant)
-
-- **Integration test: end-to-end debate flow with mock PR data** (jamesstineheath/agent-forge)
 
 - **Add ATC auto-indexing trigger on PR merge** (jamesstineheath/agent-forge)
 
