@@ -9,7 +9,7 @@ import type { PR } from "./github";
 import { getExecuteProjects, transitionToExecuting, transitionToFailed, checkProjectCompletion, transitionProject, writeOutcomeSummary, getRetryProjects, clearRetryFlag, markProjectFailedFromRetry } from "./projects";
 import { decomposeProject } from "./decomposer";
 import { validatePlan } from "./plan-validator";
-import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation } from "./escalation";
+import { getPendingEscalations, expireEscalation, resolveEscalation, updateEscalation, escalate, findPendingProjectEscalation } from "./escalation";
 import { summarizeDailyCacheMetrics } from "./cache-metrics";
 import { reviewBacklog, assessProjectHealth, composeDigest } from "./pm-agent";
 
@@ -1108,16 +1108,25 @@ async function _runATCCycleInner(): Promise<ATCState> {
             `If this project has a human-authored plan, add its projectId to QUALITY_GATE_EXEMPT_PROJECTS in lib/atc.ts to bypass.`;
           console.error(`[ATC §4.5 Quality Gate] ${rejectionReason}`);
 
-          try {
-            const { sendProjectEscalationEmail } = await import('./gmail');
-            await sendProjectEscalationEmail({
-              projectId: project.projectId,
-              projectTitle: project.title,
-              reason: `Plan validation found ${validation.issues.length} issue(s):\n\n${issueList}\n\nProject transitioned to Failed. Fix the plan and re-trigger, or add to QUALITY_GATE_EXEMPT_PROJECTS if this is a human-authored plan.`,
-              escalationType: 'plan_validation_failed',
-            });
-          } catch (emailErr) {
-            console.error(`[ATC §4.5] Failed to send escalation email for ${project.title}:`, emailErr);
+          const escalationReason = `Plan validation found ${validation.issues.length} issue(s):\n\n${issueList}\n\nProject transitioned to Failed. Fix the plan and re-trigger, or add to QUALITY_GATE_EXEMPT_PROJECTS if this is a human-authored plan.`;
+
+          // Check for existing pending escalation for same project+reason before creating
+          const existingEscalation = await findPendingProjectEscalation(project.projectId, escalationReason);
+          if (existingEscalation) {
+            console.log(`[ATC §4.5] Pending escalation already exists for project ${project.projectId}, skipping email`);
+          } else {
+            try {
+              // Create escalation record first
+              await escalate(
+                `project-${project.projectId}`,
+                escalationReason,
+                0.9,
+                { projectTitle: project.title, issues: validation.issues },
+                project.projectId
+              );
+            } catch (emailErr) {
+              console.error(`[ATC §4.5] Failed to send escalation email for ${project.title}:`, emailErr);
+            }
           }
 
           await transitionToFailed(project);

@@ -212,6 +212,20 @@ export async function getPendingEscalations(): Promise<Escalation[]> {
 }
 
 /**
+ * Find a pending escalation for a given project and reason.
+ * Returns the first matching pending escalation, or null if none exists.
+ */
+export async function findPendingProjectEscalation(
+  projectId: string,
+  reason: string
+): Promise<Escalation | null> {
+  const pending = await listEscalations("pending");
+  return pending.find(
+    (esc) => esc.projectId === projectId && esc.reason === reason
+  ) ?? null;
+}
+
+/**
  * Delete an escalation (cleanup only, typically after expiration or resolution)
  */
 export async function deleteEscalation(id: string): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { google } from 'googleapis';
 import type { Escalation } from './escalation';
 import type { Project, WorkItem, PhaseBreakdown } from './types';
+import { loadJson, saveJson } from './storage';
 
 // Gmail client singleton with error handling
 let gmailClient: ReturnType<typeof google.gmail> | null = null;
@@ -53,6 +54,14 @@ export async function sendEscalationEmail(
   workItem: WorkItem,
   isReminder: boolean = false
 ): Promise<string | null> {
+  // Check rate limit using projectId if available, otherwise workItemId
+  const rateLimitId = escalation.projectId ?? escalation.workItemId;
+  const isRateLimited = await checkEscalationRateLimit(rateLimitId);
+  if (isRateLimited) {
+    console.log(`[Gmail] Skipping rate-limited escalation email for ${rateLimitId}`);
+    return null;
+  }
+
   const client = getGmailClient();
   if (!client) {
     console.log('[Gmail] Skipping escalation email (credentials not configured).');
@@ -160,6 +169,9 @@ export async function sendEscalationEmail(
     console.log(
       `[Gmail] Escalation email sent for work item "${workItem.title}" (${escalation.id}). Thread ID: ${threadId}`
     );
+
+    // Increment rate limit counters
+    await incrementRateLimitCounters(rateLimitId);
 
     return threadId || null;
   } catch (error) {
@@ -492,9 +504,119 @@ export async function parseReplyContent(messageId: string): Promise<string> {
   }
 }
 
+// --- Escalation email dedup & rate limiting ---
+
+interface DedupRecord {
+  sentAt: string;
+}
+
+interface RateLimitCounter {
+  count: number;
+  hourStart: string;
+}
+
+const DEDUP_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const RATE_LIMIT_PER_PROJECT_PER_HOUR = 3;
+const RATE_LIMIT_GLOBAL_PER_HOUR = 10;
+
+function getDedupKey(projectId: string, escalationType: string): string {
+  return `project-escalation:${projectId}:${escalationType}`;
+}
+
+function getRateLimitKey(projectId: string): string {
+  return `escalation-rate:${projectId}`;
+}
+
+const GLOBAL_RATE_KEY = 'escalation-rate:global';
+
+function getCurrentHourStart(): string {
+  const now = new Date();
+  now.setMinutes(0, 0, 0);
+  return now.toISOString();
+}
+
+/**
+ * Check if a project escalation email was already sent within the dedup window.
+ * Returns true if a duplicate exists (email should be skipped).
+ */
+export async function checkEscalationDedup(projectId: string, escalationType: string): Promise<boolean> {
+  const key = getDedupKey(projectId, escalationType);
+  const record = await loadJson<DedupRecord>(key);
+  if (!record) return false;
+
+  const age = Date.now() - new Date(record.sentAt).getTime();
+  if (age < DEDUP_TTL_MS) {
+    return true; // duplicate within window
+  }
+  return false;
+}
+
+/**
+ * Record that an escalation email was sent for dedup tracking.
+ */
+async function recordEscalationSent(projectId: string, escalationType: string): Promise<void> {
+  const key = getDedupKey(projectId, escalationType);
+  await saveJson<DedupRecord>(key, { sentAt: new Date().toISOString() });
+}
+
+/**
+ * Check escalation rate limits for a project.
+ * Enforces max 3 per project per hour and max 10 total per hour.
+ * Returns true if rate limited (email should be skipped).
+ */
+export async function checkEscalationRateLimit(projectId: string): Promise<boolean> {
+  const hourStart = getCurrentHourStart();
+
+  // Check per-project limit
+  const projectKey = getRateLimitKey(projectId);
+  const projectCounter = await loadJson<RateLimitCounter>(projectKey);
+  if (projectCounter && projectCounter.hourStart === hourStart) {
+    if (projectCounter.count >= RATE_LIMIT_PER_PROJECT_PER_HOUR) {
+      console.log(`[Gmail] Rate limited: project ${projectId} has sent ${projectCounter.count} escalation emails this hour`);
+      return true;
+    }
+  }
+
+  // Check global limit
+  const globalCounter = await loadJson<RateLimitCounter>(GLOBAL_RATE_KEY);
+  if (globalCounter && globalCounter.hourStart === hourStart) {
+    if (globalCounter.count >= RATE_LIMIT_GLOBAL_PER_HOUR) {
+      console.log(`[Gmail] Rate limited: ${globalCounter.count} total escalation emails sent this hour`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Increment rate limit counters after sending an escalation email.
+ */
+async function incrementRateLimitCounters(projectId: string): Promise<void> {
+  const hourStart = getCurrentHourStart();
+
+  // Increment per-project counter
+  const projectKey = getRateLimitKey(projectId);
+  const projectCounter = await loadJson<RateLimitCounter>(projectKey);
+  if (projectCounter && projectCounter.hourStart === hourStart) {
+    await saveJson<RateLimitCounter>(projectKey, { count: projectCounter.count + 1, hourStart });
+  } else {
+    await saveJson<RateLimitCounter>(projectKey, { count: 1, hourStart });
+  }
+
+  // Increment global counter
+  const globalCounter = await loadJson<RateLimitCounter>(GLOBAL_RATE_KEY);
+  if (globalCounter && globalCounter.hourStart === hourStart) {
+    await saveJson<RateLimitCounter>(GLOBAL_RATE_KEY, { count: globalCounter.count + 1, hourStart });
+  } else {
+    await saveJson<RateLimitCounter>(GLOBAL_RATE_KEY, { count: 1, hourStart });
+  }
+}
+
 /**
  * Send a project-level escalation email.
  * Returns true on successful send, false if credentials are missing or send fails.
+ * Includes dedup (24h window per project+type) and rate limiting (3/project/hr, 10 global/hr).
  */
 export async function sendProjectEscalationEmail(params: {
   projectId: string;
@@ -503,6 +625,20 @@ export async function sendProjectEscalationEmail(params: {
   context?: string;
   escalationType: string;
 }): Promise<boolean> {
+  // Check dedup: skip if same project+type email sent within 24h
+  const isDuplicate = await checkEscalationDedup(params.projectId, params.escalationType);
+  if (isDuplicate) {
+    console.log(`[Gmail] Skipping duplicate escalation email for project ${params.projectId} (type: ${params.escalationType})`);
+    return false;
+  }
+
+  // Check rate limit
+  const isRateLimited = await checkEscalationRateLimit(params.projectId);
+  if (isRateLimited) {
+    console.log(`[Gmail] Skipping rate-limited escalation email for project ${params.projectId}`);
+    return false;
+  }
+
   const client = getGmailClient();
   if (!client) {
     console.log('[Gmail] Skipping project escalation email (credentials not configured).');
@@ -587,6 +723,10 @@ export async function sendProjectEscalationEmail(params: {
     console.log(
       `[Gmail] Project escalation email sent for "${params.projectTitle}" (${params.projectId}). Thread ID: ${response.data.threadId}`
     );
+
+    // Record dedup and increment rate limit counters
+    await recordEscalationSent(params.projectId, params.escalationType);
+    await incrementRateLimitCounters(params.projectId);
 
     return true;
   } catch (error) {

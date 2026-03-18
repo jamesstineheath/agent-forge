@@ -13,8 +13,15 @@ export async function GET(req: NextRequest) {
       | "resolved"
       | "expired"
       | "all";
+    const projectId = searchParams.get("projectId");
 
-    const escalations = await listEscalations(status);
+    let escalations = await listEscalations(status);
+
+    // Optional: filter to project-level escalations only
+    if (projectId) {
+      escalations = escalations.filter((e) => e.projectId === projectId);
+    }
+
     return NextResponse.json(escalations);
   } catch (err) {
     console.error("[api/escalations] GET error:", err);
