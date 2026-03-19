@@ -14,7 +14,9 @@ import {
 } from "../github";
 import { escalate } from "../escalation";
 import { incrementalIndex } from "../knowledge-graph/indexer";
-import type { ATCEvent, ATCState, WorkItem } from "../types";
+import { attributeFailure } from "../attribution";
+import type { AttributionContext } from "../attribution";
+import type { ATCEvent, ATCState, WorkItem, ComponentAttribution } from "../types";
 import type { CycleContext } from "./types";
 import {
   STALL_TIMEOUT_EXECUTING_NO_RUN_MINUTES,
@@ -33,6 +35,25 @@ const CODE_CI_RETRY_BUDGET_DEFAULT = 1;
 
 // Idempotency window: don't re-trigger a code retry within this window
 const CODE_RETRY_IDEMPOTENCY_MINUTES = 15;
+
+/**
+ * Best-effort failure attribution. Returns attributions or undefined on error.
+ */
+async function tryAttributeFailure(
+  item: WorkItem,
+  context: AttributionContext,
+): Promise<ComponentAttribution[] | undefined> {
+  try {
+    const attributions = await attributeFailure(item, context);
+    return attributions.length > 0 ? attributions : undefined;
+  } catch (err) {
+    console.warn(
+      `[HealthMonitor] Failure attribution failed for ${item.id} (non-fatal):`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return undefined;
+  }
+}
 
 /**
  * Stub CI failure classifier.
@@ -127,7 +148,13 @@ export async function handleCodeCIFailure(
     }
   } else {
     // Budget exhausted — mark failed and escalate
-    await updateWorkItem(item.id, { status: 'failed' });
+    const attribution = await tryAttributeFailure(item, {
+      ciLogs: errorLogs,
+    });
+    await updateWorkItem(item.id, {
+      status: 'failed',
+      ...(attribution && { attribution }),
+    });
 
     await escalate(
       item.id,
@@ -212,8 +239,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         "failed",
         `Execution stalled: no progress for ${Math.round(elapsedMinutes)} minutes (reason: timeout)`
       );
+      const attribution = await tryAttributeFailure(item, {
+        executionLog: `Execution stalled for ${Math.round(elapsedMinutes)} minutes in ${item.status} stage with no progress`,
+      });
       await updateWorkItem(item.id, {
         status: "failed",
+        ...(attribution && { attribution }),
         execution: {
           ...item.execution,
           completedAt: now.toISOString(),
@@ -324,8 +355,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
               "failed",
               `Workflow run ${latestRun.id} concluded 'skipped', no PR found (reason: no_pr_after_execution)`
             );
+            const attribution = await tryAttributeFailure(item, {
+              executionLog: `Workflow run ${latestRun.id} concluded 'skipped', no PR found after ambiguous skip`,
+            });
             await updateWorkItem(item.id, {
               status: "failed",
+              ...(attribution && { attribution }),
               execution: {
                 ...item.execution,
                 workflowRunId: latestRun.id,
@@ -344,8 +379,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
             "failed",
             `Workflow run ${latestRun.id} concluded 'skipped' (reason: workflow_failed)`
           );
+          const attribution = await tryAttributeFailure(item, {
+            ciLogs: `Workflow run ${latestRun.id} concluded 'skipped' — short run, no branch`,
+          });
           await updateWorkItem(item.id, {
             status: "failed",
+            ...(attribution && { attribution }),
             execution: {
               ...item.execution,
               workflowRunId: latestRun.id,
@@ -392,8 +431,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           "failed",
           `PR #${pr.number} closed without merge (reason: pr_closed)`
         );
+        const attribution = await tryAttributeFailure(item, {
+          prDescription: `PR #${pr.number} closed without merge during executing stage`,
+        });
         await updateWorkItem(item.id, {
           status: "failed",
+          ...(attribution && { attribution }),
           execution: {
             ...item.execution,
             prNumber: pr.number,
@@ -483,8 +526,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
             "failed",
             `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion} (reason: workflow_failed)`
           );
+          const attribution = await tryAttributeFailure(item, {
+            ciLogs: `Workflow run ${latestRun.id} failed with conclusion: ${latestRun.conclusion}`,
+          });
           await updateWorkItem(item.id, {
             status: "failed",
+            ...(attribution && { attribution }),
             execution: {
               ...item.execution,
               workflowRunId: latestRun.id,
@@ -511,8 +558,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           "failed",
           `Workflow run ${latestRun.id} in progress for ${Math.round(elapsedMinutes)} minutes (reason: timeout)`
         );
+        const attribution = await tryAttributeFailure(item, {
+          executionLog: `Workflow run ${latestRun.id} still in progress after ${Math.round(elapsedMinutes)} minutes — execution timeout`,
+        });
         await updateWorkItem(item.id, {
           status: "failed",
+          ...(attribution && { attribution }),
           execution: {
             ...item.execution,
             workflowRunId: latestRun.id,
@@ -529,8 +580,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           "failed",
           `No workflow run found after ${Math.round(elapsedMinutes)} minutes (reason: timeout)`
         );
+        const attribution = await tryAttributeFailure(item, {
+          executionLog: `No workflow run found after ${Math.round(elapsedMinutes)} minutes — dispatch may have failed`,
+        });
         await updateWorkItem(item.id, {
           status: "failed",
+          ...(attribution && { attribution }),
           execution: {
             ...item.execution,
             completedAt: now.toISOString(),
@@ -577,8 +632,13 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           "failed",
           `PR #${pr.number} closed without merge (reason: pr_closed)`
         );
+        const attribution = await tryAttributeFailure(item, {
+          prDescription: `PR #${pr.number} closed without merge during review stage`,
+          reviewComments: `PR closed during code review`,
+        });
         await updateWorkItem(item.id, {
           status: "failed",
+          ...(attribution && { attribution }),
           execution: {
             ...item.execution,
             prNumber: pr.number,
@@ -626,9 +686,13 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
               "failed",
               `PR #${prNumber} merge conflict unresolvable (${rebaseResult.error}), closed for re-dispatch`
             );
+            const attribution = await tryAttributeFailure(item, {
+              ciLogs: `Merge conflict on PR #${prNumber}: auto-rebase failed (${rebaseResult.error})`,
+            });
             await updateWorkItem(item.id, {
               status: "failed",
               failureCategory: "transient",
+              ...(attribution && { attribution }),
               execution: {
                 ...item.execution,
                 prNumber,
@@ -669,8 +733,13 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     if (!item) continue;
     const elapsed = (now.getTime() - new Date(item.updatedAt).getTime()) / 60_000;
     if (elapsed >= GENERATING_TIMEOUT_MINUTES) {
+      const attribution = await tryAttributeFailure(item, {
+        executionLog: `Handoff generation stalled for ${Math.round(elapsed)} minutes`,
+        specReviewOutput: `Spec review/generation timed out after ${Math.round(elapsed)} minutes`,
+      });
       await updateWorkItem(item.id, {
         status: "failed",
+        ...(attribution && { attribution }),
         execution: {
           ...item.execution,
           completedAt: now.toISOString(),
