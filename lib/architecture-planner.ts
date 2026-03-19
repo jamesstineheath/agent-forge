@@ -138,7 +138,7 @@ export async function generateArchitecturePlan(
 ): Promise<ArchitecturePlan> {
   const { criteria, prdContent, mode, failedResults } = input;
 
-  // Resolve repo and fetch context
+  // Resolve repos and fetch context (primary + secondary)
   const repoConfig = await resolveRepo(criteria.targetRepo);
   let repoContext = "";
 
@@ -149,6 +149,17 @@ export async function generateArchitecturePlan(
     console.warn(
       `[architecture-planner] No repo config for "${criteria.targetRepo}", planning without codebase context`,
     );
+  }
+
+  // Fetch secondary repo context
+  if (criteria.secondaryRepos?.length) {
+    for (const secondaryRepo of criteria.secondaryRepos) {
+      const secondaryConfig = await resolveRepo(secondaryRepo);
+      if (secondaryConfig) {
+        const ctx = await fetchRepoContext(secondaryConfig);
+        repoContext += "\n\n" + formatRepoContext(secondaryConfig.fullName, ctx);
+      }
+    }
   }
 
   // Build the user prompt

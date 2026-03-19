@@ -693,6 +693,7 @@ export interface IntentCriteria {
   prdTitle: string;
   projectId?: string;
   targetRepo?: string;
+  secondaryRepos?: string[];
   priority?: string;
   rank?: number;
   criteria: Criterion[];

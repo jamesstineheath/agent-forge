@@ -239,6 +239,9 @@ function extractPRDProperties(page: { id: string; properties: Record<string, unk
     prdTitle: props["PRD Title"]?.title?.[0]?.plain_text || "Untitled",
     projectId: props["AF Project ID"]?.rich_text?.[0]?.plain_text || undefined,
     targetRepo: props["Target Repo"]?.select?.name || undefined,
+    secondaryRepos: (props["Secondary Repos"]?.multi_select || [])
+      .map((opt: { name: string }) => opt.name)
+      .filter(Boolean),
     priority: props["Priority"]?.select?.name || undefined,
     rank: props["Rank"]?.number ?? undefined,
     estimatedCost: props["Estimated Cost"]?.number ?? undefined,
