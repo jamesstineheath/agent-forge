@@ -314,6 +314,13 @@ export interface ATCEvent {
   details: string;
   previousStatus?: string;
   newStatus?: string;
+  priority?: string;
+  rank?: number;
+  prioritySkipped?: {
+    count: number;
+    skippedItemIds: string[];
+    note: string;
+  };
 }
 
 export interface ATCState {
