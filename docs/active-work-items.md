@@ -16,10 +16,6 @@
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/308
   - Files: handoffs/coach-chat-interface-locks-up-after-filing-a-bug-v.md
 
-- **Implement TF-IDF similarity engine (lib/episode-similarity.ts)** (jamesstineheath/agent-forge)
-  - Branch: `feat/implement-tf-idf-similarity-engine-libepisode-simi`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/318
-
 ## Queued for Dispatch
 
 - **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
