@@ -5,6 +5,7 @@ export type GitHubEventType =
   | "github.pr.merged"
   | "github.pr.closed"
   | "github.pr.review_submitted"
+  | "github.pr.comment"
   | "github.ci.passed"
   | "github.ci.failed"
   | "github.workflow.completed"
@@ -39,6 +40,10 @@ export interface WebhookEventPayload {
   reviewState?: string;
   /** Review body text (pull_request_review events) */
   reviewBody?: string;
+  /** GitHub username of the comment author (issue_comment events) */
+  author?: string;
+  /** Comment body text (issue_comment events) */
+  commentBody?: string;
 }
 
 export interface EventQueryOptions {

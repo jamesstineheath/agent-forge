@@ -45,6 +45,9 @@ async function reactToEvent(event: WebhookEvent): Promise<void> {
     case "github.pr.review_submitted":
       await handleReviewSubmitted(event);
       break;
+    case "github.pr.comment":
+      await handleHumanFeedback(event);
+      break;
     case "github.workflow.completed":
       await handleWorkflowCompleted(event);
       break;
@@ -269,6 +272,47 @@ async function handleReviewSubmitted(event: WebhookEvent): Promise<void> {
   } catch (err) {
     console.warn(`${LOG_PREFIX} failed to dispatch unblocked items:`, err);
   }
+}
+
+/**
+ * Human comment on a flagged PR → re-trigger execution with feedback.
+ * When the repo owner comments on a PR whose work item is blocked
+ * (FLAG_FOR_HUMAN state), re-dispatch execution with the comment as context.
+ */
+async function handleHumanFeedback(event: WebhookEvent): Promise<void> {
+  const { prNumber, commentBody } = event.payload;
+  if (!prNumber) return;
+
+  const item = await findWorkItemByPR(event.repo, prNumber);
+  if (!item) return;
+
+  // Only act on blocked items (FLAG_FOR_HUMAN state)
+  if (item.status !== "blocked") return;
+
+  const branch = item.handoff?.branch;
+  if (!branch) return;
+
+  console.log(`${LOG_PREFIX} human feedback on PR #${prNumber} — re-triggering execution`);
+
+  // Re-trigger execute-handoff workflow with feedback context
+  try {
+    await triggerWorkflow(item.targetRepo, "execute-handoff.yml", branch, {
+      branch,
+      human_feedback: commentBody ?? "",
+    });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} failed to re-trigger execution for PR #${prNumber}:`, err);
+    return;
+  }
+
+  // Transition back to executing
+  await updateWorkItem(item.id, {
+    status: "executing",
+    execution: {
+      ...item.execution,
+      outcome: undefined,
+    },
+  });
 }
 
 /**

@@ -68,6 +68,15 @@ interface GitHubPayload {
     body: string | null;
     user?: { login: string };
   };
+  issue?: {
+    number: number;
+    pull_request?: { url: string };
+  };
+  comment?: {
+    body: string;
+    user?: { login: string };
+  };
+  sender?: { login: string };
 }
 
 /**
@@ -180,6 +189,37 @@ function mapToWebhookEvents(
         timestamp,
         repo,
         payload,
+      });
+      break;
+    }
+
+    case "issue_comment": {
+      // GitHub sends issue_comment for PR comments too — check for issue.pull_request
+      const issue = body.issue;
+      const comment = body.comment;
+      if (!issue?.pull_request || !comment || body.action !== "created") break;
+
+      // Filter out bot users
+      const commentAuthor = comment.user?.login ?? "";
+      if (commentAuthor.endsWith("[bot]")) break;
+
+      // Only forward if the author is the repo owner
+      const repoOwner = process.env.GITHUB_REPOSITORY_OWNER ?? repo.split("/")[0];
+      if (commentAuthor !== repoOwner) break;
+
+      const commentPayload: WebhookEventPayload = {
+        prNumber: issue.number,
+        author: commentAuthor,
+        commentBody: comment.body,
+        action: "created",
+        summary: `Comment on PR #${issue.number} by ${commentAuthor}`,
+      };
+      events.push({
+        id: generateEventId(),
+        type: "github.pr.comment",
+        timestamp,
+        repo,
+        payload: commentPayload,
       });
       break;
     }
