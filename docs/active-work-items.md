@@ -11,14 +11,6 @@
 
 ## In Review
 
-- **Quick Add and Search Now UI Buttons** (jamesstineheath/personal-assistant)
-  - Branch: `fix/quick-add-and-search-now-ui-buttons`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/369
-
-- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
-  - Branch: `fix/create-episodes-api-route-get-apiepisodes`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/320
-
 - **Add shared types for model routing (TaskType, WorkItemSignals)** (jamesstineheath/agent-forge)
   - Branch: `fix/add-shared-types-for-model-routing-tasktype-workit`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/322
