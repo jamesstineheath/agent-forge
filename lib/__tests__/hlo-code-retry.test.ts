@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("@/lib/github", () => ({
   triggerWorkflow: vi.fn().mockResolvedValue(undefined),
   getWorkflowRuns: vi.fn().mockResolvedValue([]),
+  getWorkflowRunDetail: vi.fn().mockResolvedValue(null),
   getPRByBranch: vi.fn().mockResolvedValue(null),
   getPRByNumber: vi.fn().mockResolvedValue(null),
   getPRFiles: vi.fn().mockResolvedValue([]),
@@ -15,6 +16,7 @@ vi.mock("@/lib/github", () => ({
   rebasePR: vi.fn().mockResolvedValue({ success: true }),
   closePRWithReason: vi.fn().mockResolvedValue(undefined),
   deleteBranch: vi.fn().mockResolvedValue(true),
+  rerunFailedJobs: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/work-items", () => ({
@@ -41,6 +43,10 @@ vi.mock("@/lib/storage", () => ({
   loadJson: vi.fn().mockResolvedValue(null),
   saveJson: vi.fn().mockResolvedValue(undefined),
   deleteJson: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/lib/atc/ci-classifier", () => ({
+  classifyCIFailure: vi.fn().mockResolvedValue({ type: 'code', confidence: 0.9 }),
 }));
 
 vi.mock("@/lib/atc/tracing", () => ({
