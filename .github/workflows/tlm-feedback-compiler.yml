@@ -33,3 +33,6 @@ jobs:
           github-token: ${{ secrets.GH_PAT }}
           model: "claude-opus-4-6"
           lookback-days: "14"
+        env:
+          AGENT_FORGE_URL: ${{ secrets.AGENT_FORGE_URL }}
+          AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
