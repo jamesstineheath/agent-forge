@@ -33,7 +33,20 @@ export default function ProjectDetailPage() {
     { refreshInterval: 30000 }
   );
   const [refreshing, setRefreshing] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
+
+  const handleGeneratePlan = async () => {
+    setGenerating(true);
+    try {
+      const res = await fetch(`/api/intent-criteria/${prdId}/plan?decompose=true`, { method: "POST" });
+      if (res.ok) {
+        mutate();
+      }
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -93,6 +106,26 @@ export default function ProjectDetailPage() {
                 <ExternalLink className="h-4 w-4" />
                 Notion
               </a>
+            )}
+            {!plan && data.criteria.length > 0 && (
+              <button
+                onClick={handleGeneratePlan}
+                disabled={generating}
+                className="flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                <FileCode2 className={`h-4 w-4 ${generating ? "animate-pulse" : ""}`} />
+                {generating ? "Generating..." : "Generate Plan & Execute"}
+              </button>
+            )}
+            {plan && (
+              <button
+                onClick={handleGeneratePlan}
+                disabled={generating}
+                className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent disabled:opacity-50"
+              >
+                <FileCode2 className={`h-4 w-4 ${generating ? "animate-pulse" : ""}`} />
+                {generating ? "Regenerating..." : "Regenerate Plan"}
+              </button>
             )}
             <button
               onClick={handleRefresh}
