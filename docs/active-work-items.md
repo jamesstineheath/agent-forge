@@ -4,32 +4,27 @@
 
 ## Currently Executing
 
-- **Dashboard evaluation metrics views** (jamesstineheath/agent-forge)
-  - Branch: `fix/dashboard-evaluation-metrics-views`
-  - Files: app/(app)/agents/page.tsx, app/api/agents/evaluation-metrics/route.ts, components/evaluation-metrics-panel.tsx, lib/hooks.ts
-  - Started: 2026-03-19T07:22:59.083Z
+- **Preference Editor Panel Component Enhancement** (jamesstineheath/personal-assistant)
+  - Branch: `feat/preference-editor-panel-component-enhancement`
+  - Files: components/realestate/preference-editor.tsx
+  - Started: 2026-03-19T07:38:42.244Z
+
+- **Bulk Import Tool and Chat Command** (jamesstineheath/personal-assistant)
+  - Branch: `feat/bulk-import-tool-and-chat-command`
+  - Files: lib/realestate/bulk-import.ts, lib/tools/real-estate.ts
+  - Started: 2026-03-19T07:37:07.893Z
 
 ## In Review
-
-- **Deterministic Scoring Function** (jamesstineheath/personal-assistant)
-  - Branch: `feat/deterministic-scoring-function`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/356
-  - Files: handoffs/deterministic-scoring-function.md, lib/realestate/scoring.test.ts, lib/realestate/scoring.ts
-
-- **Real Estate System Prompt Section** (jamesstineheath/personal-assistant)
-  - Branch: `fix/real-estate-system-prompt-section`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/358
-  - Files: handoffs/real-estate-system-prompt-section.md, prompts/sections/real-estate.md
 
 - **Wire failure attribution into Health Monitor agent** (jamesstineheath/agent-forge)
   - Branch: `fix/wire-failure-attribution-into-health-monitor-agent`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/308
+  - Files: handoffs/wire-failure-attribution-into-health-monitor-agent.md, lib/atc/health-monitor.ts
+
+- **Dashboard evaluation metrics views** (jamesstineheath/agent-forge)
+  - Branch: `fix/dashboard-evaluation-metrics-views`
 
 ## Queued for Dispatch
-
-- **Preference Editor Panel Component Enhancement** (jamesstineheath/personal-assistant)
-
-- **Bulk Import Tool and Chat Command** (jamesstineheath/personal-assistant)
 
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
 
