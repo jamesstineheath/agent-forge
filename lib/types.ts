@@ -77,6 +77,8 @@ export interface WorkItem {
   complexityHint?: ComplexityHint;
   failureCategory?: FailureCategory;
   attribution?: ComponentAttribution[];
+  /** When true, this item bypasses concurrency limits and is dispatched immediately. */
+  expedite?: boolean;
   createdAt: string;
   updatedAt: string;
   reasoningMetrics?: ReasoningQualityAssessment;
@@ -107,6 +109,7 @@ export const createWorkItemSchema = z.object({
   dependencies: z.array(z.string()).default([]),
   triggeredBy: z.string().optional(),
   complexityHint: z.enum(["simple", "moderate"]).optional(),
+  expedite: z.boolean().optional(),
 });
 
 export const updateWorkItemSchema = z.object({
@@ -178,6 +181,7 @@ export const updateWorkItemSchema = z.object({
     })
     .optional(),
   failureCategory: z.enum(["transient", "execution", "structural", "unknown"]).optional(),
+  expedite: z.boolean().optional(),
 });
 
 export type CreateWorkItemInput = z.infer<typeof createWorkItemSchema>;
