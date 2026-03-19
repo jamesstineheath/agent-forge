@@ -19,11 +19,6 @@
   - PR: https://github.com/jamesstineheath/agent-forge/pull/308
   - Files: handoffs/wire-failure-attribution-into-health-monitor-agent.md, lib/atc/health-monitor.ts
 
-- **Dashboard evaluation metrics views** (jamesstineheath/agent-forge)
-  - Branch: `fix/dashboard-evaluation-metrics-views`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/309
-  - Files: app/(app)/agents/page.tsx, app/api/agents/evaluation-metrics/route.ts, components/evaluation-metrics-panel.tsx, handoffs/dashboard-evaluation-metrics-views.md, lib/hooks.ts
-
 ## Queued for Dispatch
 
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
