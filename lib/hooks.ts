@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode } from "@/lib/types";
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
@@ -319,6 +319,16 @@ export function useIntentCriteria(prdId: string | null) {
     prdId ? `/api/intent-criteria/${prdId}` : null,
     fetcher,
     { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+// ── Episodes ─────────────────────────────────────────────────────────────────
+
+export function useEpisode(id: string | null) {
+  const { data, error, isLoading, mutate } = useSWR<Episode>(
+    id ? `/api/episodes/${id}` : null,
+    fetcher,
   );
   return { data, error, isLoading, mutate };
 }
