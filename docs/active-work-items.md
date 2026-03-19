@@ -4,13 +4,13 @@
 
 ## In Review
 
-- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
-  - Branch: `feat/create-change-proposer-module-srcchange-proposerts`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/326
+- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `feat/create-pattern-detection-module-srcpattern-detecto`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/322
 
-- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
-  - Branch: `feat/build-distindexjs-bundle-via-ncc`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/327
+- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `fix/create-compiler-prompt-module-srccompiler-promptts`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/324
 
 - **Define Episode types and data models in lib/types.ts** (jamesstineheath/agent-forge)
   - Branch: `fix/define-episode-types-and-data-models-in-libtypests`
@@ -20,11 +20,11 @@
 
 ## Queued for Dispatch
 
-- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
-  - Estimated files: .github/actions/tlm-feedback-compiler/src/pattern-detector.ts, .github/actions/tlm-feedback-compiler/src/types.ts
+- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
+  - Estimated files: .github/actions/tlm-feedback-compiler/src/change-proposer.ts, .github/actions/tlm-feedback-compiler/src/types.ts, docs/feedback-compiler-history.json
 
-- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
-  - Estimated files: .github/actions/tlm-feedback-compiler/src/compiler-prompt.ts
+- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
+  - Estimated files: .github/actions/tlm-feedback-compiler/dist/index.js, .github/actions/tlm-feedback-compiler/dist/licenses.txt
 
 - **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
   - Estimated files: components/coaching/coach-drawer.tsx, components/coaching/coaching-chat.tsx, app/(app)/training/ask-coach/page.tsx
