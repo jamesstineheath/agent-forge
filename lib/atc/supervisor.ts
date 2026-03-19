@@ -598,6 +598,8 @@ export async function cleanupStaleBranches(): Promise<{ deletedCount: number; sk
   let errors = 0;
 
   // Phase A: Clean branches for work items in terminal/failed states
+  // Safety: check both work item prNumber AND live GitHub PR state before deleting.
+  // This prevents the race where prNumber hasn't been written to the blob yet but a PR exists.
   const CLEANUP_ELIGIBLE_STATUSES = ["failed", "parked", "cancelled"] as const;
   for (const status of CLEANUP_ELIGIBLE_STATUSES) {
     const entries = await listWorkItems({ status });
@@ -605,7 +607,23 @@ export async function cleanupStaleBranches(): Promise<{ deletedCount: number; sk
       const item = await getWorkItem(entry.id);
       if (!item || !item.handoff?.branch) continue;
 
+      // Skip if work item records a PR
       if (item.execution?.prNumber != null) {
+        skipped++;
+        continue;
+      }
+
+      // Belt-and-suspenders: also check GitHub for an open PR on this branch.
+      // Covers the race where execution created a PR but prNumber wasn't persisted yet.
+      try {
+        const livePR = await getPRByBranch(item.targetRepo, item.handoff.branch);
+        if (livePR && livePR.state === "open") {
+          console.log(`[supervisor] Skipping branch cleanup for ${item.handoff.branch}: open PR #${livePR.number} found (work item ${item.id} has no prNumber recorded)`);
+          skipped++;
+          continue;
+        }
+      } catch {
+        // If PR check fails, err on the side of NOT deleting
         skipped++;
         continue;
       }

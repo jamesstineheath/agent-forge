@@ -1082,8 +1082,15 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
   addPhase(trace, { name: 'retry', durationMs: Date.now() - phaseStart });
   phaseStart = Date.now();
 
-  // 3.6: Re-evaluate failed items whose dependencies have all resolved
-  const failedForDepCheck = await listWorkItems({ status: "failed" });
+  // 3.6: Re-evaluate failed AND blocked items whose dependencies have all resolved
+  // "blocked" items can get stuck when their deps resolve but no agent transitions them.
+  // This catches items that were set to "blocked" by FLAG_FOR_HUMAN or cascading auto-cancel
+  // and whose deps have since merged/cancelled.
+  const [failedForDepCheck_, blockedForDepCheck_] = await Promise.all([
+    listWorkItems({ status: "failed" }),
+    listWorkItems({ status: "blocked" }),
+  ]);
+  const failedForDepCheck = [...failedForDepCheck_, ...blockedForDepCheck_];
   for (const entry of failedForDepCheck) {
     const item = await getWorkItem(entry.id);
     if (!item) continue;
@@ -1135,9 +1142,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         makeEvent(
           "dep_resolved",
           item.id,
-          "failed",
+          item.status,
           "ready",
-          `Auto-reset to ready: all dependencies resolved since last failure (retry ${retryCount + 1})`
+          `Auto-reset to ready: all dependencies resolved (was ${item.status}, retry ${retryCount + 1})`
         )
       );
     }
