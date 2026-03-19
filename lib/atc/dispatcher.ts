@@ -93,6 +93,15 @@ export async function dispatchUnblockedItems(
  */
 export async function runDispatcher(ctx: CycleContext): Promise<ATCState["activeExecutions"]> {
   const { now, events } = ctx;
+
+  // === EARLY EXIT: no ready items ===
+  const readyEntries = await listWorkItems({ status: "ready" });
+  if (readyEntries.length === 0) {
+    console.log("[Dispatcher] No ready items — skipping cycle");
+    return [];
+  }
+  // === END EARLY EXIT ===
+
   const trace = startTrace('dispatcher');
   let phaseStart = Date.now();
 
