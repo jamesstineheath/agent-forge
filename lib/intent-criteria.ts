@@ -221,6 +221,8 @@ interface PRDPageProperties {
   targetRepo?: string;
   priority?: string;
   rank?: number;
+  estimatedCost?: number;
+  criteriaCount?: number;
   notionUrl: string;
 }
 
@@ -239,6 +241,8 @@ function extractPRDProperties(page: { id: string; properties: Record<string, unk
     targetRepo: props["Target Repo"]?.select?.name || undefined,
     priority: props["Priority"]?.select?.name || undefined,
     rank: props["Rank"]?.number ?? undefined,
+    estimatedCost: props["Estimated Cost"]?.number ?? undefined,
+    criteriaCount: props["Criteria Count"]?.number ?? undefined,
     notionUrl: `https://www.notion.so/${page.id.replace(/-/g, "")}`,
   };
 }
@@ -302,7 +306,20 @@ export async function importCriteriaFromNotion(prdPageId: string): Promise<Inten
   const blocks = await getPageBlocks(prdPageId);
   const criteria = parseCriteriaFromBlocks(blocks);
 
-  const totalEstimatedCost = criteria.reduce((sum, c) => sum + c.estimatedCost, 0);
+  // Use property-level cost from Notion if parser couldn't extract per-criterion costs
+  let totalEstimatedCost = criteria.reduce((sum, c) => sum + c.estimatedCost, 0);
+  const notionCost = props.estimatedCost || 0;
+
+  // If all criteria defaulted to $5 (parser couldn't read metadata) but Notion has a total,
+  // distribute the Notion total evenly across criteria
+  const allDefault = criteria.length > 0 && criteria.every((c) => c.estimatedCost === 5);
+  if (allDefault && notionCost > 0 && criteria.length > 0) {
+    const perCriterion = Math.round((notionCost / criteria.length) * 100) / 100;
+    for (const c of criteria) {
+      c.estimatedCost = perCriterion;
+    }
+    totalEstimatedCost = notionCost;
+  }
 
   const intentCriteria: IntentCriteria = {
     prdId: props.prdId,
