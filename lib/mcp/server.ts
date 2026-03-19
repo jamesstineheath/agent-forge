@@ -8,6 +8,7 @@ import { registerPipelineTools } from "./tools/pipeline";
 import { registerWorkItemTools } from "./tools/work-items";
 import { registerTLMTools } from "./tools/tlm";
 import { registerHandoffTools } from "./tools/handoffs";
+import { registerPMTools } from "./tools/pm";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -19,6 +20,7 @@ export function createMcpServer(): McpServer {
   registerWorkItemTools(server);
   registerTLMTools(server);
   registerHandoffTools(server);
+  registerPMTools(server);
 
   return server;
 }
