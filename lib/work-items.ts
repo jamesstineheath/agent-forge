@@ -70,7 +70,12 @@ export async function listWorkItems(
     index = index.filter((e) => e.status === filters.status);
   }
   if (filters?.targetRepo) {
-    index = index.filter((e) => e.targetRepo === filters.targetRepo);
+    const filterRepo = filters.targetRepo;
+    const filterShort = filterRepo.includes("/") ? filterRepo.split("/")[1] : filterRepo;
+    index = index.filter((e) => {
+      const entryShort = e.targetRepo.includes("/") ? e.targetRepo.split("/")[1] : e.targetRepo;
+      return e.targetRepo === filterRepo || entryShort === filterShort;
+    });
   }
   if (filters?.priority) {
     index = index.filter((e) => e.priority === filters.priority);
@@ -94,6 +99,15 @@ export async function getWorkItem(id: string): Promise<WorkItem | null> {
   return loadJson<WorkItem>(itemKey(id));
 }
 
+/**
+ * Normalize targetRepo to full "owner/repo" format.
+ * Handles both short ("personal-assistant") and full ("jamesstineheath/personal-assistant").
+ */
+function normalizeTargetRepo(repo: string): string {
+  if (repo.includes("/")) return repo;
+  return `jamesstineheath/${repo}`;
+}
+
 export async function createWorkItem(data: CreateWorkItemInput): Promise<WorkItem> {
   const now = new Date().toISOString();
 
@@ -101,7 +115,7 @@ export async function createWorkItem(data: CreateWorkItemInput): Promise<WorkIte
     id: randomUUID(),
     title: data.title,
     description: data.description,
-    targetRepo: data.targetRepo,
+    targetRepo: normalizeTargetRepo(data.targetRepo),
     source: data.source,
     priority: data.priority,
     riskLevel: data.riskLevel,
@@ -350,17 +364,36 @@ export async function reconcileWorkItemIndex(): Promise<{
 
     try {
       const blobItem = await getWorkItem(entry.id);
-      if (blobItem && blobItem.status !== entry.status) {
-        console.warn('[work-items] index/blob drift detected', {
-          id: entry.id,
-          indexStatus: entry.status,
-          blobStatus: blobItem.status,
-        });
+      if (!blobItem) continue;
+
+      // Normalize targetRepo on both blob and index entry
+      const normalizedRepo = normalizeTargetRepo(blobItem.targetRepo);
+      const repoNeedsRepair = blobItem.targetRepo !== normalizedRepo || entry.targetRepo !== normalizedRepo;
+      const statusNeedsRepair = blobItem.status !== entry.status;
+
+      if (statusNeedsRepair || repoNeedsRepair) {
+        if (statusNeedsRepair) {
+          console.warn('[work-items] index/blob drift detected', {
+            id: entry.id,
+            indexStatus: entry.status,
+            blobStatus: blobItem.status,
+          });
+        }
+        if (repoNeedsRepair) {
+          console.warn('[work-items] targetRepo normalization repair', {
+            id: entry.id,
+            from: blobItem.targetRepo,
+            to: normalizedRepo,
+          });
+          // Also fix the blob itself
+          blobItem.targetRepo = normalizedRepo;
+          await saveJson(itemKey(entry.id), blobItem);
+        }
         // Update the index entry to match the blob (source of truth)
         index[i] = {
           id: blobItem.id,
           title: blobItem.title,
-          targetRepo: blobItem.targetRepo,
+          targetRepo: normalizedRepo,
           status: blobItem.status,
           priority: blobItem.priority,
           updatedAt: blobItem.updatedAt,
