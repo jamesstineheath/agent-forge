@@ -948,7 +948,7 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
   for (const entry of failedForDepCheck) {
     const item = await getWorkItem(entry.id);
     if (!item) continue;
-    if (item.dependencies.length === 0) continue;
+    if (!item.dependencies?.length) continue;
     if (item.execution?.prNumber != null) continue;
     const retryCount = item.execution?.retryCount ?? 0;
     if (retryCount >= 2) continue;
