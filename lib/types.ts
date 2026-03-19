@@ -672,3 +672,46 @@ export type PhaseBreakdown = {
     to: string;
   }[];
 };
+
+// ── Intent Criteria ─────────────────────────────────────────────────────────
+
+export type CriterionType = "ui" | "api" | "data" | "integration" | "performance";
+export type CriterionStatus = "pending" | "passed" | "failed" | "skipped";
+
+export interface Criterion {
+  id: string;
+  description: string;
+  type: CriterionType;
+  estimatedCost: number;
+  status: CriterionStatus;
+  evidence?: string;
+  verifiedAt?: string;
+}
+
+export interface IntentCriteria {
+  prdId: string;
+  prdTitle: string;
+  projectId?: string;
+  targetRepo?: string;
+  priority?: string;
+  rank?: number;
+  criteria: Criterion[];
+  importedAt: string;
+  notionSyncedAt: string;
+  totalEstimatedCost: number;
+  passedCount: number;
+  failedCount: number;
+  notionUrl?: string;
+}
+
+export interface IntentCriteriaIndexEntry {
+  prdId: string;
+  prdTitle: string;
+  projectId?: string;
+  targetRepo?: string;
+  criteriaCount: number;
+  passedCount: number;
+  failedCount: number;
+  totalEstimatedCost: number;
+  importedAt: string;
+}

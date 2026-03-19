@@ -300,3 +300,25 @@ export function useCostAnalytics(period: string = "30d") {
   );
   return { data, error, isLoading, mutate };
 }
+
+// ── Intent Criteria ──────────────────────────────────────────────────────────
+
+import type { IntentCriteria, IntentCriteriaIndexEntry } from "@/lib/types";
+
+export function useIntentCriteriaList() {
+  const { data, error, isLoading, mutate } = useSWR<{ total: number; criteria: IntentCriteriaIndexEntry[] }>(
+    "/api/intent-criteria",
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data: data?.criteria, total: data?.total, error, isLoading, mutate };
+}
+
+export function useIntentCriteria(prdId: string | null) {
+  const { data, error, isLoading, mutate } = useSWR<IntentCriteria>(
+    prdId ? `/api/intent-criteria/${prdId}` : null,
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { data, error, isLoading, mutate };
+}

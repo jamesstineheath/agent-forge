@@ -380,6 +380,21 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   }
 
   addPhase(trace, { name: 'drift_detection', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
+  // §19 — Import approved criteria from Notion
+  try {
+    const { importAllApprovedCriteria } = await import("@/lib/intent-criteria");
+    const result = await importAllApprovedCriteria();
+    if (result.imported > 0) {
+      console.log(`[supervisor §19] Imported ${result.imported} criteria set(s) from Notion (${result.skipped} skipped)`);
+      addDecision(trace, { action: 'criteria_import', reason: `Imported ${result.imported} approved PRD criteria from Notion` });
+    }
+  } catch (err) {
+    console.warn('[supervisor §19] Criteria import phase failed (non-fatal):', err);
+  }
+
+  addPhase(trace, { name: 'criteria_import', durationMs: Date.now() - phaseStart });
 
   completeTrace(trace, 'success');
 

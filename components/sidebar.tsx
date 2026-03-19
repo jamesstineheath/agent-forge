@@ -14,7 +14,7 @@ import {
   Bot,
   Anvil,
   Settings,
-
+  ClipboardCheck,
   AlertTriangle,
   Menu,
   X,
@@ -45,6 +45,7 @@ const navSections: NavSection[] = [
     label: "Workflow",
     items: [
       { label: "Dashboard", href: "/", icon: LayoutDashboard },
+      { label: "Projects", href: "/projects", icon: ClipboardCheck },
       { label: "Work Items", href: "/work-items", icon: FolderKanban },
       { label: "Pipeline", href: "/pipeline", icon: GitBranch },
       { label: "Cost", href: "/cost", icon: DollarSign },
