@@ -39,8 +39,9 @@ export async function runProjectManager(ctx: CycleContext): Promise<void> {
   // §4 — Project retry processing
   try {
     const retryProjects = await getRetryProjects();
+    console.log(`[project-manager] §4: getRetryProjects returned ${retryProjects.length} project(s). NOTION_PROJECTS_DB_ID=${process.env.NOTION_PROJECTS_DB_ID ? 'set' : 'MISSING'}, NOTION_API_KEY=${process.env.NOTION_API_KEY ? 'set' : 'MISSING'}`);
     if (retryProjects.length > 0) {
-      console.log(`[project-manager] §4: found ${retryProjects.length} project(s) flagged for retry`);
+      console.log(`[project-manager] §4: found ${retryProjects.length} project(s) flagged for retry:`, retryProjects.map(p => `${p.projectId} (${p.title})`));
     }
 
     for (const project of retryProjects) {

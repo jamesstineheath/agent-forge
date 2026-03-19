@@ -137,11 +137,15 @@ export async function queryRetryProjects(): Promise<Project[]> {
       }),
     });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message ?? `Notion query failed: ${response.status}`);
+    if (!response.ok) {
+      console.error(`[notion] queryRetryProjects failed: ${response.status}`, data.message ?? data);
+      throw new Error(data.message ?? `Notion query failed: ${response.status}`);
+    }
 
-    return (data.results as PageObjectResponse[])
-      .filter((p): p is PageObjectResponse => "properties" in p)
-      .map(pageToProject);
+    const results = (data.results as PageObjectResponse[])
+      .filter((p): p is PageObjectResponse => "properties" in p);
+    console.log(`[notion] queryRetryProjects: ${results.length} results from Notion (dbId: ${dsId?.slice(0, 8)}...)`);
+    return results.map(pageToProject);
   } catch (err) {
     console.error("[notion] Failed to query retry projects:", err);
     return [];
