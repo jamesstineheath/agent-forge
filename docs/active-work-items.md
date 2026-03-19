@@ -4,13 +4,13 @@
 
 ## In Review
 
-- **Agent heartbeat dashboard in Agents tab** (jamesstineheath/agent-forge)
-  - Branch: `fix/agent-heartbeat-dashboard-in-agents-tab`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/279
+- **Fix agent heartbeat dashboard showing 0/0 for active agents** (jamesstineheath/agent-forge)
+  - Branch: `fix/fix-agent-heartbeat-dashboard-showing-00-for-activ`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/292
 
-- **Agent trace viewer UI in dashboard Agents tab** (jamesstineheath/agent-forge)
-  - Branch: `fix/agent-trace-viewer-ui-in-dashboard-agents-tab`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/284
+- **Trace Reviewing Agent — autonomous agent trace evaluation and improvement proposals** (jamesstineheath/agent-forge)
+  - Branch: `fix/trace-reviewing-agent-autonomous-agent-trace-evalu`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/294
 
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
   - Branch: `feat/enhanced-realestate-scout-cron-web-search-and-pric`
@@ -24,14 +24,20 @@
 
 ## Queued for Dispatch
 
+- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
+  - Estimated files: .github/actions/tlm-feedback-compiler/src/pattern-detector.ts, .github/actions/tlm-feedback-compiler/src/types.ts
+
+- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
+  - Estimated files: .github/actions/tlm-feedback-compiler/src/compiler-prompt.ts
+
+- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
+  - Estimated files: .github/actions/tlm-feedback-compiler/src/change-proposer.ts, .github/actions/tlm-feedback-compiler/src/types.ts, docs/feedback-compiler-history.json
+
+- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
+  - Estimated files: .github/actions/tlm-feedback-compiler/dist/index.js, .github/actions/tlm-feedback-compiler/dist/licenses.txt
+
 - **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
   - Estimated files: components/coaching/coach-drawer.tsx, components/coaching/coaching-chat.tsx, app/(app)/training/ask-coach/page.tsx
-
-- **Fix agent heartbeat dashboard showing 0/0 for active agents** (jamesstineheath/agent-forge)
-  - Estimated files: lib/atc/dispatcher.ts, lib/atc/health-monitor.ts, lib/atc/types.ts, app/api/agents/atc-metrics/route.ts, app/(app)/agents/page.tsx, lib/hooks.ts
-
-- **Trace Reviewing Agent — autonomous agent trace evaluation and improvement proposals** (jamesstineheath/agent-forge)
-  - Estimated files: `.github/workflows/tlm-trace-reviewer.yml`, `.github/actions/tlm-trace-review/action.yml`, `.github/actions/tlm-trace-review/index.js`, `docs/SYSTEM_MAP.md`
 
 - **Quick Add and Search Now UI Buttons** (jamesstineheath/personal-assistant)
 
