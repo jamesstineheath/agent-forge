@@ -7,16 +7,12 @@
 - **Create Episode detail page (/episodes/[id])** (jamesstineheath/agent-forge)
   - Branch: `fix/create-episode-detail-page-episodesid`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/324
+  - Files: app/(app)/episodes/[id]/page.tsx, handoffs/create-episode-detail-page-episodesid.md, lib/hooks.ts, lib/types.ts
 
 - **Create travel prompt section** (jamesstineheath/personal-assistant)
   - Branch: `fix/create-travel-prompt-section`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/373
   - Files: handoffs/create-travel-prompt-section.md, lib/system-prompt.ts, prompts/sections/travel.md
-
-- **Add shared types for model routing (TaskType, WorkItemSignals)** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-shared-types-for-model-routing-tasktype-workit`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/322
-  - Files: handoffs/add-shared-types-for-model-routing-tasktype-workit.md, lib/types.ts
 
 ## Queued for Dispatch
 
