@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { appendEvents } from "@/lib/event-bus";
+import { reactToEvents } from "@/lib/event-reactor";
 import type { WebhookEvent, GitHubEventType, WebhookEventPayload } from "@/lib/event-bus-types";
 
 /**
@@ -206,6 +207,20 @@ export async function POST(req: NextRequest) {
 
     if (events.length > 0) {
       await appendEvents(events);
+
+      // React to events asynchronously — don't block the webhook response.
+      // Use waitUntil if available (Vercel edge runtime), otherwise fire-and-forget.
+      const reactionPromise = reactToEvents(events).catch((err) => {
+        console.error("[webhook] reactor error (non-fatal):", err);
+      });
+
+      // @ts-expect-error — waitUntil is available in Vercel edge runtime but not in Next.js types
+      if (typeof globalThis.waitUntil === "function") {
+        // @ts-expect-error — see above
+        globalThis.waitUntil(reactionPromise);
+      }
+      // If waitUntil isn't available, the promise runs in the background.
+      // The response returns immediately either way.
     }
 
     return NextResponse.json({ ok: true, events: events.length });

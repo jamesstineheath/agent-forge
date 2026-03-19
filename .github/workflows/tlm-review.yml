@@ -5,6 +5,12 @@ on:
     types: [opened, synchronize, reopened]
   check_suite:
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to review (CI already passed)"
+        required: true
+        type: string
 
 # Only run one review at a time per PR — do NOT cancel in progress,
 # the check_suite re-review must not be killed by the pull_request run
@@ -25,6 +31,7 @@ jobs:
     # Skip check_suite events from other apps (Vercel, etc.) to avoid redundant runs
     if: >-
       github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'check_suite' &&
        github.event.check_suite.conclusion == 'success' &&
        github.event.check_suite.app.slug == 'github-actions')

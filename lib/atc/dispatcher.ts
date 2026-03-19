@@ -9,6 +9,82 @@ import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent } from
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
 
 /**
+ * Dispatch items that were blocked on a dependency that just resolved.
+ * Called by the event reactor when a PR merges, to immediately dispatch
+ * newly-unblocked items without waiting for the next cron cycle.
+ */
+export async function dispatchUnblockedItems(
+  mergedItemId: string,
+  targetRepo: string
+): Promise<{ dispatched: string[] }> {
+  const dispatched: string[] = [];
+
+  // Find items that depend on the merged item
+  const readyEntries = await listWorkItems({ status: "ready", targetRepo });
+  if (readyEntries.length === 0) return { dispatched };
+
+  // Load active executions for concurrency check
+  const [executingEntries, reviewingEntries, retryingEntries] = await Promise.all([
+    listWorkItems({ status: "executing" }),
+    listWorkItems({ status: "reviewing" }),
+    listWorkItems({ status: "retrying" }),
+  ]);
+  const totalActive = executingEntries.length + reviewingEntries.length + retryingEntries.length;
+
+  if (totalActive >= GLOBAL_CONCURRENCY_LIMIT) return { dispatched };
+
+  // Check repo concurrency
+  const activeForRepo = [...executingEntries, ...reviewingEntries, ...retryingEntries]
+    .filter((e) => {
+      const entryShort = e.targetRepo.includes("/") ? e.targetRepo.split("/")[1] : e.targetRepo;
+      const targetShort = targetRepo.includes("/") ? targetRepo.split("/")[1] : targetRepo;
+      return e.targetRepo === targetRepo || entryShort === targetShort;
+    }).length;
+
+  const repoIndex = await listRepos();
+  let repoLimit = 2; // default
+  for (const repoEntry of repoIndex) {
+    const repo = await getRepo(repoEntry.id);
+    if (repo?.fullName === targetRepo) {
+      repoLimit = repo.concurrencyLimit;
+      break;
+    }
+  }
+
+  let slotsRemaining = Math.min(
+    GLOBAL_CONCURRENCY_LIMIT - totalActive,
+    repoLimit - activeForRepo
+  );
+
+  if (slotsRemaining <= 0) return { dispatched };
+
+  for (const entry of readyEntries) {
+    if (slotsRemaining <= 0) break;
+    const item = await getWorkItem(entry.id);
+    if (!item) continue;
+
+    // Only dispatch items that actually depended on the merged item
+    if (!item.dependencies.includes(mergedItemId)) continue;
+
+    // Verify ALL dependencies are now resolved (not just the one that triggered)
+    const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
+    const allResolved = depItems.every((dep) => dep !== null && (dep.status === "merged" || dep.status === "cancelled"));
+    if (!allResolved) continue;
+
+    try {
+      const result = await dispatchWorkItem(item.id);
+      dispatched.push(item.id);
+      slotsRemaining--;
+      console.log(`[event-reactor] dispatched unblocked item ${item.id} (branch: ${result.branch})`);
+    } catch (err) {
+      console.error(`[event-reactor] failed to dispatch unblocked item ${item.id}:`, err);
+    }
+  }
+
+  return { dispatched };
+}
+
+/**
  * Dispatcher agent: maximizes throughput within concurrency limits.
  *
  * Responsibilities:

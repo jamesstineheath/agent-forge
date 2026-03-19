@@ -1,0 +1,255 @@
+/**
+ * Event Reactor: Maps GitHub webhook events to immediate pipeline actions.
+ *
+ * Instead of waiting for cron-based polling (5-15 min cycles), the reactor
+ * triggers state transitions within seconds of the event occurring.
+ * Cron agents remain as reconciliation fallback.
+ */
+
+import type { WebhookEvent } from "./event-bus-types";
+import { findWorkItemByBranch, findWorkItemByPR, updateWorkItem } from "./work-items";
+import { triggerWorkflow, deleteBranch } from "./github";
+import { dispatchUnblockedItems } from "./atc/dispatcher";
+
+const LOG_PREFIX = "[event-reactor]";
+
+/**
+ * React to a batch of webhook events. Called by the webhook handler
+ * after storing events. Each event is processed independently —
+ * failures in one don't block others.
+ */
+export async function reactToEvents(events: WebhookEvent[]): Promise<void> {
+  for (const event of events) {
+    try {
+      await reactToEvent(event);
+    } catch (err) {
+      console.error(`${LOG_PREFIX} error processing ${event.type}:`, err);
+    }
+  }
+}
+
+async function reactToEvent(event: WebhookEvent): Promise<void> {
+  switch (event.type) {
+    case "github.ci.passed":
+      await handleCIPassed(event);
+      break;
+    case "github.ci.failed":
+      await handleCIFailed(event);
+      break;
+    case "github.pr.merged":
+      await handlePRMerged(event);
+      break;
+    case "github.pr.closed":
+      await handlePRClosed(event);
+      break;
+    case "github.workflow.completed":
+      await handleWorkflowCompleted(event);
+      break;
+    default:
+      break;
+  }
+}
+
+/**
+ * CI passed → transition to reviewing + trigger TLM Code Review.
+ */
+async function handleCIPassed(event: WebhookEvent): Promise<void> {
+  const { branch, workflowName } = event.payload;
+  if (!branch || branch === "main") return;
+
+  // Only react to the CI workflow, not to TLM reviews or other workflows
+  if (workflowName && workflowName !== "CI") return;
+
+  const item = await findWorkItemByBranch(branch);
+  if (!item) return;
+
+  if (item.status !== "executing") return;
+
+  console.log(`${LOG_PREFIX} CI passed for ${item.id} (branch: ${branch}), transitioning to reviewing`);
+
+  await updateWorkItem(item.id, { status: "reviewing" });
+
+  // Trigger TLM Code Review via workflow_dispatch so it skips CI polling
+  try {
+    const prNumber = item.execution?.prNumber;
+    if (prNumber) {
+      await triggerWorkflow(item.targetRepo, "tlm-review.yml", branch, {
+        pr_number: String(prNumber),
+      });
+      console.log(`${LOG_PREFIX} triggered TLM Code Review for PR #${prNumber}`);
+    }
+  } catch (err) {
+    // Non-fatal: the check_suite trigger will pick this up as fallback
+    console.warn(`${LOG_PREFIX} failed to trigger TLM Code Review:`, err);
+  }
+}
+
+/**
+ * CI failed → classify and handle immediately.
+ */
+async function handleCIFailed(event: WebhookEvent): Promise<void> {
+  const { branch, workflowName } = event.payload;
+  if (!branch || branch === "main") return;
+
+  if (workflowName && workflowName !== "CI") return;
+
+  const item = await findWorkItemByBranch(branch);
+  if (!item) return;
+
+  if (item.status !== "executing" && item.status !== "reviewing") return;
+
+  console.log(`${LOG_PREFIX} CI failed for ${item.id} (branch: ${branch})`);
+
+  const retryCount = item.execution?.retryCount ?? 0;
+  const maxRetries = 2;
+
+  if (retryCount < maxRetries) {
+    console.log(`${LOG_PREFIX} retrying ${item.id} (attempt ${retryCount + 1}/${maxRetries})`);
+    await updateWorkItem(item.id, {
+      status: "retrying",
+      failureCategory: "transient",
+      execution: {
+        ...item.execution,
+        retryCount: retryCount + 1,
+      },
+    });
+
+    try {
+      await triggerWorkflow(item.targetRepo, "execute-handoff.yml", "main", {
+        branch: branch,
+        handoff_path: item.handoff?.branch ? `handoffs/awaiting_handoff/${item.handoff.branch}.md` : "",
+      });
+    } catch (err) {
+      console.error(`${LOG_PREFIX} failed to trigger retry for ${item.id}:`, err);
+    }
+  } else {
+    console.log(`${LOG_PREFIX} ${item.id} exhausted retries, marking failed`);
+    await updateWorkItem(item.id, {
+      status: "failed",
+      failureCategory: "execution",
+      execution: {
+        ...item.execution,
+        completedAt: new Date().toISOString(),
+        outcome: "failed",
+      },
+    });
+  }
+}
+
+/**
+ * PR merged → transition to merged + dispatch unblocked items.
+ */
+async function handlePRMerged(event: WebhookEvent): Promise<void> {
+  const { prNumber } = event.payload;
+  if (!prNumber) return;
+
+  const item = await findWorkItemByPR(event.repo, prNumber);
+  if (!item) return;
+
+  if (item.status === "merged") return;
+
+  console.log(`${LOG_PREFIX} PR #${prNumber} merged for ${item.id}`);
+
+  await updateWorkItem(item.id, {
+    status: "merged",
+    execution: {
+      ...item.execution,
+      completedAt: new Date().toISOString(),
+      outcome: "merged",
+    },
+  });
+
+  // Immediately dispatch any items that were blocked on this one
+  try {
+    const result = await dispatchUnblockedItems(item.id, item.targetRepo);
+    if (result.dispatched.length > 0) {
+      console.log(`${LOG_PREFIX} dispatched ${result.dispatched.length} unblocked item(s) after ${item.id} merged`);
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} failed to dispatch unblocked items:`, err);
+  }
+}
+
+/**
+ * PR closed (not merged) → retry or mark failed.
+ */
+async function handlePRClosed(event: WebhookEvent): Promise<void> {
+  const { prNumber, branch } = event.payload;
+  if (!prNumber) return;
+
+  const item = await findWorkItemByPR(event.repo, prNumber);
+  if (!item) return;
+
+  if (item.status !== "executing" && item.status !== "reviewing") return;
+
+  console.log(`${LOG_PREFIX} PR #${prNumber} closed without merge for ${item.id}`);
+
+  const retryCount = item.execution?.retryCount ?? 0;
+  const maxRetries = 2;
+
+  if (retryCount < maxRetries) {
+    if (branch) {
+      try {
+        await deleteBranch(item.targetRepo, branch);
+      } catch {
+        // Branch may already be deleted
+      }
+    }
+
+    console.log(`${LOG_PREFIX} resetting ${item.id} to ready for retry (attempt ${retryCount + 1})`);
+    await updateWorkItem(item.id, {
+      status: "ready",
+      failureCategory: "transient",
+      execution: {
+        ...item.execution,
+        retryCount: retryCount + 1,
+        prNumber: undefined,
+        prUrl: undefined,
+        completedAt: undefined,
+        outcome: undefined,
+      },
+    });
+  } else {
+    console.log(`${LOG_PREFIX} ${item.id} exhausted retries, marking failed`);
+    await updateWorkItem(item.id, {
+      status: "failed",
+      failureCategory: "execution",
+      execution: {
+        ...item.execution,
+        completedAt: new Date().toISOString(),
+        outcome: "failed",
+      },
+    });
+  }
+}
+
+/**
+ * Workflow completed → detect execute-handoff completion.
+ */
+async function handleWorkflowCompleted(event: WebhookEvent): Promise<void> {
+  const { workflowName, branch, conclusion } = event.payload;
+
+  if (workflowName !== "Execute Handoff") return;
+  if (!branch || branch === "main") return;
+
+  const item = await findWorkItemByBranch(branch);
+  if (!item) return;
+
+  if (item.status !== "executing") return;
+
+  if (conclusion === "success") {
+    console.log(`${LOG_PREFIX} execute-handoff completed for ${item.id}, transitioning to reviewing`);
+    await updateWorkItem(item.id, { status: "reviewing" });
+  } else if (conclusion === "failure") {
+    console.log(`${LOG_PREFIX} execute-handoff failed for ${item.id}`);
+    await updateWorkItem(item.id, {
+      status: "failed",
+      failureCategory: "execution",
+      execution: {
+        ...item.execution,
+        completedAt: new Date().toISOString(),
+        outcome: "failed",
+      },
+    });
+  }
+}
