@@ -4,10 +4,15 @@
 
 ## Currently Executing
 
-- **Build-skip script for agent-forge** (jamesstineheath/agent-forge)
-  - Branch: `feat/build-skip-script-for-agent-forge`
-  - Files: scripts/vercel-ignore-build.sh
-  - Started: 2026-03-19T19:03:10.240Z
+- **Remove status-tracking commits to main from Dispatcher** (jamesstineheath/agent-forge)
+  - Branch: `feat/remove-status-tracking-commits-to-main-from-dispat`
+  - Files: lib/atc/dispatcher.ts, lib/github.ts
+  - Started: 2026-03-19T19:17:05.973Z
+
+- **Remove status-tracking commits to main from Health Monitor and Orchestrator** (jamesstineheath/agent-forge)
+  - Branch: `feat/remove-status-tracking-commits-to-main-from-health`
+  - Files: lib/atc/health-monitor.ts, lib/orchestrator.ts
+  - Started: 2026-03-19T19:18:14.166Z
 
 ## In Review
 
@@ -19,10 +24,6 @@
   - Branch: `fix/create-travel-profile-persistence-layer`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/377
   - Files: handoffs/create-travel-profile-persistence-layer.md, lib/travel/profile.ts
-
-- **ADR-011: Vercel Build Machine & Concurrency Optimization** (jamesstineheath/agent-forge)
-  - Branch: `fix/adr-011-vercel-build-machine-concurrency-optimizat`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/334
 
 ## Queued for Dispatch
 
@@ -67,10 +68,6 @@
 - **Create Feedback Compiler routing analysis module** (jamesstineheath/agent-forge)
 
 - **Create cost baseline tracking API** (jamesstineheath/agent-forge)
-
-- **Remove status-tracking commits to main from Dispatcher** (jamesstineheath/agent-forge)
-
-- **Remove status-tracking commits to main from Health Monitor and Orchestrator** (jamesstineheath/agent-forge)
 
 - **Vercel Spend Monitor library** (jamesstineheath/agent-forge)
 
