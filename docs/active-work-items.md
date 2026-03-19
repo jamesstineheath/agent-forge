@@ -4,6 +4,14 @@
 
 ## In Review
 
+- **Agent heartbeat dashboard in Agents tab** (jamesstineheath/agent-forge)
+  - Branch: `fix/agent-heartbeat-dashboard-in-agents-tab`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/279
+
+- **Agent trace viewer UI in dashboard Agents tab** (jamesstineheath/agent-forge)
+  - Branch: `fix/agent-trace-viewer-ui-in-dashboard-agents-tab`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/284
+
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
   - Branch: `feat/enhanced-realestate-scout-cron-web-search-and-pric`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/365
@@ -15,6 +23,15 @@
   - Files: handoffs/search-listings-tool-ai-web-search-for-properties.md, lib/realestate/search.ts, lib/tools/index.ts, lib/tools/realestate-listings.ts
 
 ## Queued for Dispatch
+
+- **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
+  - Estimated files: components/coaching/coach-drawer.tsx, components/coaching/coaching-chat.tsx, app/(app)/training/ask-coach/page.tsx
+
+- **Fix agent heartbeat dashboard showing 0/0 for active agents** (jamesstineheath/agent-forge)
+  - Estimated files: lib/atc/dispatcher.ts, lib/atc/health-monitor.ts, lib/atc/types.ts, app/api/agents/atc-metrics/route.ts, app/(app)/agents/page.tsx, lib/hooks.ts
+
+- **Trace Reviewing Agent — autonomous agent trace evaluation and improvement proposals** (jamesstineheath/agent-forge)
+  - Estimated files: `.github/workflows/tlm-trace-reviewer.yml`, `.github/actions/tlm-trace-review/action.yml`, `.github/actions/tlm-trace-review/index.js`, `docs/SYSTEM_MAP.md`
 
 - **Quick Add and Search Now UI Buttons** (jamesstineheath/personal-assistant)
 
