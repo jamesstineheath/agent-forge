@@ -46,7 +46,7 @@ export default function ProjectsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       <div className="glass-header sticky top-0 z-10 flex items-center justify-between py-4">
         <div>
           <h1 className="text-2xl font-bold">Projects</h1>
