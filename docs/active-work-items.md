@@ -7,6 +7,7 @@
 - **Smart escalation system — three-tier routing with auto-resolution** (jamesstineheath/agent-forge)
   - Branch: `feat/smart-escalation-system-three-tier-routing-with-au`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/297
+  - Files: app/api/escalations/[id]/dismiss/route.ts, handoffs/smart-escalation-system-three-tier-routing-with-au.md, lib/escalation.ts
 
 ## Queued for Dispatch
 
