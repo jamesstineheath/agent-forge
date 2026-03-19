@@ -11,14 +11,11 @@
 
 ## In Review
 
-- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
-  - Branch: `feat/tool-registry-integration-register-all-new-real-es`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/336
+- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
+  - Branch: `feat/enhance-realestate-scout-cron-web-search-and-price`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/338
 
 ## Queued for Dispatch
-
-- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
-  - Estimated files: app/api/cron/realestate-scout/route.ts, lib/agents/definitions/realestate-scout.ts, lib/realestate/scout-phases.ts
 
 - **Preference Editor Panel Component Enhancement** (jamesstineheath/personal-assistant)
 
