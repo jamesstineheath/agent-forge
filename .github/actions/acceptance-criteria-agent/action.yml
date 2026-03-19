@@ -1,0 +1,32 @@
+name: "Acceptance Criteria Agent"
+description: "Reads PRDs from Notion and generates structured, testable acceptance criteria using Claude"
+inputs:
+  anthropic-api-key:
+    description: "Anthropic API key for Claude"
+    required: true
+  notion-api-key:
+    description: "Notion API key for database access"
+    required: true
+  agent-forge-url:
+    description: "Agent Forge base URL for escalation API"
+    required: true
+  agent-forge-api-secret:
+    description: "Agent Forge API secret for escalation auth"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: npm install --production
+
+    - name: Run agent
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        NOTION_API_KEY: ${{ inputs.notion-api-key }}
+        AGENT_FORGE_URL: ${{ inputs.agent-forge-url }}
+        AGENT_FORGE_API_SECRET: ${{ inputs.agent-forge-api-secret }}
+      run: node index.js
