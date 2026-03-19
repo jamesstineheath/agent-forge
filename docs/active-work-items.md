@@ -4,10 +4,6 @@
 
 ## In Review
 
-- **Fix agent heartbeat dashboard showing 0/0 for active agents** (jamesstineheath/agent-forge)
-  - Branch: `fix/fix-agent-heartbeat-dashboard-showing-00-for-activ`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/292
-
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
   - Branch: `feat/enhanced-realestate-scout-cron-web-search-and-pric`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/365
