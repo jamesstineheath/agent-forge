@@ -1,5 +1,4 @@
-import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { routedAnthropicCall } from "./model-router";
 import { loadJson, saveJson } from "./storage";
 import { listWorkItems, getWorkItem } from "./work-items";
 import { listProjects } from "./projects";
@@ -39,18 +38,6 @@ const STORAGE_KEYS = {
 } as const;
 
 const MODEL = "claude-sonnet-4-5-20250514";
-
-/**
- * Calls Claude API with a prompt string.
- * Matches the pattern in lib/decomposer.ts.
- */
-async function callClaude(prompt: string): Promise<string> {
-  const { text } = await generateText({
-    model: anthropic(MODEL),
-    prompt,
-  });
-  return text;
-}
 
 /**
  * Safely parse JSON from Claude response.
@@ -134,7 +121,11 @@ export async function reviewBacklog(config?: Partial<PMAgentConfig>): Promise<Ba
     pipelineState: pipeline,
   });
 
-  const raw = await callClaude(prompt);
+  const { text: raw } = await routedAnthropicCall({
+    model: MODEL,
+    taskType: "project_manager",
+    prompt,
+  });
 
   // Parse Claude response defensively
   const parsed = safeParseJSON<{
@@ -232,7 +223,11 @@ export async function assessProjectHealth(projectId?: string): Promise<ProjectHe
   });
 
   const prompt = buildHealthAssessmentPrompt({ projects: projectHealthSummaries });
-  const raw = await callClaude(prompt);
+  const { text: raw } = await routedAnthropicCall({
+    model: MODEL,
+    taskType: "project_manager",
+    prompt,
+  });
 
   // Parse Claude's response defensively
   const parsed = safeParseJSON<{
@@ -335,7 +330,11 @@ export async function suggestNextBatch(): Promise<{ workItemIds: string[]; ratio
     availableItems,
   });
 
-  const raw = await callClaude(prompt);
+  const { text: raw } = await routedAnthropicCall({
+    model: MODEL,
+    taskType: "project_manager",
+    prompt,
+  });
 
   // Claude returns array of { itemId, title, repo, rationale, dispatchOrder }
   const parsed = safeParseJSON<Array<{ itemId: string; rationale: string }>>(raw, []);
@@ -419,7 +418,11 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
   };
 
   const prompt = buildDigestPrompt(digestContext);
-  const digestText = await callClaude(prompt);
+  const { text: digestText } = await routedAnthropicCall({
+    model: MODEL,
+    taskType: "project_manager",
+    prompt,
+  });
 
   const digestRecord = {
     generatedAt: new Date().toISOString(),
