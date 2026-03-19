@@ -332,3 +332,60 @@ export function useEpisode(id: string | null) {
   );
   return { data, error, isLoading, mutate };
 }
+
+// ── Model Routing Analytics ──────────────────────────────────────────────────
+
+export interface ModelRoutingParams {
+  days?: number;
+  taskType?: string;
+}
+
+export interface ModelCostStats {
+  totalCost: number;
+  callCount: number;
+  avgCostPerStep: number;
+}
+
+export interface DailySpendEntry {
+  date: string;
+  model: string;
+  cost: number;
+}
+
+export interface QualityScoreEntry {
+  taskType: string;
+  model: string;
+  successRate: number;
+  totalCalls: number;
+}
+
+export interface EscalationRateEntry {
+  taskType: string;
+  escalationCount: number;
+  totalCalls: number;
+  rate: number;
+}
+
+export interface ModelRoutingAnalytics {
+  perModelCosts: Record<string, ModelCostStats>;
+  dailySpend: DailySpendEntry[];
+  qualityScores: QualityScoreEntry[];
+  escalationRates: EscalationRateEntry[];
+}
+
+export function useModelRoutingAnalytics(params?: ModelRoutingParams) {
+  const searchParams = new URLSearchParams();
+  if (params?.days) {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - params.days);
+    searchParams.set("startDate", start.toISOString());
+    searchParams.set("endDate", end.toISOString());
+  }
+  if (params?.taskType) searchParams.set("taskType", params.taskType);
+  const query = searchParams.toString();
+  const url = `/api/analytics/model-routing${query ? `?${query}` : ""}`;
+
+  const { data, error, isLoading } = useSWR<ModelRoutingAnalytics>(url, fetcher);
+  return { data, error, isLoading };
+}

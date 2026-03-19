@@ -10,6 +10,7 @@ import {
   FolderKanban,
   GitBranch,
   DollarSign,
+  Route,
   BookMarked,
   Bot,
   Anvil,
@@ -49,6 +50,7 @@ const navSections: NavSection[] = [
       { label: "Work Items", href: "/work-items", icon: FolderKanban },
       { label: "Pipeline", href: "/pipeline", icon: GitBranch },
       { label: "Cost", href: "/cost", icon: DollarSign },
+      { label: "Model Routing", href: "/model-routing", icon: Route },
     ],
   },
   {
