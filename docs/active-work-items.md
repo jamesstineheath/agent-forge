@@ -4,26 +4,12 @@
 
 ## In Review
 
-- **Quick Add and Search Now UI Buttons** (jamesstineheath/personal-assistant)
-  - Branch: `fix/quick-add-and-search-now-ui-buttons`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/369
-
-- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
-  - Branch: `fix/create-episodes-api-route-get-apiepisodes`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/320
-
 - **Create travel prompt section** (jamesstineheath/personal-assistant)
   - Branch: `fix/create-travel-prompt-section`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/373
-
-- **Add shared types for model routing (TaskType, WorkItemSignals)** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-shared-types-for-model-routing-tasktype-workit`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/322
-  - Files: handoffs/add-shared-types-for-model-routing-tasktype-workit.md, lib/types.ts
+  - Files: handoffs/create-travel-prompt-section.md, lib/system-prompt.ts, prompts/sections/travel.md
 
 ## Queued for Dispatch
-
-- **Wire Comps Tab and Proximity Section into Main Real Estate View** (jamesstineheath/personal-assistant)
 
 - **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
 
