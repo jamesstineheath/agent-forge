@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { FolderKanban, Zap, TableProperties, Columns3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ const STATUS_OPTIONS: { label: string; value: WorkItem["status"] }[] = [
   { label: "Failed", value: "failed" },
   { label: "Retrying", value: "retrying" },
   { label: "Parked", value: "parked" },
+  { label: "Blocked", value: "blocked" },
   { label: "Escalated", value: "escalated" },
   { label: "Verified", value: "verified" },
   { label: "Partial", value: "partial" },
@@ -37,7 +38,11 @@ const PRIORITY_OPTIONS: { label: string; value: WorkItem["priority"] }[] = [
 
 export default function WorkItemsPage() {
   const router = useRouter();
-  const [statusFilters, setStatusFilters] = useState<WorkItem["status"][]>([]);
+  const searchParams = useSearchParams();
+  const initialStatus = searchParams.get("status");
+  const [statusFilters, setStatusFilters] = useState<WorkItem["status"][]>(
+    initialStatus ? initialStatus.split(",") as WorkItem["status"][] : []
+  );
   const [priorityFilters, setPriorityFilters] = useState<WorkItem["priority"][]>([]);
   const [repoFilters, setRepoFilters] = useState<string[]>([]);
   const [projectFilters, setProjectFilters] = useState<string[]>([]);

@@ -137,12 +137,18 @@ function HealthPanel() {
 
   const health = healthConfig[status];
 
+  const Wrapper = status === "error" ? Link : "div";
+  const wrapperProps = status === "error"
+    ? { href: "/work-items?status=failed,blocked" }
+    : {};
+
   return (
-    <div
+    <Wrapper
+      {...wrapperProps as any}
       className={cn(
-        "rounded-lg p-3",
+        "rounded-lg p-3 block transition-colors",
         status === "healthy" && "bg-surface-2",
-        status === "error" && "bg-status-blocked/[0.06] ring-1 ring-status-blocked/10"
+        status === "error" && "bg-status-blocked/[0.06] ring-1 ring-status-blocked/10 hover:bg-status-blocked/[0.1] cursor-pointer"
       )}
       role="status"
       aria-label={`System status: ${label}`}
@@ -160,7 +166,7 @@ function HealthPanel() {
       <p className="text-[10px] text-muted-foreground leading-relaxed">
         {detail}
       </p>
-    </div>
+    </Wrapper>
   );
 }
 
