@@ -4,25 +4,23 @@
 
 ## Currently Executing
 
-- **Define shared travel types and models** (jamesstineheath/personal-assistant)
-  - Branch: `fix/define-shared-travel-types-and-models`
-  - Files: lib/travel/types.ts
-  - Started: 2026-03-19T11:37:32.056Z
+- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
+  - Branch: `fix/create-episodes-api-route-get-apiepisodes`
+  - Files: app/api/episodes/route.ts, app/api/episodes/[id]/route.ts
+  - Started: 2026-03-19T11:52:25.261Z
+
+- **Create TLM memory migration script and compatibility adapter** (jamesstineheath/agent-forge)
+  - Branch: `feat/create-tlm-memory-migration-script-and-compatibili`
+  - Files: scripts/migrate-tlm-memory.ts, lib/episode-compat.ts, lib/episode-recorder.ts, app/api/agents/tlm-memory/route.ts
+  - Started: 2026-03-19T11:55:18.416Z
 
 ## In Review
 
-- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
-  - Branch: `feat/create-change-proposer-module-srcchange-proposerts`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/326
-
-- **Define Episode types and data models in lib/types.ts** (jamesstineheath/agent-forge)
-  - Branch: `fix/define-episode-types-and-data-models-in-libtypests`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/316
+- **Define shared travel types and models** (jamesstineheath/personal-assistant)
+  - Branch: `fix/define-shared-travel-types-and-models`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/367
 
 ## Queued for Dispatch
-
-- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
-  - Estimated files: .github/actions/tlm-feedback-compiler/dist/index.js, .github/actions/tlm-feedback-compiler/dist/licenses.txt
 
 - **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
   - Estimated files: components/coaching/coach-drawer.tsx, components/coaching/coaching-chat.tsx, app/(app)/training/ask-coach/page.tsx
@@ -43,15 +41,11 @@
 
 - **Inject episode retrieval into PM agent planning flow** (jamesstineheath/agent-forge)
 
-- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
-
 - **Create Episodes list dashboard page (/episodes)** (jamesstineheath/agent-forge)
 
 - **Create Episode detail page (/episodes/[id])** (jamesstineheath/agent-forge)
 
 - **Add attribution trail to work item detail view** (jamesstineheath/agent-forge)
-
-- **Create TLM memory migration script and compatibility adapter** (jamesstineheath/agent-forge)
 
 - **Integration test: end-to-end episode lifecycle** (jamesstineheath/agent-forge)
 
@@ -124,3 +118,37 @@
 - **Compose trip detail page with all sections** (jamesstineheath/personal-assistant)
 
 - **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
+
+- **Add shared types for model routing (TaskType, WorkItemSignals)** (jamesstineheath/agent-forge)
+
+- **Add model routing event types (ModelCallEvent, ModelEscalationEvent)** (jamesstineheath/agent-forge)
+
+- **Create routing policy table module** (jamesstineheath/agent-forge)
+
+- **Create core model router module** (jamesstineheath/agent-forge)
+
+- **Add event emission helpers for model_call and model_escalation** (jamesstineheath/agent-forge)
+
+- **Add telemetry emission to model router** (jamesstineheath/agent-forge)
+
+- **Add retry-with-escalation logic to model router** (jamesstineheath/agent-forge)
+
+- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
+
+- **Migrate decomposer to use model router** (jamesstineheath/agent-forge)
+
+- **Migrate PM agent to use model router** (jamesstineheath/agent-forge)
+
+- **Migrate health monitor to use model router** (jamesstineheath/agent-forge)
+
+- **Create FORCE_OPUS kill switch API and dashboard toggle** (jamesstineheath/agent-forge)
+
+- **Create model routing analytics API endpoint** (jamesstineheath/agent-forge)
+
+- **Create model routing dashboard page** (jamesstineheath/agent-forge)
+
+- **Create Feedback Compiler routing analysis module** (jamesstineheath/agent-forge)
+
+- **Create cost baseline tracking API** (jamesstineheath/agent-forge)
+
+- **Integration test: end-to-end model routing pipeline validation** (jamesstineheath/agent-forge)
