@@ -915,14 +915,20 @@ async function run(): Promise<void> {
       `TLM Code Review completed: **${review.decision.toUpperCase()}**`,
     ].join('\n');
 
-    await octokit.rest.issues.createComment({
-      owner,
-      repo,
-      issue_number: prNumber,
-      body: metadataComment,
-    });
-
-    core.info('Posted structured review metadata comment.');
+    try {
+      await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: prNumber,
+        body: metadataComment,
+      });
+      core.info('Posted structured review metadata comment.');
+    } catch (commentErr: unknown) {
+      const commentError = commentErr as { status?: number; message?: string };
+      core.warning(
+        `Failed to post metadata comment (HTTP ${commentError.status}): ${commentError.message}`
+      );
+    }
 
     // Auto-merge if approved and enabled
     if (
