@@ -99,14 +99,16 @@ function issueAccessToken(clientId: string): {
   token_type: string;
   expires_in: number;
 } {
-  const accessToken = `af_${randomBytes(32).toString("hex")}`;
-  const expiresAt = Date.now() + TOKEN_EXPIRY_SECONDS * 1000;
-  tokens.set(accessToken, { accessToken, clientId, expiresAt });
+  // Return the static API secret as the access token.
+  // This makes every OAuth-issued token identical to the raw secret,
+  // so validation works across serverless cold starts (no in-memory lookup).
+  const secret = process.env.AGENT_FORGE_API_SECRET;
+  if (!secret) throw new Error("AGENT_FORGE_API_SECRET not configured");
 
   return {
-    access_token: accessToken,
+    access_token: secret,
     token_type: "Bearer",
-    expires_in: TOKEN_EXPIRY_SECONDS,
+    expires_in: 2592000, // 30 days
   };
 }
 
