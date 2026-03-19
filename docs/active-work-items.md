@@ -17,10 +17,12 @@
 - **QA Agent Orchestrator + Baseline Playwright Tests** (jamesstineheath/agent-forge)
   - Branch: `fix/qa-agent-orchestrator-baseline-playwright-tests`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/305
+  - Files: .github/actions/tlm-qa-agent/tests/api-health.spec.ts, handoffs/qa-agent-orchestrator-baseline-playwright-tests.md
 
 - **Re-enable QA Agent workflow with increased warmup** (jamesstineheath/agent-forge)
   - Branch: `fix/re-enable-qa-agent-workflow-with-increased-warmup`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/304
+  - Files: .github/actions/tlm-qa-agent/action.yml, handoffs/re-enable-qa-agent-workflow-with-increased-warmup.md
 
 ## Queued for Dispatch
 
