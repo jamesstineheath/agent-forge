@@ -4,23 +4,24 @@
 
 ## Currently Executing
 
-- **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
-  - Branch: `fix/tool-registry-integration-register-new-real-estate`
-  - Files: lib/tools/index.ts, lib/tools/real-estate.ts, lib/realestate/comps.ts, lib/realestate/listings.ts
-  - Started: 2026-03-19T17:47:11.819Z
-
-- **Create travel profile persistence layer** (jamesstineheath/personal-assistant)
-  - Branch: `fix/create-travel-profile-persistence-layer`
-  - Files: lib/travel/profile.ts
-  - Started: 2026-03-19T17:48:17.874Z
+- **Add retry-with-escalation logic to model router** (jamesstineheath/agent-forge)
+  - Branch: `feat/add-retry-with-escalation-logic-to-model-router`
+  - Files: lib/model-router.ts
+  - Started: 2026-03-19T18:02:25.017Z
 
 ## In Review
 
-- **Migrate health monitor to use model router** (jamesstineheath/agent-forge)
-  - Branch: `feat/migrate-health-monitor-to-use-model-router`
+- **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
+  - Branch: `fix/tool-registry-integration-register-new-real-estate`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/375
 
-- **ADR-011: Vercel Build Machine & Concurrency Optimization** (jamesstineheath/agent-forge)
-  - Branch: `fix/adr-011-vercel-build-machine-concurrency-optimizat`
+- **Create travel profile persistence layer** (jamesstineheath/personal-assistant)
+  - Branch: `fix/create-travel-profile-persistence-layer`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/377
+
+- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
+  - Branch: `feat/migrate-orchestrator-to-use-model-router`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/332
 
 ## Queued for Dispatch
 
@@ -56,13 +57,11 @@
 
 - **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
 
-- **Add retry-with-escalation logic to model router** (jamesstineheath/agent-forge)
-
-- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
-  - Estimated files: lib/orchestrator.ts
-
 - **Migrate PM agent to use model router** (jamesstineheath/agent-forge)
   - Estimated files: lib/pm-agent.ts
+
+- **Migrate health monitor to use model router** (jamesstineheath/agent-forge)
+  - Estimated files: lib/atc/health-monitor.ts
 
 - **Create FORCE_OPUS kill switch API and dashboard toggle** (jamesstineheath/agent-forge)
 
@@ -75,6 +74,9 @@
 - **Create cost baseline tracking API** (jamesstineheath/agent-forge)
 
 - **Integration test: end-to-end model routing pipeline validation** (jamesstineheath/agent-forge)
+
+- **ADR-011: Vercel Build Machine & Concurrency Optimization** (jamesstineheath/agent-forge)
+  - Estimated files: docs/adr/ADR-011-vercel-build-machine-optimization.md
 
 - **Build-skip script for agent-forge** (jamesstineheath/agent-forge)
 
