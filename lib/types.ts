@@ -716,6 +716,35 @@ export interface IntentCriteriaIndexEntry {
   importedAt: string;
 }
 
+// ── Architecture Plans ──────────────────────────────────────────────────────
+
+export interface CriterionPlan {
+  criterionId: string;
+  criterionDescription: string;
+  approach: string;
+  filesToCreate: string[];
+  filesToModify: string[];
+  apiEndpoints: string[];
+  dataModels: string[];
+  dependencies: string[];          // criterionIds this depends on
+  complexity: "simple" | "moderate" | "complex";
+  estimatedCost: number;
+}
+
+export interface ArchitecturePlan {
+  prdId: string;
+  version: number;
+  targetRepo: string;
+  criterionPlans: CriterionPlan[];
+  sharedTypes: string[];
+  prerequisites: string[];
+  riskAssessment: string;
+  estimatedWorkItems: number;
+  totalEstimatedCost: number;
+  generatedAt: string;
+  generatedBy: "architecture-planner" | "gap-analysis";
+}
+
 // ── Intent Validation ───────────────────────────────────────────────────────
 
 export interface ValidationProbe {

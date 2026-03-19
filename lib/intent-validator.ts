@@ -9,9 +9,9 @@
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Anthropic = require("@anthropic-ai/sdk");
-import { updateCriterionStatus, findUnverifiedCriteria } from "./intent-criteria";
+import { updateCriterionStatus, findUnverifiedCriteria, getCriteria } from "./intent-criteria";
 import { listWorkItems } from "./work-items";
-import { createWorkItem } from "./work-items";
+import { generateArchitecturePlan, planToDecomposerMarkdown } from "./architecture-planner";
 import type {
   IntentCriteria,
   Criterion,
@@ -286,54 +286,53 @@ export async function validateIntentCriteria(
   return results;
 }
 
-// ── Gap Analysis: File Follow-Up Work Items ──────────────────────────────────
+// ── Gap Analysis: Architecture-Informed Follow-Up ────────────────────────────
 
 /**
- * For failed criteria, file follow-up work items so the pipeline can fix them.
+ * For failed criteria, run the Architecture Planner in gap-analysis mode
+ * to produce targeted fix plans. Returns the plan markdown that can be
+ * fed to the decomposer for surgical follow-up work items.
+ *
+ * This replaces the old naive approach of filing generic "Fix: {criterion}"
+ * work items. The gap analysis knows what files exist, what was already
+ * built, and what specifically needs to change.
  */
-export async function fileFollowUpWorkItems(
+export async function runGapAnalysis(
   criteria: IntentCriteria,
   results: ValidationResult[],
-): Promise<number> {
+): Promise<{ planGenerated: boolean; planMarkdown: string | null; failedCount: number }> {
   const failedResults = results.filter((r) => r.status === "failed");
-  if (failedResults.length === 0) return 0;
-
-  let filed = 0;
-
-  for (const result of failedResults) {
-    try {
-      await createWorkItem({
-        title: `Fix: ${result.criterionDescription.slice(0, 80)}`,
-        description: [
-          `## Acceptance Criterion Failed`,
-          ``,
-          `**PRD:** ${criteria.prdTitle}`,
-          `**Criterion:** ${result.criterionDescription}`,
-          `**Type:** ${criteria.criteria.find((c) => c.id === result.criterionId)?.type || "unknown"}`,
-          `**Evidence:** ${result.evidence}`,
-          result.probe ? `**Probe:** ${result.probe.method} ${result.probe.path}` : "",
-          result.responseStatus ? `**HTTP Status:** ${result.responseStatus}` : "",
-          ``,
-          `Fix the issue so this criterion passes on the next validation cycle.`,
-        ].filter(Boolean).join("\n"),
-        targetRepo: criteria.targetRepo || "jamesstineheath/agent-forge",
-        source: {
-          type: "project" as const,
-          sourceId: criteria.projectId || undefined,
-        },
-        priority: "high" as const,
-        complexity: "simple" as const,
-        riskLevel: "low" as const,
-        dependencies: [],
-      });
-      filed++;
-    } catch (err) {
-      console.error(`[intent-validator] Failed to file work item for ${result.criterionId}:`, err);
-    }
+  if (failedResults.length === 0) {
+    return { planGenerated: false, planMarkdown: null, failedCount: 0 };
   }
 
-  console.log(`[intent-validator] Filed ${filed} follow-up work item(s) for "${criteria.prdTitle}"`);
-  return filed;
+  console.log(
+    `[intent-validator] Running gap analysis for ${failedResults.length} failed criteria on "${criteria.prdTitle}"`
+  );
+
+  try {
+    const plan = await generateArchitecturePlan({
+      criteria,
+      mode: "gap-analysis",
+      failedResults,
+    });
+
+    const markdown = planToDecomposerMarkdown(plan, `Fix: ${criteria.prdTitle}`);
+
+    console.log(
+      `[intent-validator] Gap analysis complete: ${plan.criterionPlans.length} fix plans, ` +
+      `est. ${plan.estimatedWorkItems} work items, $${plan.totalEstimatedCost}`
+    );
+
+    return {
+      planGenerated: true,
+      planMarkdown: markdown,
+      failedCount: failedResults.length,
+    };
+  } catch (err) {
+    console.error(`[intent-validator] Gap analysis failed:`, err);
+    return { planGenerated: false, planMarkdown: null, failedCount: failedResults.length };
+  }
 }
 
 // ── Supervisor Entry Point ───────────────────────────────────────────────────
@@ -386,15 +385,19 @@ export async function runIntentValidation(): Promise<{
   const failed = results.filter((r) => r.status === "failed").length;
   const skipped = results.filter((r) => r.status === "skipped").length;
 
-  // File follow-up work items for failures
-  let followUps = 0;
+  // Run gap analysis for failures (produces architecture plan, not naive work items)
+  let gapAnalysisGenerated = false;
   if (failed > 0) {
-    followUps = await fileFollowUpWorkItems(toValidate, results);
+    const gapResult = await runGapAnalysis(toValidate, results);
+    gapAnalysisGenerated = gapResult.planGenerated;
+    // The gap analysis plan is stored in blob store (architecture-plans/{prdId}-v{N}).
+    // The Supervisor's §22 will detect it and trigger decomposition on the next cycle.
   }
 
   console.log(
-    `[intent-validator] "${toValidate.prdTitle}": ${passed} passed, ${failed} failed, ${skipped} skipped, ${followUps} follow-ups filed`
+    `[intent-validator] "${toValidate.prdTitle}": ${passed} passed, ${failed} failed, ${skipped} skipped` +
+    (gapAnalysisGenerated ? ` (gap analysis plan generated)` : "")
   );
 
-  return { validated: results.length, passed, failed, skipped, followUps };
+  return { validated: results.length, passed, failed, skipped, followUps: gapAnalysisGenerated ? failed : 0 };
 }

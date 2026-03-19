@@ -2,9 +2,10 @@
 
 import { useIntentCriteria } from "@/lib/hooks";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, RefreshCw, CheckCircle2, XCircle, Clock, SkipForward } from "lucide-react";
+import { ArrowLeft, ExternalLink, RefreshCw, CheckCircle2, XCircle, Clock, SkipForward, FileCode2, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import type { CriterionStatus, CriterionType } from "@/lib/types";
+import useSWR from "swr";
+import type { CriterionStatus, CriterionType, ArchitecturePlan } from "@/lib/types";
 
 const statusConfig: Record<CriterionStatus, { icon: typeof CheckCircle2; color: string; label: string }> = {
   pending: { icon: Clock, color: "text-gray-400", label: "Pending" },
@@ -26,7 +27,13 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const prdId = params.prdId as string;
   const { data, isLoading, mutate } = useIntentCriteria(prdId);
+  const { data: plan } = useSWR<ArchitecturePlan>(
+    `/api/intent-criteria/${prdId}/plan`,
+    (url: string) => fetch(url).then((r) => r.ok ? r.json() : null),
+    { refreshInterval: 30000 }
+  );
   const [refreshing, setRefreshing] = useState(false);
+  const [planExpanded, setPlanExpanded] = useState(false);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -132,6 +139,78 @@ export default function ProjectDetailPage() {
           />
         </div>
       </div>
+
+      {/* Architecture Plan */}
+      {plan && (
+        <div className="rounded-lg border bg-card">
+          <button
+            onClick={() => setPlanExpanded(!planExpanded)}
+            className="w-full flex items-center justify-between p-4 hover:bg-accent/50"
+          >
+            <div className="flex items-center gap-2">
+              <FileCode2 className="h-5 w-5 text-muted-foreground" />
+              <div className="text-left">
+                <h2 className="font-semibold">Architecture Plan</h2>
+                <p className="text-sm text-muted-foreground">
+                  v{plan.version} — {plan.criterionPlans.length} criterion plans, est. {plan.estimatedWorkItems} work items, ${plan.totalEstimatedCost}
+                  {plan.generatedBy === "gap-analysis" && " (gap analysis)"}
+                </p>
+              </div>
+            </div>
+            {planExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+          </button>
+          {planExpanded && (
+            <div className="border-t divide-y">
+              {plan.sharedTypes.length > 0 && (
+                <div className="p-4">
+                  <h3 className="text-sm font-medium mb-2">Shared Types</h3>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    {plan.sharedTypes.map((t, i) => <li key={i}>{t}</li>)}
+                  </ul>
+                </div>
+              )}
+              {plan.prerequisites.length > 0 && (
+                <div className="p-4">
+                  <h3 className="text-sm font-medium mb-2">Prerequisites</h3>
+                  <ul className="text-sm text-muted-foreground space-y-1">
+                    {plan.prerequisites.map((p, i) => <li key={i}>{p}</li>)}
+                  </ul>
+                </div>
+              )}
+              {plan.riskAssessment && (
+                <div className="p-4">
+                  <h3 className="text-sm font-medium mb-2">Risk Assessment</h3>
+                  <p className="text-sm text-muted-foreground">{plan.riskAssessment}</p>
+                </div>
+              )}
+              {plan.criterionPlans.map((cp) => (
+                <div key={cp.criterionId} className="p-4">
+                  <p className="text-sm font-medium">{cp.criterionDescription}</p>
+                  <p className="text-sm text-muted-foreground mt-1">{cp.approach}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {cp.filesToCreate.map((f) => (
+                      <span key={f} className="px-2 py-0.5 rounded text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                        + {f}
+                      </span>
+                    ))}
+                    {cp.filesToModify.map((f) => (
+                      <span key={f} className="px-2 py-0.5 rounded text-xs bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300">
+                        ~ {f}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                    <span>{cp.complexity}</span>
+                    <span>Est. ${cp.estimatedCost}</span>
+                    {cp.apiEndpoints.length > 0 && <span>{cp.apiEndpoints.length} endpoint(s)</span>}
+                    {cp.dependencies.length > 0 && <span>{cp.dependencies.length} dep(s)</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Criteria table */}
       <div className="rounded-lg border bg-card">

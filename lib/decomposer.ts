@@ -5,7 +5,7 @@ import { fetchRepoContext, type RepoContext } from "./orchestrator";
 import { listRepos, getRepo } from "./repos";
 import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
-import type { Project, WorkItem, RepoConfig, DecomposerConfig, SubPhase, PhaseBreakdown } from "./types";
+import type { Project, ProjectTargetRepo, WorkItem, RepoConfig, DecomposerConfig, SubPhase, PhaseBreakdown } from "./types";
 
 // --- Constants ---
 
@@ -538,7 +538,10 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   const pageId = project.planUrl
     ? extractPageId(project.planUrl)
     : project.id;
-  const planContent = await fetchPageContent(pageId);
+
+  // Check for plan content override (from decomposeFromPlan)
+  const override = _getPlanContentOverride(pageId);
+  const planContent = override ?? await fetchPageContent(pageId);
 
   console.log(
     `[Decomposer] Fetched plan content for project "${project.title}" (${project.projectId}). ` +
@@ -1118,4 +1121,59 @@ export function groupIntoSubPhases(
     items: phases[i].map(id => itemById.get(id)!).filter(Boolean),
     dependencies: Array.from(phaseDepsMap.get(phaseId) ?? []),
   }));
+}
+
+// ── PRD-Based Decomposition (from Architecture Plan) ─────────────────────────
+
+/**
+ * Decompose from a pre-generated architecture plan markdown.
+ * Creates a synthetic Project object and delegates to decomposeProject.
+ * The plan content is stored temporarily so fetchPageContent picks it up.
+ * Called by the Supervisor §22 when an architecture plan is ready.
+ */
+export async function decomposeFromPlan(input: {
+  prdId: string;
+  prdTitle: string;
+  targetRepo: string;
+  planContent: string;
+  projectId?: string;
+}): Promise<DecompositionResult> {
+  const { prdId, prdTitle, targetRepo, planContent, projectId } = input;
+
+  // Store plan content temporarily so the decomposer can read it
+  // via fetchPageContent (keyed by prdId)
+  _planContentOverrides.set(prdId, planContent);
+
+  try {
+    const syntheticProject: Project = {
+      id: prdId,
+      projectId: projectId || `PRD-${prdId.slice(0, 8)}`,
+      title: prdTitle,
+      targetRepo: (targetRepo.includes("/") ? targetRepo.split("/")[1] : targetRepo) as ProjectTargetRepo,
+      priority: "P1",
+      complexity: "Moderate",
+      riskLevel: "Medium",
+      status: "Executing",
+      planUrl: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    console.log(
+      `[Decomposer] Decomposing PRD "${prdTitle}" from architecture plan. ` +
+      `Content: ${planContent.length} chars`
+    );
+
+    return await decomposeProject(syntheticProject);
+  } finally {
+    _planContentOverrides.delete(prdId);
+  }
+}
+
+// Internal: allows decomposeFromPlan to inject plan content
+// without going through Notion fetch
+const _planContentOverrides = new Map<string, string>();
+
+/** @internal Used by decomposeProject to check for plan content overrides */
+export function _getPlanContentOverride(pageId: string): string | undefined {
+  return _planContentOverrides.get(pageId);
 }

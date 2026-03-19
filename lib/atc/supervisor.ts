@@ -397,6 +397,105 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   addPhase(trace, { name: 'criteria_import', durationMs: Date.now() - phaseStart });
   phaseStart = Date.now();
 
+  // §21 — Architecture Planning (auto-generate plans for approved criteria without plans)
+  try {
+    const { getArchitecturePlan, generateArchitecturePlan } = await import("@/lib/architecture-planner");
+    const { listAllCriteria } = await import("@/lib/intent-criteria");
+    const criteriaEntries = await listAllCriteria();
+
+    for (const entry of criteriaEntries) {
+      // Skip criteria that already have an architecture plan
+      const existingPlan = await getArchitecturePlan(entry.prdId);
+      if (existingPlan) continue;
+
+      // Skip criteria with no criteria to plan
+      if (entry.criteriaCount === 0) continue;
+
+      const { getCriteria } = await import("@/lib/intent-criteria");
+      const criteria = await getCriteria(entry.prdId);
+      if (!criteria) continue;
+
+      console.log(`[supervisor §21] Generating architecture plan for "${criteria.prdTitle}"`);
+      try {
+        const plan = await generateArchitecturePlan({
+          criteria,
+          mode: "plan",
+        });
+        addDecision(trace, {
+          action: 'architecture_plan_generated',
+          reason: `Generated architecture plan for "${criteria.prdTitle}" — ${plan.criterionPlans.length} criterion plans, est. $${plan.totalEstimatedCost}`,
+        });
+        console.log(
+          `[supervisor §21] Architecture plan generated for "${criteria.prdTitle}" — v${plan.version}, ${plan.estimatedWorkItems} est. work items`
+        );
+        // Only generate 1 plan per cycle to avoid timeout
+        break;
+      } catch (planErr) {
+        console.warn(`[supervisor §21] Architecture plan generation failed for "${criteria.prdTitle}":`, planErr);
+      }
+    }
+  } catch (err) {
+    console.warn('[supervisor §21] Architecture planning phase failed (non-fatal):', err);
+  }
+
+  addPhase(trace, { name: 'architecture_planning', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
+  // §22 — Trigger decomposition for architecture plans that are ready
+  try {
+    const { getArchitecturePlan, planToDecomposerMarkdown } = await import("@/lib/architecture-planner");
+    const { listAllCriteria, getCriteria } = await import("@/lib/intent-criteria");
+    const { decomposeFromPlan } = await import("@/lib/decomposer");
+    const criteriaEntries = await listAllCriteria();
+
+    for (const entry of criteriaEntries) {
+      const plan = await getArchitecturePlan(entry.prdId);
+      if (!plan) continue;
+
+      // Check if a project already exists for this PRD (dedup guard)
+      const dedupKey = `atc/project-decomposed/prd-${entry.prdId}`;
+      const alreadyDecomposed = await loadJson<{ decomposedAt: string }>(dedupKey);
+      if (alreadyDecomposed) continue;
+
+      const criteria = await getCriteria(entry.prdId);
+      if (!criteria) continue;
+
+      console.log(`[supervisor §22] Triggering decomposition for "${criteria.prdTitle}" from architecture plan v${plan.version}`);
+      try {
+        const markdown = planToDecomposerMarkdown(plan, criteria.prdTitle);
+
+        // Use the decomposer with the generated plan markdown
+        if (typeof decomposeFromPlan === 'function') {
+          await decomposeFromPlan({
+            prdId: entry.prdId,
+            prdTitle: criteria.prdTitle,
+            targetRepo: plan.targetRepo,
+            planContent: markdown,
+            projectId: criteria.projectId,
+          });
+        }
+
+        // Set dedup guard
+        await saveJson(dedupKey, { decomposedAt: new Date().toISOString(), planVersion: plan.version });
+
+        addDecision(trace, {
+          action: 'decomposition_triggered',
+          reason: `Decomposed "${criteria.prdTitle}" from architecture plan v${plan.version}`,
+        });
+        console.log(`[supervisor §22] Decomposition complete for "${criteria.prdTitle}"`);
+        // Only decompose 1 per cycle
+        break;
+      } catch (decompErr) {
+        console.warn(`[supervisor §22] Decomposition failed for "${criteria.prdTitle}":`, decompErr);
+      }
+    }
+  } catch (err) {
+    console.warn('[supervisor §22] Decomposition trigger phase failed (non-fatal):', err);
+  }
+
+  addPhase(trace, { name: 'decomposition_trigger', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
   // §20 — Intent Validation (post-project-completion)
   try {
     const { runIntentValidation } = await import("@/lib/intent-validator");
