@@ -2,7 +2,7 @@ import { listWorkItems, getWorkItem, updateWorkItem, getAllDispatchable, reconci
 import { listRepos, getRepo } from "../repos";
 import { pushFile } from "../github";
 import { dispatchWorkItem } from "../orchestrator";
-import type { ATCState } from "../types";
+import type { ATCState, WorkItem } from "../types";
 import type { CycleContext } from "./types";
 import { GLOBAL_CONCURRENCY_LIMIT } from "./types";
 import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent } from "./utils";
@@ -177,7 +177,61 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
     }
   }
 
-  // 1.3: Auto-dispatch
+  // 1.3a: Expedited dispatch (bypasses concurrency limits)
+  let expeditedCount = 0;
+  {
+    const readyEntries = await listWorkItems({ status: "ready" });
+    const expeditedItems: WorkItem[] = [];
+    for (const entry of readyEntries) {
+      const item = await getWorkItem(entry.id);
+      if (item?.expedite) expeditedItems.push(item);
+    }
+
+    for (const item of expeditedItems) {
+      try {
+        const result = await dispatchWorkItem(item.id);
+        console.log(`[dispatcher] ⚡ expedited dispatch: ${item.title} (bypassing concurrency limits)`);
+        addDecision(trace, { workItemId: item.id, action: 'dispatched', reason: `expedited dispatch to ${item.targetRepo} (branch: ${result.branch})` });
+        events.push(
+          makeEvent(
+            "auto_dispatch",
+            item.id,
+            "ready",
+            "executing",
+            `⚡ Expedited dispatch to ${item.targetRepo} (branch: ${result.branch})`
+          )
+        );
+        expeditedCount++;
+        // Count toward running totals so normal dispatch doesn't over-dispatch
+        concurrencyMap.set(item.targetRepo, (concurrencyMap.get(item.targetRepo) ?? 0) + 1);
+        activeExecutions.push({
+          workItemId: item.id,
+          targetRepo: item.targetRepo,
+          branch: result.branch,
+          status: "executing",
+          startedAt: new Date().toISOString(),
+          elapsedMinutes: 0,
+          filesBeingModified: item.handoff?.content ? parseEstimatedFiles(item.handoff.content) : [],
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        addDecision(trace, { workItemId: item.id, action: 'dispatch_failed', reason: `expedited dispatch failed: ${msg}` });
+        await updateWorkItem(item.id, {
+          status: "failed",
+          execution: {
+            ...item.execution,
+            completedAt: now.toISOString(),
+            outcome: "failed",
+          },
+        });
+        events.push(
+          makeEvent("error", item.id, "ready", "failed", `Expedited dispatch failed: ${msg}`)
+        );
+      }
+    }
+  }
+
+  // 1.3b: Auto-dispatch (normal, respects concurrency)
   const totalActive = activeExecutions.filter(
     (e) => e.status === "executing" || e.status === "reviewing" || e.status === "retrying"
   ).length;
@@ -458,7 +512,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
 
   const dispatched = trace.decisions.filter(d => d.action === 'dispatched').length;
   const blocked = trace.decisions.filter(d => d.action === 'blocked').length;
-  completeTrace(trace, 'success', `Dispatched ${dispatched} items, blocked ${blocked}`);
+  completeTrace(trace, 'success', `Dispatched ${dispatched} items (${expeditedCount} expedited), blocked ${blocked}`);
   return activeExecutions;
 
   } catch (err) {

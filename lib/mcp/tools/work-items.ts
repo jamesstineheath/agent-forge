@@ -145,11 +145,15 @@ export function registerWorkItemTools(server: McpServer) {
 
   server.tool(
     "dispatch_work_item",
-    "Manually dispatch a work item for execution. Triggers the orchestrator to generate a handoff and start the pipeline. The work item must be in 'ready' or 'queued' status.",
+    "Manually dispatch a work item for execution. Triggers the orchestrator to generate a handoff and start the pipeline. The work item must be in 'ready' or 'queued' status. Set expedite=true to bypass concurrency limits and dispatch immediately.",
     {
       work_item_id: z.string().describe("Work item ID to dispatch"),
+      expedite: z.boolean().optional().describe("When true, marks the item as expedited (bypasses concurrency limits)"),
     },
     async (params) => {
+      if (params.expedite) {
+        await updateWorkItem(params.work_item_id, { expedite: true });
+      }
       const result = await dispatchWorkItem(params.work_item_id);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],

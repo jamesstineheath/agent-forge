@@ -12,6 +12,7 @@ import {
   listWorkflowRuns,
   listPullRequests,
 } from "@/lib/github";
+import { createWorkItem } from "@/lib/work-items";
 
 export function registerHandoffTools(server: McpServer) {
   server.tool(
@@ -107,6 +108,7 @@ ${params.post_merge_note ? `\n## Post-merge Note\n\n${params.post_merge_note}\n`
       branch: z.string().describe("Branch to push to"),
       directory: z.string().default("handoffs/awaiting_handoff").optional(),
       repo: z.string().optional(),
+      expedite: z.boolean().optional().describe("When true, creates a work item with expedite flag for priority-lane dispatch"),
     },
     async (params) => {
       const repo = resolveRepo(params.repo);
@@ -127,6 +129,25 @@ ${params.post_merge_note ? `\n## Post-merge Note\n\n${params.post_merge_note}\n`
         `handoff: ${params.filename.replace(".md", "")}`
       );
 
+      // When expedite is set, create a work item with the expedite flag
+      // so it flows through the priority lane after spec review completes
+      let workItemId: string | undefined;
+      if (params.expedite) {
+        const title = params.filename.replace(".md", "").replace(/^\d+-/, "");
+        const item = await createWorkItem({
+          title,
+          description: `Expedited handoff: ${params.filename}`,
+          targetRepo: repo,
+          source: { type: "direct" },
+          priority: "high",
+          riskLevel: "low",
+          complexity: "moderate",
+          dependencies: [],
+          expedite: true,
+        });
+        workItemId = item.id;
+      }
+
       return {
         content: [{
           type: "text" as const,
@@ -134,6 +155,7 @@ ${params.post_merge_note ? `\n## Post-merge Note\n\n${params.post_merge_note}\n`
             pushed: result.pushed,
             path: filePath,
             branch: params.branch,
+            ...(workItemId ? { workItemId, expedited: true } : {}),
             next: `TLM Spec Review should trigger automatically. If it doesn't fire within 2-3 minutes, use retrigger_workflow with workflow='tlm-spec-review.yml' and ref='${params.branch}'`,
           }, null, 2),
         }],
