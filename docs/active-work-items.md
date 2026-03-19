@@ -12,7 +12,14 @@
 - **Search Listings Tool — AI Web Search for Properties** (jamesstineheath/personal-assistant)
   - Branch: `feat/search-listings-tool-ai-web-search-for-properties`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/364
+  - Files: handoffs/search-listings-tool-ai-web-search-for-properties.md, lib/realestate/search.ts, lib/tools/index.ts, lib/tools/realestate-listings.ts
 
 ## Queued for Dispatch
 
+- **Quick Add and Search Now UI Buttons** (jamesstineheath/personal-assistant)
+
+- **Comp Analysis Tool and UI Tab** (jamesstineheath/personal-assistant)
+
 - **Wire Comps Tab and Proximity Section into Main Real Estate View** (jamesstineheath/personal-assistant)
+
+- **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
