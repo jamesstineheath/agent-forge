@@ -13,13 +13,13 @@
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/377
   - Files: handoffs/create-travel-profile-persistence-layer.md, lib/travel/profile.ts
 
-- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
-  - Branch: `feat/migrate-orchestrator-to-use-model-router`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/332
-
 - **Migrate PM agent to use model router** (jamesstineheath/agent-forge)
   - Branch: `feat/migrate-pm-agent-to-use-model-router`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/333
+
+- **Migrate health monitor to use model router** (jamesstineheath/agent-forge)
+  - Branch: `feat/migrate-health-monitor-to-use-model-router`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/335
 
 ## Queued for Dispatch
 
@@ -55,9 +55,6 @@
 
 - **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
 
-- **Migrate health monitor to use model router** (jamesstineheath/agent-forge)
-  - Estimated files: lib/atc/health-monitor.ts
-
 - **Create FORCE_OPUS kill switch API and dashboard toggle** (jamesstineheath/agent-forge)
 
 - **Create model routing analytics API endpoint** (jamesstineheath/agent-forge)
@@ -67,8 +64,6 @@
 - **Create Feedback Compiler routing analysis module** (jamesstineheath/agent-forge)
 
 - **Create cost baseline tracking API** (jamesstineheath/agent-forge)
-
-- **Integration test: end-to-end model routing pipeline validation** (jamesstineheath/agent-forge)
 
 - **ADR-011: Vercel Build Machine & Concurrency Optimization** (jamesstineheath/agent-forge)
   - Estimated files: docs/adr/ADR-011-vercel-build-machine-optimization.md
