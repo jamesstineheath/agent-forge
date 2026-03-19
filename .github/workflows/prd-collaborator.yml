@@ -1,0 +1,33 @@
+name: PRD Collaborator
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — analyze but do not post comments'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: prd-collaborator
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collaborate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run PRD Collaborator
+        uses: ./.github/actions/prd-collaborator
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          notion-api-key: ${{ secrets.NOTION_API_KEY }}
+          dry-run: ${{ github.event.inputs.dry_run || 'false' }}

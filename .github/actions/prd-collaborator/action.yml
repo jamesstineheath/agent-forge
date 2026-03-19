@@ -1,0 +1,36 @@
+name: PRD Collaborator
+description: Reads PRDs from Notion, provides strategic product feedback as comments. Shares memory with the HITL PM chat.
+
+inputs:
+  anthropic-api-key:
+    description: Anthropic API key for Claude
+    required: true
+  notion-api-key:
+    description: Notion API key
+    required: true
+  dry-run:
+    description: 'Dry run — analyze but do not post comments'
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: .github/actions/prd-collaborator
+      run: npm install
+
+    - name: Run agent
+      shell: bash
+      working-directory: .github/actions/prd-collaborator
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        NOTION_API_KEY: ${{ inputs.notion-api-key }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: node index.js

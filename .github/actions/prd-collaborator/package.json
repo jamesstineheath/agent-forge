@@ -1,0 +1,9 @@
+{
+  "name": "prd-collaborator",
+  "version": "1.0.0",
+  "description": "Async PRD Collaborator agent — provides strategic product feedback on Notion PRDs",
+  "main": "index.js",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.20.0"
+  }
+}
