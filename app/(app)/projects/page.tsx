@@ -27,11 +27,10 @@ export default function ProjectsPage() {
   const [importing, setImporting] = useState(false);
 
   const getProjectWorkItems = (entry: { projectId?: string; targetRepo?: string }): WorkItem[] => {
+    if (!entry.projectId) return [];
     return (
       workItems?.filter(
-        (wi) =>
-          (wi.source?.type === "project" && entry.projectId && wi.source?.sourceId === entry.projectId) ||
-          (entry.targetRepo && wi.targetRepo === `jamesstineheath/${entry.targetRepo}`)
+        (wi) => wi.source?.type === "project" && wi.source?.sourceId === entry.projectId
       ) ?? []
     );
   };
