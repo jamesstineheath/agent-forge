@@ -8,6 +8,7 @@ const ACTIVE_STATUSES: WorkItem["status"][] = [
   "generating",
   "executing",
   "reviewing",
+  "retrying",
 ];
 
 interface QuickStatsProps {

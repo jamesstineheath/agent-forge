@@ -305,7 +305,7 @@ export async function getBlockedByDependencies(targetRepo: string): Promise<Work
  * the execute-handoff workflow (which knows branch) and the work item store.
  */
 export async function findWorkItemByBranch(branch: string): Promise<WorkItem | null> {
-  const activeStatuses: WorkItem["status"][] = ["executing", "reviewing", "merged"];
+  const activeStatuses: WorkItem["status"][] = ["executing", "reviewing", "retrying", "merged"];
   const index = await loadIndex();
   const candidates = index.filter((e) => activeStatuses.includes(e.status));
 

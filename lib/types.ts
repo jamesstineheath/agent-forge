@@ -37,9 +37,12 @@ export interface WorkItem {
     | "failed"
     | "parked"
     | "blocked"
+    | "retrying"
     | "cancelled"
     | "escalated"
-    | "superseded";
+    | "superseded"
+    | "verified"
+    | "partial";
   dependencies: string[];
   handoff: {
     content: string;
@@ -127,11 +130,14 @@ export const updateWorkItemSchema = z.object({
       "reviewing",
       "merged",
       "failed",
+      "retrying",
       "parked",
       "blocked",
       "cancelled",
       "escalated",
       "superseded",
+      "verified",
+      "partial",
     ])
     .optional(),
   dependencies: z.array(z.string()).optional(),

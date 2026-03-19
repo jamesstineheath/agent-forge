@@ -99,6 +99,7 @@ export async function handleCodeCIFailure(
       );
 
       await updateWorkItem(item.id, {
+        status: 'retrying',
         execution: {
           ...item.execution,
           retryCount: retryCount + 1,
@@ -109,7 +110,7 @@ export async function handleCodeCIFailure(
         'ci_code_retry_triggered' as ATCEvent['type'],
         item.id,
         item.status,
-        item.status,
+        'retrying',
         `Code CI retry ${retryCount + 1}/${retryBudget}: re-dispatched execute-handoff with error context`
       );
       ctx.events.push(event);
@@ -175,11 +176,12 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
   try {
 
   // Load active work items
-  const [executingEntries, reviewingEntries] = await Promise.all([
+  const [executingEntries, reviewingEntries, retryingEntries] = await Promise.all([
     listWorkItems({ status: "executing" }),
     listWorkItems({ status: "reviewing" }),
+    listWorkItems({ status: "retrying" }),
   ]);
-  const activeEntries = [...executingEntries, ...reviewingEntries];
+  const activeEntries = [...executingEntries, ...reviewingEntries, ...retryingEntries];
 
   // === PHASE 2: MONITORING ===
   const activeExecutions: ATCState["activeExecutions"] = [];
@@ -436,6 +438,7 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
             const [owner, repoName] = (item.targetRepo ?? '').split('/');
             if (owner && repoName) {
               await rerunFailedJobs(item.targetRepo, latestRun.id);
+              await updateWorkItem(item.id, { status: 'retrying' });
               addDecision(trace, {
                 workItemId: item.id,
                 action: 'infra_retry',
@@ -446,7 +449,7 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
                   'retry' as ATCEvent['type'],
                   item.id,
                   'executing',
-                  'executing',
+                  'retrying',
                   `Infra CI retry: re-running failed jobs for workflow run ${latestRun.id}`
                 )
               );

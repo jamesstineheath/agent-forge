@@ -23,11 +23,14 @@ const STATUS_COLORS: Record<WorkItem["status"], string> = {
   reviewing: "bg-status-reviewing/10 text-status-reviewing",
   merged: "bg-status-merged/10 text-status-merged",
   failed: "bg-status-blocked/10 text-status-blocked",
+  retrying: "bg-amber-500/10 text-amber-600",
   parked: "bg-muted text-muted-foreground",
   blocked: "bg-status-blocked/15 text-status-blocked",
   cancelled: "bg-muted text-muted-foreground",
   escalated: "bg-status-reviewing/10 text-status-reviewing",
   superseded: "bg-muted text-muted-foreground",
+  verified: "bg-status-merged/10 text-status-merged",
+  partial: "bg-orange-500/10 text-orange-600",
 };
 
 const PRIORITY_COLORS: Record<WorkItem["priority"], string> = {

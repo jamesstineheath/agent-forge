@@ -110,13 +110,14 @@ describe("handleCodeCIFailure", () => {
     expect(triggerWorkflow).toHaveBeenCalledWith(
       "jamesstineheath/agent-forge",
       "execute-handoff.yml",
-      "feat/test-branch",
+      "main",
       expect.objectContaining({
         branch: "feat/test-branch",
-        retry_context: expect.stringContaining("build error"),
+        handoff_file: "handoffs/wi-test-001.md",
       })
     );
     expect(updateWorkItem).toHaveBeenCalledWith("wi-test-001", {
+      status: "retrying",
       execution: expect.objectContaining({ retryCount: 1 }),
     });
     // Should emit ci_code_retry_triggered event
@@ -152,17 +153,21 @@ describe("handleCodeCIFailure", () => {
     expect(ctx.events[0].type).toBe("ci_code_retry_exhausted");
   });
 
-  it("caps error logs at 4000 chars in retry_context", async () => {
+  it("triggers workflow dispatch with correct inputs on retry", async () => {
     const item = makeMockItem();
     const ctx = makeMockCtx();
     const longError = "x".repeat(10000);
 
     await handleCodeCIFailure(item, longError, ctx);
 
-    const call = vi.mocked(triggerWorkflow).mock.calls[0];
-    const inputs = call[3] as Record<string, string>;
-    const context = JSON.parse(inputs.retry_context);
-    expect(context.errorLogs.length).toBeLessThanOrEqual(4000);
+    expect(triggerWorkflow).toHaveBeenCalledWith(
+      "jamesstineheath/agent-forge",
+      "execute-handoff.yml",
+      "main",
+      expect.objectContaining({
+        branch: "feat/test-branch",
+      })
+    );
   });
 
   it("defaults retryBudget to 1 when not set on item", async () => {

@@ -22,8 +22,11 @@ const STATUS_OPTIONS: { label: string; value: WorkItem["status"] }[] = [
   { label: "Reviewing", value: "reviewing" },
   { label: "Merged", value: "merged" },
   { label: "Failed", value: "failed" },
+  { label: "Retrying", value: "retrying" },
   { label: "Parked", value: "parked" },
   { label: "Escalated", value: "escalated" },
+  { label: "Verified", value: "verified" },
+  { label: "Partial", value: "partial" },
 ];
 
 const PRIORITY_OPTIONS: { label: string; value: WorkItem["priority"] }[] = [
