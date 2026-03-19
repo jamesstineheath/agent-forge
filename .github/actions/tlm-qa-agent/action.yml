@@ -12,7 +12,8 @@ inputs:
     required: true
   repo:
     description: 'Repository in owner/name format'
-    required: true
+    required: false
+    default: ''
   anthropic-api-key:
     description: 'Anthropic API key for Claude'
     required: true

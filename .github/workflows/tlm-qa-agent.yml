@@ -24,14 +24,10 @@ concurrency:
 
 jobs:
   qa-agent:
-    # DISABLED: This workflow is a no-op stub (327 runs, 0 tests executed).
-    # Re-enable once smoke-test.ts, format-comment.ts, parse-criteria.ts, and
-    # system-prompt.md are wired up to actually run tests.
-    # See self-learning audit 2026-03-18 and plan misty-greeting-wreath.md.
-    if: false
     name: QA Agent
     continue-on-error: true
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
       - name: Checkout
@@ -86,8 +82,8 @@ jobs:
           PREVIEW_URL="${{ steps.context.outputs.preview-url }}"
           echo "Warming up preview URL: $PREVIEW_URL"
 
-          MAX_RETRIES=3
-          RETRY_INTERVAL=10
+          MAX_RETRIES=6
+          RETRY_INTERVAL=15
           SUCCESS=false
 
           for i in $(seq 1 $MAX_RETRIES); do
@@ -115,6 +111,7 @@ jobs:
         with:
           preview-url: ${{ steps.context.outputs.preview-url }}
           pr-number: ${{ steps.context.outputs.pr-number }}
+          repo: ${{ github.repository }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           QA_BYPASS_SECRET: ${{ secrets.QA_BYPASS_SECRET }}
