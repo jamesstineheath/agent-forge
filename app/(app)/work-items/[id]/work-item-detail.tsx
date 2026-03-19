@@ -43,6 +43,26 @@ function formatDate(ts?: string | null): string {
   return new Date(ts).toLocaleString();
 }
 
+function getTriagePriorityDisplay(priority: string | undefined | null): {
+  label: string;
+  className: string;
+} {
+  switch (priority) {
+    case "P0":
+      return { label: "P0", className: "bg-red-100 text-red-800 border-red-300" };
+    case "P2":
+      return { label: "P2", className: "bg-gray-100 text-gray-700 border-gray-300" };
+    case "P1":
+      return { label: "P1", className: "bg-yellow-100 text-yellow-800 border-yellow-300" };
+    default:
+      return { label: "P1 (default)", className: "bg-yellow-100 text-yellow-800 border-yellow-300" };
+  }
+}
+
+function getRankDisplay(rank: number | undefined | null): string {
+  return rank !== undefined && rank !== null ? String(rank) : "999 (default)";
+}
+
 export function WorkItemDetail({ id }: { id: string }) {
   const router = useRouter();
   const { data: item, isLoading, error, mutate } = useWorkItem(id);
@@ -266,6 +286,23 @@ export function WorkItemDetail({ id }: { id: string }) {
               <div>
                 <dt className="text-muted-foreground">Priority</dt>
                 <dd className="font-medium text-foreground">{item.priority}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Triage Priority</dt>
+                <dd className="font-medium text-foreground">
+                  {(() => {
+                    const { label, className } = getTriagePriorityDisplay(item.triagePriority);
+                    return (
+                      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${className}`}>
+                        {label}
+                      </span>
+                    );
+                  })()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Rank</dt>
+                <dd className="font-medium text-foreground">{getRankDisplay(item.rank)}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Risk Level</dt>
