@@ -253,6 +253,10 @@ async function hasRecentTLMComment(
   );
 }
 
+// Check run names to exclude from CI status — these are TLM's own jobs.
+// The review job is named "review" in the workflow YAML.
+const SELF_CHECK_NAMES = ["review", "tlm", "code review"];
+
 async function checkCIStatus(
   octokit: ReturnType<typeof github.getOctokit>,
   owner: string,
@@ -266,10 +270,8 @@ async function checkCIStatus(
     repo,
     ref,
   });
-
-  // Filter out TLM Code Review's own check run to avoid circular dependency
   const ciChecks = checkRuns.check_runs.filter(
-    (cr) => !cr.name.toLowerCase().includes("tlm") && !cr.name.toLowerCase().includes("code review")
+    (cr) => !SELF_CHECK_NAMES.some((name) => cr.name.toLowerCase().includes(name))
   );
 
   if (ciChecks.length === 0) {
@@ -354,8 +356,17 @@ async function run(): Promise<void> {
 
     // Determine PR number from different event types
     let prNumber: number | undefined;
+    // When triggered via workflow_dispatch (by the event reactor), CI already passed.
+    const ciAlreadyVerified = context.eventName === "workflow_dispatch";
 
-    if (context.eventName === "pull_request") {
+    if (context.eventName === "workflow_dispatch") {
+      // PR number passed as input by the event reactor
+      const inputPR = core.getInput("pr_number") || process.env.INPUT_PR_NUMBER;
+      if (inputPR) {
+        prNumber = parseInt(inputPR, 10);
+        core.info(`workflow_dispatch: reviewing PR #${prNumber} (CI pre-verified by reactor)`);
+      }
+    } else if (context.eventName === "pull_request") {
       prNumber = context.payload.pull_request?.number;
     } else if (context.eventName === "check_suite") {
       // Find PRs associated with this check suite
@@ -425,7 +436,7 @@ async function run(): Promise<void> {
         });
 
         const ciChecks = checkRuns.check_runs.filter(
-          (cr) => !cr.name.toLowerCase().includes("tlm") && !cr.name.toLowerCase().includes("code review")
+          (cr) => !SELF_CHECK_NAMES.some((name) => cr.name.toLowerCase().includes(name))
         );
 
         const stillRunning = ciChecks.filter(
@@ -496,8 +507,16 @@ async function run(): Promise<void> {
       `PR has ${changedFiles.length} changed files, ${diffLineCount} diff lines`
     );
 
-    // Check CI status before reviewing — don't approve if CI is failing
-    let ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
+    // Check CI status before reviewing — don't approve if CI is failing.
+    // Skip entirely on workflow_dispatch: the event reactor only triggers this
+    // after CI has already passed, so polling is unnecessary.
+    let ciStatus: "passed" | "failing" | "pending" = "passed";
+
+    if (ciAlreadyVerified) {
+      core.info("Skipping CI check — triggered by event reactor (CI pre-verified).");
+    } else {
+      ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
+    }
 
     // On pull_request events, poll for CI to complete.
     // CI typically takes 90-120s. Poll for up to 180s (12 × 15s) to avoid
