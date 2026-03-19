@@ -3,12 +3,20 @@
  *
  * Every routed call emits a structured `model_call` event for observability,
  * cost tracking, and the TLM self-improvement loop.
+ *
+ * Supports Sonnet→Opus escalation: when a Sonnet-routed call fails and the
+ * policy's `floorModel` permits Opus, the call is automatically retried with
+ * Opus and a `model_escalation` event is emitted.
  */
 
 import { generateText, type ModelMessage, type SystemModelMessage } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
-import { emitModelCallEvent } from "./atc/events";
+import { emitModelCallEvent, emitModelEscalationEvent } from "./atc/events";
 import type { TaskType } from "./atc/types";
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const OPUS_MODEL = "claude-opus-4-6";
 
 // ── Cost estimation ──────────────────────────────────────────────────────────
 
@@ -56,7 +64,7 @@ function estimateCost(
   return inputTokens * costPerToken.input + outputTokens * costPerToken.output;
 }
 
-// ── Routed Anthropic call ────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 export interface RoutedCallOptions {
   model: string;
@@ -65,18 +73,48 @@ export interface RoutedCallOptions {
   system?: string | SystemModelMessage | Array<SystemModelMessage>;
   prompt?: string;
   messages?: Array<ModelMessage>;
+  /** Controls the minimum (most capable) model allowed for escalation.
+   *  - 'sonnet': Sonnet is the floor, Opus escalation is blocked.
+   *  - 'opus': Opus is the only option (no escalation needed).
+   *  - undefined / 'haiku': Opus escalation is permitted on Sonnet failure. */
+  floorModel?: "haiku" | "sonnet" | "opus";
+  /** Maximum number of escalation retries (default 1). Set to 0 to disable. */
+  maxEscalationRetries?: number;
 }
+
+export interface RoutingDecision {
+  model: string;
+  wasEscalated?: boolean;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function isSonnetModel(model: string): boolean {
+  return model.includes("sonnet");
+}
+
+function isOpusModel(model: string): boolean {
+  return model.includes("opus");
+}
+
+// ── Routed Anthropic call ────────────────────────────────────────────────────
 
 /**
  * Make a routed Anthropic API call with automatic telemetry emission.
  *
  * Wraps the Vercel AI SDK `generateText` and emits a `model_call` event
  * on both success and failure. Emission is fire-and-forget.
+ *
+ * When a Sonnet call fails and `floorModel` permits Opus escalation,
+ * the call is retried with Opus automatically.
  */
 export async function routedAnthropicCall(
   options: RoutedCallOptions
 ) {
-  const { model, taskType, workItemId, system, prompt, messages } = options;
+  const {
+    model, taskType, workItemId, system, prompt, messages,
+    floorModel, maxEscalationRetries,
+  } = options;
 
   const callStart = Date.now();
 
@@ -105,7 +143,7 @@ export async function routedAnthropicCall(
       success: true,
     }).catch(() => {}); // fire-and-forget
 
-    return result;
+    return { ...result, routingDecision: { model, wasEscalated: false } as RoutingDecision };
   } catch (err) {
     // --- error path ---
     const durationMs = Date.now() - callStart;
@@ -121,6 +159,73 @@ export async function routedAnthropicCall(
       error: err instanceof Error ? err.constructor.name : String(err),
     }).catch(() => {}); // fire-and-forget
 
-    throw err; // always re-throw so caller gets the error
+    // --- escalation check ---
+    const maxRetries = maxEscalationRetries ?? 1;
+    const canEscalate =
+      maxRetries > 0 &&
+      isSonnetModel(model) &&
+      floorModel !== "sonnet";
+
+    if (!canEscalate) {
+      throw err;
+    }
+
+    // --- Sonnet→Opus escalation ---
+    const reason = err instanceof Error ? err.message : String(err);
+    emitModelEscalationEvent({
+      fromModel: model,
+      toModel: OPUS_MODEL,
+      reason,
+      taskType,
+      workItemId,
+    }).catch(() => {}); // fire-and-forget
+
+    const escalationStart = Date.now();
+    try {
+      const baseOptions = {
+        model: anthropic(OPUS_MODEL),
+        ...(system !== undefined ? { system } : {}),
+      };
+
+      const escalatedResult = messages
+        ? await generateText({ ...baseOptions, messages })
+        : await generateText({ ...baseOptions, prompt: prompt ?? "" });
+
+      // --- escalated success path ---
+      const escalatedDurationMs = Date.now() - escalationStart;
+      const inputTokens = escalatedResult.usage?.inputTokens ?? 0;
+      const outputTokens = escalatedResult.usage?.outputTokens ?? 0;
+
+      emitModelCallEvent({
+        model: OPUS_MODEL,
+        taskType,
+        workItemId,
+        inputTokens,
+        outputTokens,
+        durationMs: escalatedDurationMs,
+        success: true,
+      }).catch(() => {}); // fire-and-forget
+
+      return {
+        ...escalatedResult,
+        routingDecision: { model: OPUS_MODEL, wasEscalated: true } as RoutingDecision,
+      };
+    } catch (opusError) {
+      // --- escalated error path ---
+      const escalatedDurationMs = Date.now() - escalationStart;
+
+      emitModelCallEvent({
+        model: OPUS_MODEL,
+        taskType,
+        workItemId,
+        inputTokens: 0,
+        outputTokens: 0,
+        durationMs: escalatedDurationMs,
+        success: false,
+        error: opusError instanceof Error ? opusError.constructor.name : String(opusError),
+      }).catch(() => {}); // fire-and-forget
+
+      throw opusError; // no further retry
+    }
   }
 }

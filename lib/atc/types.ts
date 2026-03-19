@@ -88,6 +88,8 @@ export interface ModelEscalationEvent {
   timestamp: string;
   workItemId?: string;
   taskType: TaskType;
+  fromModel: string;
+  toModel: string;
   reason: string;
   confidenceScore?: number;
   step?: string;
