@@ -13,6 +13,8 @@ export interface WorkItemSummary {
   repo: string;
   status: string;
   priority: string;
+  triagePriority?: string;
+  rank?: number;
   createdAt: string;
 }
 
@@ -54,6 +56,8 @@ export interface AvailableItem {
   title: string;
   repo: string;
   priority: string;
+  triagePriority?: string;
+  rank?: number;
   dependencies: string[];
 }
 
@@ -132,6 +136,7 @@ Review all work items above and produce prioritized recommendations. For each it
 - Provide a concise rationale (1–2 sentences) for each recommendation
 - Consider repo distribution — avoid saturating a single repo
 - Prioritize items that unblock other items (dependency-chain awareness)
+- Use \`triagePriority\` (P0/P1/P2) and \`rank\` (lower = higher priority) when present to inform dispatch ordering
 - Flag any items that appear stale (created long ago, low priority, no project linkage)
 - Respect the concurrency limit — do not recommend dispatching more items than available capacity
 
@@ -264,7 +269,7 @@ Select the next 3–5 items to dispatch from the available items list. Your sele
 
 1. **Dependency unblocking**: prefer items that will unblock many downstream items
 2. **Repo distribution**: avoid dispatching multiple items to the same repo simultaneously
-3. **Priority**: higher priority items should generally be preferred
+3. **Priority**: higher priority items should generally be preferred. Use \`triagePriority\` (P0 > P1 > P2) and \`rank\` (lower number = higher priority) when present
 4. **Failure avoidance**: do not re-dispatch recently failed items without good reason — if you recommend a recently failed item, explain why
 5. **Parallelism**: prefer items that can safely run in parallel (different repos, no shared dependencies)
 

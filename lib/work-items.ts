@@ -125,6 +125,8 @@ export async function createWorkItem(data: CreateWorkItemInput): Promise<WorkIte
     triggeredBy: data.triggeredBy,
     complexityHint: data.complexityHint,
     expedite: data.expedite,
+    triagePriority: data.triagePriority,
+    rank: data.rank,
     handoff: null,
     execution: null,
     createdAt: now,

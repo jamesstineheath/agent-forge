@@ -114,6 +114,8 @@ export const createWorkItemSchema = z.object({
   triggeredBy: z.string().optional(),
   complexityHint: z.enum(["simple", "moderate"]).optional(),
   expedite: z.boolean().optional(),
+  triagePriority: z.enum(["P0", "P1", "P2"]).optional(),
+  rank: z.number().optional(),
 });
 
 export const updateWorkItemSchema = z.object({
@@ -296,6 +298,7 @@ export interface Project {
   priority: ProjectPriority | null;
   complexity: ProjectComplexity | null;
   riskLevel: ProjectRiskLevel | null;
+  rank?: number;
   retry?: boolean;
   retryCount?: number;
   createdAt: string;
