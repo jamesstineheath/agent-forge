@@ -42,7 +42,7 @@ export async function dispatchUnblockedItems(
     }).length;
 
   const repoIndex = await listRepos();
-  let repoLimit = 2; // default
+  let repoLimit = 3; // default
   for (const repoEntry of repoIndex) {
     const repo = await getRepo(repoEntry.id);
     if (repo?.fullName === targetRepo) {
