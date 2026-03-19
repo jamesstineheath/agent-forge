@@ -858,7 +858,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     }
 
     // Dead dependency auto-cancellation
-    const DEAD_DEP_STATUSES = ["failed", "parked"];
+    // Only cancel if the dependency is truly dead (parked = exhausted retries,
+    // or failed with retries exhausted). Failed deps that still have retries
+    // remaining will be retried by §3.5 — don't cancel their dependents.
     for (const item of blocked) {
       const deadDeps: string[] = [];
       for (const depId of item.dependencies) {
@@ -868,8 +870,16 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
             `[health-monitor] Dead-dep check: dependency ${depId} for item ${item.id} returned null. Skipping.`
           );
           continue;
-        } else if (DEAD_DEP_STATUSES.includes(dep.status)) {
+        } else if (dep.status === "parked") {
+          // Parked = exhausted all retries, truly dead
           deadDeps.push(depId);
+        } else if (dep.status === "failed") {
+          // Only treat as dead if retries are exhausted
+          const retryCount = dep.execution?.retryCount ?? 0;
+          if (retryCount >= MAX_RETRIES) {
+            deadDeps.push(depId);
+          }
+          // Otherwise, §3.5 will retry this dep — don't cancel dependents yet
         }
       }
 
