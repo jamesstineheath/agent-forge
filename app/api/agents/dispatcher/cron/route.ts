@@ -13,11 +13,6 @@ export const maxDuration = 300;
 const DISPATCHER_LOCK_KEY = "atc/dispatcher-lock";
 
 async function handleCron(req: NextRequest) {
-  // Feature flag: no-op unless AGENT_SPLIT_ENABLED=true
-  if (process.env.AGENT_SPLIT_ENABLED !== "true") {
-    return NextResponse.json({ success: true, skipped: true, reason: "AGENT_SPLIT_ENABLED is not true" });
-  }
-
   const authHeader = req.headers.get("Authorization");
   const cronSecret = process.env.CRON_SECRET;
 
