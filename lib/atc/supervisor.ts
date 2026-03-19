@@ -15,7 +15,9 @@ import {
   expireEscalation,
   resolveEscalation,
   updateEscalation,
+  escalate,
 } from "../escalation";
+import { getSpendStatus, checkSpendThresholds, persistSpendStatus } from "../vercel-spend-monitor";
 import { summarizeDailyCacheMetrics } from "../cache-metrics";
 import { reviewBacklog, assessProjectHealth, composeDigest } from "../pm-agent";
 import type { ATCEvent, HLOLifecycleState, WorkItem } from "../types";
@@ -494,6 +496,50 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   }
 
   addPhase(trace, { name: 'decomposition_trigger', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
+  // §5 — Spend Monitoring
+  try {
+    console.log('[supervisor §5] Spend Monitoring: start');
+    const spendStatus = await getSpendStatus();
+    const newlyCrossed = checkSpendThresholds(spendStatus);
+
+    if (newlyCrossed.length === 0) {
+      console.log('[supervisor §5] Spend Monitoring: no new thresholds crossed');
+    } else {
+      console.log(`[supervisor §5] Spend Monitoring: ${newlyCrossed.length} new threshold(s) crossed`);
+
+      for (const threshold of newlyCrossed) {
+        await escalate(
+          'system',
+          `Vercel spend threshold crossed: ${threshold}% — $${spendStatus.currentSpend.toFixed(2)} of $${spendStatus.budget.toFixed(2)} budget`,
+          0.9,
+          {
+            threshold,
+            currentSpend: spendStatus.currentSpend,
+            budget: spendStatus.budget,
+            percentUsed: spendStatus.percentUsed,
+          }
+        );
+
+        const { sendEmail } = await import('../gmail');
+        await sendEmail({
+          subject: `[Agent Forge] Vercel Spend Alert: ${threshold}% threshold crossed`,
+          body: `A Vercel spend threshold has been crossed.\n\nThreshold: ${threshold}%\nCurrent spend: $${spendStatus.currentSpend.toFixed(2)}\nBudget: $${spendStatus.budget.toFixed(2)}\nPercent used: ${spendStatus.percentUsed.toFixed(1)}%\n\nPlease review your Vercel usage.`,
+        });
+
+        spendStatus.alertsSent.push(String(threshold));
+      }
+
+      await persistSpendStatus(spendStatus);
+    }
+
+    console.log('[supervisor §5] Spend Monitoring: complete');
+  } catch (err) {
+    console.error(`[supervisor §5] Spend Monitoring error: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  addPhase(trace, { name: 'spend_monitoring', durationMs: Date.now() - phaseStart });
   phaseStart = Date.now();
 
   // §20 — Intent Validation (post-project-completion)
