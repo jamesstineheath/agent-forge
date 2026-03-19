@@ -6,7 +6,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 
 // --- Configuration ---
 
-const NOTION_DB_ID = "04216ec5-2206-4753-9063-d058f636cb46";
+const NOTION_DB_ID = "2a61cc49-73c5-41bf-981c-37ef1ab2f77b";
 const NOTION_VERSION = "2022-06-28";
 const CLAUDE_MODEL = "claude-opus-4-6";
 const CRITERION_TYPES = ["ui", "api", "data", "integration", "performance"];
