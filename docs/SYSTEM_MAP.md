@@ -219,12 +219,14 @@ Outcome Tracker (daily)
 | TLM Spec Reviewer | `.github/actions/tlm-spec-review/` | Handoff improvement before execution |
 | TLM Outcome Tracker | `.github/actions/tlm-outcome-tracker/` | Daily assessment of merged PR outcomes |
 | Feedback Compiler | `.github/actions/tlm-feedback-compiler/` | Weekly self-improvement proposals |
+| TLM Trace Reviewer | `.github/actions/tlm-trace-review/` | Daily trace analysis, anomaly detection, auto-files work items for systemic issues |
 | TLM QA Agent | `.github/actions/tlm-qa-agent/` | Post-deploy verification (DISABLED) |
 | Execute Handoff | `.github/workflows/execute-handoff.yml` | Claude Code runs handoff, waits for CI |
 | TLM Review | `.github/workflows/tlm-review.yml` | Triggers Code Reviewer on PR events |
 | Spec Review | `.github/workflows/tlm-spec-review.yml` | Triggers on handoff push |
 | Outcome Tracker | `.github/workflows/tlm-outcome-tracker.yml` | Daily assessment cron |
 | Feedback Compiler | `.github/workflows/tlm-feedback-compiler.yml` | Weekly self-improvement cron |
+| Trace Reviewer | `.github/workflows/tlm-trace-reviewer.yml` | Daily 6am UTC trace analysis cron |
 | Handoff Orchestrator | `.github/workflows/handoff-orchestrator.yml` | Lifecycle state machine, CI retry |
 | CI Stuck PR Monitor | `.github/workflows/ci-stuck-pr-monitor.yml` | Alerts after 2h stuck |
 | TLM Memory | `docs/tlm-memory.md` | Rolling 20-entry review patterns + lessons |
