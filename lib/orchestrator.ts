@@ -15,6 +15,7 @@ import {
 import { buildCachedPrompt } from "./prompt-cache";
 import type { WorkItem, RepoConfig } from "./types";
 import { FAST_LANE_BUDGET_SIMPLE, FAST_LANE_BUDGET_MODERATE } from "./types";
+import { estimateBudget, parseHandoffType } from "./cost-estimator";
 
 // --- Types ---
 
@@ -308,14 +309,17 @@ Generate the complete handoff markdown file now.`;
 
 // --- Direct-source metadata helper ---
 
-function buildDirectSourceMetadata(workItem: WorkItem): string {
+async function buildDirectSourceMetadata(workItem: WorkItem): Promise<{ metadata: string; budget: number; budgetSource: "learned" | "partial" | "default"; budgetSampleSize: number }> {
   const triggeredBy = workItem.triggeredBy ?? 'unknown';
-  const budget = workItem.complexityHint === 'simple'
-    ? String(FAST_LANE_BUDGET_SIMPLE)
-    : workItem.complexityHint === 'moderate'
-      ? String(FAST_LANE_BUDGET_MODERATE)
-      : '5';
-  return `<!-- source: direct -->\n<!-- triggeredBy: ${triggeredBy} -->\n<!-- budget: ${budget} -->\n\n`;
+  const estimate = await estimateBudget({
+    complexity: workItem.complexity,
+    targetRepo: workItem.targetRepo,
+    type: workItem.type,
+    riskLevel: workItem.riskLevel,
+  });
+  const budget = estimate.estimatedBudget;
+  const metadata = `<!-- source: direct -->\n<!-- triggeredBy: ${triggeredBy} -->\n<!-- budget: ${budget} -->\n\n`;
+  return { metadata, budget, budgetSource: estimate.confidence, budgetSampleSize: estimate.sampleSize };
 }
 
 // --- Step 4: Dispatch flow ---
@@ -371,8 +375,11 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
     let handoffContent = await generateHandoff(workItem, repoContext, repoConfig, siblingItems.length > 0 ? siblingItems : undefined);
 
     // 5a. Prepend source metadata for direct-source items
+    let directEstimate: { budget: number; budgetSource: "learned" | "partial" | "default"; budgetSampleSize: number } | null = null;
     if (workItem.source.type === 'direct') {
-      handoffContent = buildDirectSourceMetadata(workItem) + handoffContent;
+      const { metadata, ...est } = await buildDirectSourceMetadata(workItem);
+      directEstimate = est;
+      handoffContent = metadata + handoffContent;
     }
 
     // 6. Determine branch name from work item
@@ -418,17 +425,36 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
       `chore: add handoff for ${workItem.title}`
     );
 
-    // 9. Update work item with handoff content, branch name
+    // 9. Estimate budget and parse type from generated handoff
+    let budgetEstimate: { estimatedBudget: number; confidence: "learned" | "partial" | "default"; sampleSize: number };
+    if (directEstimate) {
+      budgetEstimate = { estimatedBudget: directEstimate.budget, confidence: directEstimate.budgetSource, sampleSize: directEstimate.budgetSampleSize };
+    } else {
+      const parsedType = parseHandoffType(handoffContent);
+      budgetEstimate = await estimateBudget({
+        complexity: workItem.complexity,
+        targetRepo: repoConfig.fullName,
+        type: parsedType ?? workItem.type,
+        riskLevel: workItem.riskLevel,
+      });
+    }
+
+    const parsedType = parseHandoffType(handoffContent);
+
+    // 10. Update work item with handoff content, branch name, and learned budget
     await updateWorkItem(workItemId, {
+      ...(parsedType ? { type: parsedType as WorkItem["type"] } : {}),
       handoff: {
         content: handoffContent,
         branch: branchName,
-        budget: repoConfig.defaultBudget,
+        budget: budgetEstimate.estimatedBudget,
+        budgetSource: budgetEstimate.confidence,
+        budgetSampleSize: budgetEstimate.sampleSize,
         generatedAt: new Date().toISOString(),
       },
     });
 
-    // 10. Verify Spec Review workflow triggered (GitHub Contents API push may not fire on:push)
+    // 11. Verify Spec Review workflow triggered (GitHub Contents API push may not fire on:push)
     await new Promise(resolve => setTimeout(resolve, 10_000));
     const runs = await getWorkflowRuns(repoConfig.fullName, branchName, "tlm-spec-review.yml");
     const recentRun = runs.find(r => {

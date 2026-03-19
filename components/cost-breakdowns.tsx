@@ -125,6 +125,7 @@ export function CostBreakdowns({ byRepo, byAgent, byComplexity }: CostBreakdowns
                     <th className="text-left py-2 font-medium">Complexity</th>
                     <th className="text-right py-2 font-medium">Avg Budget</th>
                     <th className="text-right py-2 font-medium">Avg Actual</th>
+                    <th className="text-right py-2 font-medium">Model Est.</th>
                     <th className="text-right py-2 font-medium">Items</th>
                   </tr>
                 </thead>
@@ -137,6 +138,22 @@ export function CostBreakdowns({ byRepo, byAgent, byComplexity }: CostBreakdowns
                       </td>
                       <td className="py-2 text-right font-mono text-foreground">
                         ${row.avgActual.toFixed(2)}
+                      </td>
+                      <td className="py-2 text-right font-mono">
+                        {row.currentEstimate != null ? (
+                          <span className={cn(
+                            row.estimateConfidence === "learned" ? "text-status-merged" :
+                              row.estimateConfidence === "partial" ? "text-status-reviewing" : "text-muted-foreground/40"
+                          )}>
+                            ${row.currentEstimate.toFixed(2)}
+                            <span className="text-[9px] ml-0.5">
+                              ({row.estimateConfidence === "learned" ? `${row.estimateSampleSize} samples` :
+                                row.estimateConfidence === "partial" ? "partial" : "default"})
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/30">—</span>
+                        )}
                       </td>
                       <td className="py-2 text-right text-muted-foreground">{row.itemCount}</td>
                     </tr>

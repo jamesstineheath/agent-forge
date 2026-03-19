@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateAuth } from "@/lib/api-auth";
 import { listWorkItemsFull } from "@/lib/work-items";
 import { getCostsForPeriod, aggregateCosts } from "@/lib/cost-tracking";
+import { estimateBudget } from "@/lib/cost-estimator";
 import type { WorkItem, CostAnalytics } from "@/lib/types";
 
 function itemCost(item: WorkItem): number {
@@ -191,12 +192,24 @@ export async function GET(req: NextRequest) {
       complexityMap.set(c, entry);
     }
 
-    const byComplexity = Array.from(complexityMap.entries()).map(([complexity, d]) => ({
-      complexity,
-      avgBudget: d.count > 0 ? d.budgetSum / d.count : 0,
-      avgActual: d.count > 0 ? d.actualSum / d.count : 0,
-      itemCount: d.count,
-    }));
+    const byComplexity = await Promise.all(
+      Array.from(complexityMap.entries()).map(async ([complexity, d]) => {
+        // Get what the model would currently estimate for this complexity tier
+        const validComplexity = ["simple", "moderate", "complex"].includes(complexity)
+          ? (complexity as "simple" | "moderate" | "complex")
+          : "moderate";
+        const currentEst = await estimateBudget({ complexity: validComplexity, targetRepo: "" });
+        return {
+          complexity,
+          avgBudget: d.count > 0 ? d.budgetSum / d.count : 0,
+          avgActual: d.count > 0 ? d.actualSum / d.count : 0,
+          itemCount: d.count,
+          currentEstimate: currentEst.estimatedBudget,
+          estimateSampleSize: currentEst.sampleSize,
+          estimateConfidence: currentEst.confidence,
+        };
+      })
+    );
 
     // --- Recent Items ---
     const recentItems = executed

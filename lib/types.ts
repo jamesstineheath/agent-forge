@@ -43,11 +43,14 @@ export interface WorkItem {
     | "superseded"
     | "verified"
     | "partial";
+  type?: "feature" | "bugfix" | "refactor" | "test" | "docs" | "chore";
   dependencies: string[];
   handoff: {
     content: string;
     branch: string;
     budget: number;
+    budgetSource?: "learned" | "partial" | "default" | "manual";
+    budgetSampleSize?: number;
     generatedAt: string;
   } | null;
   execution: {
@@ -120,6 +123,7 @@ export const updateWorkItemSchema = z.object({
   priority: z.enum(["high", "medium", "low"]).optional(),
   riskLevel: z.enum(["low", "medium", "high"]).optional(),
   complexity: z.enum(["simple", "moderate", "complex"]).optional(),
+  type: z.enum(["feature", "bugfix", "refactor", "test", "docs", "chore"]).optional(),
   status: z
     .enum([
       "filed",
@@ -146,6 +150,8 @@ export const updateWorkItemSchema = z.object({
       content: z.string(),
       branch: z.string(),
       budget: z.number(),
+      budgetSource: z.enum(["learned", "partial", "default", "manual"]).optional(),
+      budgetSampleSize: z.number().optional(),
       generatedAt: z.string(),
     })
     .nullable()
@@ -595,6 +601,9 @@ export interface CostAnalytics {
     avgBudget: number;
     avgActual: number;
     itemCount: number;
+    currentEstimate?: number;
+    estimateSampleSize?: number;
+    estimateConfidence?: "learned" | "partial" | "default";
   }>;
   recentItems: Array<{
     id: string;

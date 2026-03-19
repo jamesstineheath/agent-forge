@@ -2,11 +2,8 @@ import { z } from "zod";
 import { createWorkItem, getWorkItem, listWorkItems } from "./work-items";
 import { createWorkItemSchema } from "./types";
 import type { ComplexityHint } from "./types";
-import {
-  FAST_LANE_BUDGET_SIMPLE,
-  FAST_LANE_BUDGET_MODERATE,
-} from "./types";
 import { checkDailyCap, incrementDailyCount } from "./daily-cap";
+import { estimateBudget } from "./cost-estimator";
 
 // --- Tool Schemas (zod shapes for MCP registerTool) ---
 
@@ -43,12 +40,6 @@ export const listRecentItemsSchema = {
 
 // --- Tool Handlers ---
 
-const BUDGET_DEFAULTS: Record<ComplexityHint, number> = {
-  simple: FAST_LANE_BUDGET_SIMPLE,
-  moderate: FAST_LANE_BUDGET_MODERATE,
-};
-const DEFAULT_BUDGET = FAST_LANE_BUDGET_MODERATE;
-
 export async function handleCreateFastLaneItem(input: {
   description: string;
   targetRepo: string;
@@ -70,12 +61,16 @@ export async function handleCreateFastLaneItem(input: {
     throw new Error(`daily cap exceeded (0 remaining of ${capResult.limit})`);
   }
 
-  const resolvedBudget =
-    typeof budgetOverride === "number"
-      ? budgetOverride
-      : complexity
-        ? BUDGET_DEFAULTS[complexity]
-        : DEFAULT_BUDGET;
+  let resolvedBudget: number;
+  if (typeof budgetOverride === "number") {
+    resolvedBudget = budgetOverride;
+  } else {
+    const estimate = await estimateBudget({
+      complexity: complexity ?? "moderate",
+      targetRepo: targetRepo.trim(),
+    });
+    resolvedBudget = estimate.estimatedBudget;
+  }
 
   const parsed = createWorkItemSchema.parse({
     title: description.trim(),

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateAuth } from "@/lib/api-auth";
 import { recordCost } from "@/lib/cost-tracking";
 import { findWorkItemByBranch, updateWorkItem } from "@/lib/work-items";
+import { invalidateEstimatorCache } from "@/lib/cost-estimator";
 import { z } from "zod";
 
 const recordCostSchema = z.object({
@@ -53,6 +54,9 @@ export async function POST(req: NextRequest) {
         },
       });
     }
+
+    // Invalidate estimator cache so future estimates incorporate this data point
+    invalidateEstimatorCache();
 
     return NextResponse.json({
       recorded: true,
