@@ -54,6 +54,16 @@ test.describe('API Health', () => {
     }
   });
 
+  test('/api/agents/heartbeats returns non-5xx with valid JSON', async ({ page }) => {
+    const response = await page.request.get('/api/agents/heartbeats');
+    expect(response.status(), 'Should not be 5xx').toBeLessThan(500);
+
+    if (response.status() < 400) {
+      const body = await response.json();
+      expect(body).toBeDefined();
+    }
+  });
+
   test('/api/agents/atc-metrics returns non-5xx with metrics object', async ({ page }) => {
     const response = await page.request.get('/api/agents/atc-metrics');
     expect(response.status(), 'Should not be 5xx').toBeLessThan(500);
