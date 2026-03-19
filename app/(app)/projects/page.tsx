@@ -1,9 +1,10 @@
 "use client";
 
-import { useIntentCriteriaList, useProjects } from "@/lib/hooks";
+import { useIntentCriteriaList, useProjects, useWorkItems } from "@/lib/hooks";
 import Link from "next/link";
-import { ExternalLink, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useState } from "react";
+import type { WorkItem } from "@/lib/types";
 
 const statusColors: Record<string, string> = {
   pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
@@ -22,7 +23,18 @@ const repoColors: Record<string, string> = {
 export default function ProjectsPage() {
   const { data: criteria, isLoading, mutate } = useIntentCriteriaList();
   const { data: projects } = useProjects();
+  const { data: workItems } = useWorkItems();
   const [importing, setImporting] = useState(false);
+
+  const getProjectWorkItems = (entry: { projectId?: string; targetRepo?: string }): WorkItem[] => {
+    return (
+      workItems?.filter(
+        (wi) =>
+          (wi.source?.type === "project" && entry.projectId && wi.source?.sourceId === entry.projectId) ||
+          (entry.targetRepo && wi.targetRepo === `jamesstineheath/${entry.targetRepo}`)
+      ) ?? []
+    );
+  };
 
   const handleImportAll = async () => {
     setImporting(true);
@@ -70,6 +82,12 @@ export default function ProjectsPage() {
             const project = projects?.find(
               (p) => entry.projectId && p.projectId === entry.projectId
             );
+            const pWI = getProjectWorkItems(entry);
+            const wiMerged = pWI.filter((w) => w.status === "merged" || w.status === "verified").length;
+            const wiActive = pWI.filter((w) => ["generating", "executing", "reviewing", "queued", "ready", "retrying"].includes(w.status)).length;
+            const wiFailed = pWI.filter((w) => w.status === "failed" || w.status === "blocked" || w.status === "escalated").length;
+            const wiTotal = pWI.length;
+            const wiProgress = wiTotal > 0 ? Math.round((wiMerged / wiTotal) * 100) : 0;
 
             return (
               <Link
@@ -104,7 +122,39 @@ export default function ProjectsPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-6">
+                    {/* Work item pipeline progress */}
+                    {wiTotal > 0 && (
+                      <div className="text-right">
+                        <div className="text-sm font-medium">
+                          {wiMerged}/{wiTotal} work items
+                        </div>
+                        <div className="w-32 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mt-1 flex">
+                          <div
+                            className="h-full bg-green-500 transition-all"
+                            style={{ width: `${wiProgress}%` }}
+                          />
+                          {wiActive > 0 && (
+                            <div
+                              className="h-full bg-blue-500 transition-all"
+                              style={{ width: `${Math.round((wiActive / wiTotal) * 100)}%` }}
+                            />
+                          )}
+                          {wiFailed > 0 && (
+                            <div
+                              className="h-full bg-red-500 transition-all"
+                              style={{ width: `${Math.round((wiFailed / wiTotal) * 100)}%` }}
+                            />
+                          )}
+                        </div>
+                        <div className="flex gap-2 mt-0.5 justify-end">
+                          {wiMerged > 0 && <span className="text-[10px] text-green-500">{wiMerged} done</span>}
+                          {wiActive > 0 && <span className="text-[10px] text-blue-500">{wiActive} active</span>}
+                          {wiFailed > 0 && <span className="text-[10px] text-red-500">{wiFailed} failed</span>}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Criteria progress */}
                     <div className="text-right">
                       <div className="text-sm font-medium">
