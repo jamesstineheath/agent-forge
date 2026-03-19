@@ -23,6 +23,7 @@
 
 - **Dashboard evaluation metrics views** (jamesstineheath/agent-forge)
   - Branch: `fix/dashboard-evaluation-metrics-views`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/309
 
 ## Queued for Dispatch
 
