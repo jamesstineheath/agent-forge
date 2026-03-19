@@ -7,12 +7,12 @@
 - **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
   - Branch: `feat/migrate-orchestrator-to-use-model-router`
   - Files: lib/orchestrator.ts
-  - Started: 2026-03-19T15:18:23.035Z
+  - Started: 2026-03-19T16:02:13.162Z
 
-- **Migrate decomposer to use model router** (jamesstineheath/agent-forge)
-  - Branch: `feat/migrate-decomposer-to-use-model-router`
-  - Files: lib/decomposer.ts
-  - Started: 2026-03-19T15:32:21.284Z
+- **Migrate PM agent to use model router** (jamesstineheath/agent-forge)
+  - Branch: `feat/migrate-pm-agent-to-use-model-router`
+  - Files: lib/pm-agent.ts
+  - Started: 2026-03-19T16:03:29.984Z
 
 ## Queued for Dispatch
 
@@ -86,11 +86,7 @@
 
 - **Add retry-with-escalation logic to model router** (jamesstineheath/agent-forge)
 
-- **Migrate PM agent to use model router** (jamesstineheath/agent-forge)
-
 - **Migrate health monitor to use model router** (jamesstineheath/agent-forge)
-
-- **Create FORCE_OPUS kill switch API and dashboard toggle** (jamesstineheath/agent-forge)
 
 - **Create model routing analytics API endpoint** (jamesstineheath/agent-forge)
 
