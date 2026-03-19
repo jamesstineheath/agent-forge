@@ -504,6 +504,18 @@ export async function getPRByNumber(repo: string, prNumber: number): Promise<PR 
   };
 }
 
+/**
+ * Check if a PR has been flagged for human review by TLM Code Review.
+ * Returns true if any review comment contains "FLAG_FOR_HUMAN".
+ */
+export async function isPRFlaggedForHuman(repo: string, prNumber: number): Promise<boolean> {
+  const url = `${GITHUB_API}/repos/${repo}/pulls/${prNumber}/reviews?per_page=20`;
+  const res = await ghFetch(url);
+  if (!res.ok) return false;
+  const reviews = (await res.json()) as Array<{ body: string | null }>;
+  return reviews.some((r) => r.body?.includes("FLAG_FOR_HUMAN") ?? false);
+}
+
 export async function getPRByBranch(repo: string, branch: string): Promise<PR | null> {
   const url = `${GITHUB_API}/repos/${repo}/pulls?head=${encodeURIComponent(
     `${repo.split("/")[0]}:${branch}`

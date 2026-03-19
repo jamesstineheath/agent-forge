@@ -11,6 +11,7 @@ import {
   deleteBranch,
   triggerWorkflow,
   rerunFailedJobs,
+  isPRFlaggedForHuman,
 } from "../github";
 import { escalate } from "../escalation";
 import { incrementalIndex } from "../knowledge-graph/indexer";
@@ -648,7 +649,43 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           },
         });
         events.push(event);
-      } else if (pr?.state === "open" && elapsedMinutes >= CONFLICT_CHECK_DELAY_MINUTES) {
+      } else if (pr?.state === "open") {
+        // §2.7a: FLAG_FOR_HUMAN detection — auto-park items that TLM flagged for human review
+        // These items consume a concurrency slot but will never auto-merge, blocking the pipeline.
+        const prNumber = item.execution?.prNumber ?? pr.number;
+        try {
+          const flagged = await isPRFlaggedForHuman(item.targetRepo, prNumber);
+          if (flagged) {
+            await updateWorkItem(item.id, {
+              status: "blocked" as any,
+              execution: {
+                ...item.execution,
+                prNumber,
+                prUrl: pr.htmlUrl,
+              },
+            });
+            events.push(
+              makeEvent(
+                "status_change",
+                item.id,
+                "reviewing",
+                "blocked",
+                `PR #${prNumber} flagged FLAG_FOR_HUMAN by TLM Code Review — moved to blocked to free concurrency slot`
+              )
+            );
+            addDecision(trace, {
+              workItemId: item.id,
+              action: 'flag_for_human',
+              reason: `PR #${prNumber} flagged for human review — blocking to free concurrency`,
+            });
+            continue; // Skip merge conflict check — item is no longer active
+          }
+        } catch (flagErr) {
+          console.warn(`[health-monitor] FLAG_FOR_HUMAN check failed for PR #${prNumber} (non-fatal):`, flagErr);
+        }
+      }
+
+      if (pr?.state === "open" && elapsedMinutes >= CONFLICT_CHECK_DELAY_MINUTES) {
         // §2.7: Merge conflict detection
         const prNumber = item.execution?.prNumber ?? pr.number;
         const mergeability = await getPRMergeability(item.targetRepo, prNumber);
