@@ -2,13 +2,11 @@
 
 import { cn } from "@/lib/utils";
 import { RefreshCw, Bot } from "lucide-react";
-import { useWorkItems, useTLMMemory, useATCMetrics, useFeedbackCompiler } from "@/lib/hooks";
-import { TLMAgentCard } from "@/components/tlm-agent-card";
-import { ATCAgentCard } from "@/components/atc-agent-card";
+import { useWorkItems, useTlmAgents } from "@/lib/hooks";
+import type { TlmWorkflowStatus } from "@/lib/hooks";
 import { PAAgentRow } from "@/components/pa-agent-row";
 import { AgentDashboard } from "@/components/agent-dashboard";
 import { AgentTraceViewer } from "@/components/agent-trace-viewer";
-import { TlmAgentHeartbeat } from "@/components/tlm-agent-heartbeat";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -21,26 +19,147 @@ const PA_AGENTS = [
   { name: "Date Planner", tier: "Tier 3", assessmentTier: "Quarterly", status: "idle" as const },
 ];
 
+// --- TLM Agent Heartbeat (same visual format as AgentDashboard rows) ---
+
+type TlmHealth = "healthy" | "stale" | "error";
+
+const healthColor: Record<TlmHealth, string> = {
+  healthy: "text-status-merged bg-status-merged/10 border-status-merged/30",
+  stale: "text-status-reviewing bg-status-reviewing/10 border-status-reviewing/30",
+  error: "text-status-blocked bg-status-blocked/10 border-status-blocked/30",
+};
+
+const healthDot: Record<TlmHealth, string> = {
+  healthy: "bg-status-merged",
+  stale: "bg-status-reviewing",
+  error: "bg-status-blocked",
+};
+
+const healthLabel: Record<TlmHealth, string> = {
+  healthy: "Healthy",
+  stale: "Stale",
+  error: "Error",
+};
+
+function timeAgo(isoString: string): string {
+  const ms = Date.now() - new Date(isoString).getTime();
+  if (ms < 60_000) return "just now";
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
+}
+
+function getTlmHealth(wf: TlmWorkflowStatus): TlmHealth {
+  if (!wf.lastConclusion) return "stale";
+  if (wf.lastConclusion === "failure") return "error";
+  if (wf.lastRunAt) {
+    const hoursSinceRun = (Date.now() - new Date(wf.lastRunAt).getTime()) / 3_600_000;
+    if (hoursSinceRun > 48) return "stale";
+  }
+  return "healthy";
+}
+
+function TlmRunHistoryDots({ wf }: { wf: TlmWorkflowStatus }) {
+  // Show success rate as visual dots (filled = success proportion)
+  const total = wf.totalRuns;
+  if (total === 0) return <span className="text-[10px] text-muted-foreground/40">no runs</span>;
+  const successCount = wf.successRate !== null ? Math.round(wf.successRate * total) : 0;
+  const failCount = total - successCount;
+  const dots = Math.min(total, 15); // cap at 15 dots
+  const successDots = Math.round((successCount / total) * dots);
+  return (
+    <div className="flex items-center gap-0.5">
+      {Array.from({ length: dots }).map((_, i) => (
+        <div
+          key={i}
+          className={cn(
+            "h-2.5 w-2.5 rounded-sm",
+            i < successDots ? "bg-status-merged/70" : "bg-status-blocked/70"
+          )}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TlmAgentRow({ wf }: { wf: TlmWorkflowStatus }) {
+  const health = getTlmHealth(wf);
+  const successPct = wf.successRate !== null ? `${Math.round(wf.successRate * 100)}%` : null;
+
+  return (
+    <div className="flex items-center gap-4 px-4 py-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-foreground">{wf.name}</span>
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-semibold",
+              healthColor[health]
+            )}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", healthDot[health])} />
+            {healthLabel[health]}
+          </span>
+          <span className="text-[10px] text-muted-foreground/50">GitHub Actions</span>
+        </div>
+        <div className="flex items-center gap-3 mt-1">
+          <span className="text-[11px] text-muted-foreground">
+            {wf.lastRunAt ? `Last run ${timeAgo(wf.lastRunAt)}` : "Never run"}
+          </span>
+          {wf.totalRuns > 0 && (
+            <>
+              <span className="text-[10px] text-muted-foreground/40">|</span>
+              <span className="text-[11px] text-muted-foreground">
+                {successPct} success rate ({wf.totalRuns} runs)
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex-shrink-0">
+        <TlmRunHistoryDots wf={wf} />
+      </div>
+    </div>
+  );
+}
+
+function TlmAgentsSection() {
+  const { data, error, isLoading } = useTlmAgents();
+
+  if (isLoading) {
+    return (
+      <div className="rounded-xl card-elevated bg-surface-1 p-4 animate-pulse">
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-12 bg-muted rounded" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data || data.workflows.length === 0) {
+    return (
+      <div className="rounded-xl card-elevated bg-surface-1 p-4">
+        <p className="text-sm text-muted-foreground/60">
+          {error ? "Failed to load TLM agent status." : "No workflow data available."}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl card-elevated bg-surface-1 divide-y divide-border">
+      {data.workflows.map((wf) => (
+        <TlmAgentRow key={wf.workflowFile} wf={wf} />
+      ))}
+    </div>
+  );
+}
+
+// --- Main Page ---
+
 export default function AgentsPage() {
-  const { data: workItems, isLoading: workItemsLoading } = useWorkItems();
-  const { data: tlmMemory, isLoading: tlmLoading, error: tlmError } = useTLMMemory();
-  const { data: atcMetrics, isLoading: atcLoading, error: atcError } = useATCMetrics();
-  const { data: feedbackCompiler } = useFeedbackCompiler();
-
-  const codeReviewerRate =
-    tlmMemory && tlmMemory.stats.totalAssessed > 0
-      ? (tlmMemory.stats.correct / tlmMemory.stats.totalAssessed) * 100
-      : null;
-
-  const specReviewerRate =
-    tlmMemory && tlmMemory.stats.totalAssessed > 0
-      ? ((tlmMemory.stats.totalAssessed - tlmMemory.stats.causedIssues) /
-          tlmMemory.stats.totalAssessed) *
-        100
-      : null;
-
-  const outcomeTrackerRate = tlmMemory ? 100 : null;
-
   return (
     <>
       <header className="sticky top-0 z-10 glass-header border-b border-border">
@@ -76,131 +195,15 @@ export default function AgentsPage() {
           {/* Agent Traces */}
           <AgentTraceViewer />
 
-          {/* Control Plane */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Control Plane
-              </p>
-              <span className="text-[10px] text-muted-foreground/40">(orchestration)</span>
-            </div>
-            <ATCAgentCard
-              metrics={atcMetrics ?? null}
-              isLoading={atcLoading}
-              error={atcError}
-            />
-          </div>
-
           {/* TLM Agents */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
                 TLM Agents
               </p>
-              <span className="text-[10px] text-muted-foreground/40">(agent-forge pipeline)</span>
+              <span className="text-[10px] text-muted-foreground/40">(GitHub Actions pipeline)</span>
             </div>
-            {tlmLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-xl card-elevated bg-surface-1 p-4 animate-pulse"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="h-12 w-12 bg-muted rounded-full" />
-                      <div className="flex-1 space-y-2">
-                        <div className="h-4 w-32 bg-muted rounded" />
-                        <div className="h-3 w-48 bg-muted rounded" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : tlmError ? (
-              <div className="rounded-xl card-elevated bg-surface-1 p-4">
-                <p className="text-sm text-muted-foreground/60">
-                  Unable to load TLM memory data. The API may be unavailable or the
-                  memory file may not exist yet.
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="text-xs text-muted-foreground mb-1">
-                  Overall quality:{" "}
-                  {codeReviewerRate != null
-                    ? `${Math.round(codeReviewerRate)}% correct rate`
-                    : "no data yet"}
-                  {tlmMemory &&
-                    `. ${tlmMemory.stats.causedIssues} caused downstream issues.`}
-                </div>
-                <div className="space-y-2">
-                  <TLMAgentCard
-                    name="Code Reviewer"
-                    stats={tlmMemory?.stats ?? null}
-                    hotPatterns={tlmMemory?.hotPatterns ?? []}
-                    recentOutcomes={tlmMemory?.recentOutcomes ?? []}
-                    successRate={codeReviewerRate}
-                    lastRun={tlmMemory?.stats.lastAssessment ?? null}
-                    status="active"
-                  />
-                  <TLMAgentCard
-                    name="Spec Reviewer"
-                    stats={tlmMemory?.stats ?? null}
-                    hotPatterns={[]}
-                    recentOutcomes={[]}
-                    successRate={specReviewerRate}
-                    lastRun={tlmMemory?.stats.lastAssessment ?? null}
-                    status="active"
-                  />
-                  <TLMAgentCard
-                    name="Outcome Tracker"
-                    stats={tlmMemory?.stats ?? null}
-                    hotPatterns={[]}
-                    recentOutcomes={[]}
-                    successRate={outcomeTrackerRate}
-                    lastRun={tlmMemory?.stats.lastAssessment ?? null}
-                    status="active"
-                  />
-                  <TLMAgentCard
-                    name="QA Agent"
-                    stats={null}
-                    hotPatterns={[]}
-                    recentOutcomes={[]}
-                    successRate={null}
-                    lastRun={null}
-                    status="active"
-                    subtitle="Post-deployment verification — advisory mode"
-                  />
-                  <TLMAgentCard
-                    name="Feedback Compiler"
-                    stats={null}
-                    hotPatterns={[]}
-                    recentOutcomes={[]}
-                    successRate={null}
-                    lastRun={feedbackCompiler?.lastRun ?? null}
-                    status={feedbackCompiler?.status ?? "idle"}
-                    subtitle={
-                      feedbackCompiler?.lastRun
-                        ? `${feedbackCompiler.patternsDetected} patterns detected · ${feedbackCompiler.changesProposed} changes proposed · last run ${new Date(feedbackCompiler.lastRun).toLocaleDateString()}`
-                        : "No runs yet"
-                    }
-                  />
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* TLM Agents — GitHub Actions Runs */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                TLM Agents
-              </p>
-              <span className="text-[10px] text-muted-foreground/40">(GitHub Actions)</span>
-            </div>
-            <div className="rounded-xl card-elevated bg-surface-1 p-4">
-              <TlmAgentHeartbeat />
-            </div>
+            <TlmAgentsSection />
           </div>
 
           {/* PA Agents */}
