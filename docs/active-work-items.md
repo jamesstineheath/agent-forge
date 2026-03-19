@@ -4,27 +4,15 @@
 
 ## In Review
 
-- **Cost Estimator Utility and API Route** (jamesstineheath/personal-assistant)
-  - Branch: `fix/cost-estimator-utility-and-api-route`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/353
-  - Files: app/api/realestate/cost-estimate/route.ts, handoffs/cost-estimator-utility-and-api-route.md
-
-- **Listing Data Model Enhancement — priceHistory, coordinates, proximityData fields** (jamesstineheath/personal-assistant)
-  - Branch: `fix/listing-data-model-enhancement-pricehistory-coordi`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/349
-  - Files: handoffs/listing-data-model-enhancement-pricehistory-coordi.md, lib/realestate/types.ts, lib/tools/real-estate.ts
-
-- **Intent Validation Phase 1: Acceptance Criteria Agent** (jamesstineheath/agent-forge)
-  - Branch: `feat/intent-validation-phase-1-acceptance-criteria-agen`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/306
-
-## Queued for Dispatch
-
 - **Deterministic Scoring Engine** (jamesstineheath/personal-assistant)
-  - Estimated files: lib/realestate/scoring.ts
+  - Branch: `fix/deterministic-scoring-engine`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/332
 
 - **Listing Data Model Enhancement — priceHistory and coordinates** (jamesstineheath/personal-assistant)
-  - Estimated files: lib/realestate/properties.ts, lib/realestate/geocoding.ts, lib/realestate/types.ts
+  - Branch: `feat/listing-data-model-enhancement-pricehistory-and-co`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/334
+
+## Queued for Dispatch
 
 - **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
   - Estimated files: app/api/cron/realestate-scout/route.ts, lib/agents/definitions/realestate-scout.ts, lib/realestate/scout-phases.ts
