@@ -4,11 +4,6 @@
 
 ## Currently Executing
 
-- **Wire failure attribution into Health Monitor agent** (jamesstineheath/agent-forge)
-  - Branch: `fix/wire-failure-attribution-into-health-monitor-agent`
-  - Files: lib/atc/health-monitor.ts, lib/types.ts
-  - Started: 2026-03-19T07:21:23.694Z
-
 - **Dashboard evaluation metrics views** (jamesstineheath/agent-forge)
   - Branch: `fix/dashboard-evaluation-metrics-views`
   - Files: app/(app)/agents/page.tsx, app/api/agents/evaluation-metrics/route.ts, components/evaluation-metrics-panel.tsx, lib/hooks.ts
@@ -25,6 +20,10 @@
   - Branch: `fix/real-estate-system-prompt-section`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/358
   - Files: handoffs/real-estate-system-prompt-section.md, prompts/sections/real-estate.md
+
+- **Wire failure attribution into Health Monitor agent** (jamesstineheath/agent-forge)
+  - Branch: `fix/wire-failure-attribution-into-health-monitor-agent`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/308
 
 ## Queued for Dispatch
 
