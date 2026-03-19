@@ -199,6 +199,17 @@ export async function handleCodeCIFailure(
  */
 export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["activeExecutions"]> {
   const { now, events } = ctx;
+
+  // Early-exit: skip expensive work if no items are in active pipeline stages
+  const allItems = await listWorkItems();
+  const activeStatuses = new Set(['executing', 'generating', 'reviewing', 'queued']);
+  const hasActiveItems = allItems.some(item => activeStatuses.has(item.status));
+
+  if (!hasActiveItems) {
+    console.log('Health Monitor: no active items, skipping cycle');
+    return [];
+  }
+
   const trace = startTrace('health-monitor');
   let phaseStart = Date.now();
 
