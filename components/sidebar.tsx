@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   GitBranch,
+  DollarSign,
   BookMarked,
   Bot,
 
@@ -46,6 +47,7 @@ const navSections: NavSection[] = [
       { label: "Dashboard", href: "/", icon: LayoutDashboard },
       { label: "Work Items", href: "/work-items", icon: FolderKanban },
       { label: "Pipeline", href: "/pipeline", icon: GitBranch },
+      { label: "Cost", href: "/cost", icon: DollarSign },
     ],
   },
   {

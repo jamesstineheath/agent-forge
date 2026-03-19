@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics } from "@/lib/types";
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
@@ -251,5 +251,16 @@ export function useAgentTraces() {
 export function useDebateSessions(repo?: string, pr?: number) {
   const key = repo && pr ? `/api/debates?repo=${encodeURIComponent(repo)}&pr=${pr}` : null;
   const { data, error, isLoading, mutate } = useSWR<DebateSession[]>(key, fetcher);
+  return { data, error, isLoading, mutate };
+}
+
+// === Cost Analytics ===
+
+export function useCostAnalytics(period: string = "30d") {
+  const { data, error, isLoading, mutate } = useSWR<CostAnalytics>(
+    `/api/costs/analytics?period=${period}`,
+    fetcher,
+    { refreshInterval: 60000 }
+  );
   return { data, error, isLoading, mutate };
 }

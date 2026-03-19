@@ -543,6 +543,72 @@ export interface CostEntry {
   timestamp: string;
 }
 
+// --- Cost Analytics (for /cost dashboard) ---
+
+export interface CostAnalytics {
+  summary: {
+    todaySpend: number;
+    weekSpend: number;
+    monthSpend: number;
+    allTimeSpend: number;
+    dailyBurnRate: number;
+    monthProjection: number;
+    wastePct: number;
+    wasteSpend: number;
+    costPerMerge: number;
+    itemsWithActualCost: number;
+    totalExecutedItems: number;
+  };
+  dailySpend: Array<{
+    date: string;
+    total: number;
+    byRepo: Record<string, number>;
+    itemCount: number;
+  }>;
+  budgetAccuracy: {
+    items: Array<{
+      id: string;
+      title: string;
+      budget: number;
+      actual: number;
+      delta: number;
+      deltaPct: number;
+      outcome: string | null;
+    }>;
+    avgOverrunPct: number;
+    overBudgetCount: number;
+    underBudgetCount: number;
+  };
+  byRepo: Array<{
+    repo: string;
+    totalSpend: number;
+    itemCount: number;
+    mergedCount: number;
+    failedCount: number;
+    successRate: number;
+    costPerMerge: number;
+    wasteSpend: number;
+  }>;
+  byAgent: Record<string, number>;
+  byComplexity: Array<{
+    complexity: string;
+    avgBudget: number;
+    avgActual: number;
+    itemCount: number;
+  }>;
+  recentItems: Array<{
+    id: string;
+    title: string;
+    targetRepo: string;
+    complexity: string;
+    budget: number;
+    actualCost: number | null;
+    status: string;
+    outcome: string | null;
+    completedAt: string | null;
+  }>;
+}
+
 export interface DriftSnapshot {
   date: string;                                    // ISO date string YYYY-MM-DD
   baselinePeriodDays: number;                      // e.g., 30 (days 30-60 ago)

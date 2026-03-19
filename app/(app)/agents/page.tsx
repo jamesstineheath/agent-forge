@@ -3,7 +3,6 @@
 import { cn } from "@/lib/utils";
 import { RefreshCw, Bot } from "lucide-react";
 import { useWorkItems, useTLMMemory, useATCMetrics, useFeedbackCompiler } from "@/lib/hooks";
-import { CostSummary } from "@/components/cost-summary";
 import { TLMAgentCard } from "@/components/tlm-agent-card";
 import { ATCAgentCard } from "@/components/atc-agent-card";
 import { PAAgentRow } from "@/components/pa-agent-row";
@@ -62,22 +61,6 @@ export default function AgentsPage() {
 
       <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
         <div className="max-w-5xl space-y-6">
-          {/* Cost Overview */}
-          <section>
-            {workItemsLoading ? (
-              <div className="rounded-xl card-elevated bg-surface-1 p-4 animate-pulse">
-                <div className="h-6 w-32 bg-muted rounded mb-4" />
-                <div className="grid grid-cols-3 gap-4">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="h-12 bg-muted rounded" />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <CostSummary workItems={workItems ?? []} />
-            )}
-          </section>
-
           {/* Agent Heartbeat Dashboard */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
