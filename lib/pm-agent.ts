@@ -96,6 +96,39 @@ async function getPipelineState(): Promise<{ inFlightCount: number; queueDepth: 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 0. Early-exit guard — skip LLM calls if there's nothing to act on
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TERMINAL_PROJECT_STATES = ['Complete', 'Failed'] as const;
+const TERMINAL_WORK_ITEM_STATES = ['cancelled', 'merged', 'obsolete'] as const;
+
+/**
+ * Check if the PM Agent has any work to do.
+ * Returns { shouldRun: true } if there are active projects or actionable work items,
+ * or { shouldRun: false, reason: string } if early-exit is appropriate.
+ */
+export async function checkShouldRun(): Promise<{ shouldRun: boolean; reason?: string }> {
+  const [allProjects, allWorkItems] = await Promise.all([
+    listProjects(),
+    fetchAllWorkItems(),
+  ]);
+
+  const activeProjects = allProjects.filter(
+    p => !(TERMINAL_PROJECT_STATES as readonly string[]).includes(p.status)
+  );
+
+  const actionableWorkItems = allWorkItems.filter(
+    wi => !(TERMINAL_WORK_ITEM_STATES as readonly string[]).includes(wi.status)
+  );
+
+  if (activeProjects.length === 0 && actionableWorkItems.length === 0) {
+    return { shouldRun: false, reason: 'no active projects or actionable work items' };
+  }
+
+  return { shouldRun: true };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. reviewBacklog
 // ─────────────────────────────────────────────────────────────────────────────
 

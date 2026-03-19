@@ -19,7 +19,7 @@ import {
 } from "../escalation";
 import { getSpendStatus, checkSpendThresholds, persistSpendStatus } from "../vercel-spend-monitor";
 import { summarizeDailyCacheMetrics } from "../cache-metrics";
-import { reviewBacklog, assessProjectHealth, composeDigest } from "../pm-agent";
+import { reviewBacklog, assessProjectHealth, composeDigest, checkShouldRun as checkPMAgentShouldRun } from "../pm-agent";
 import type { ATCEvent, HLOLifecycleState, WorkItem } from "../types";
 import type { CycleContext } from "./types";
 import {
@@ -34,6 +34,34 @@ import {
 import { makeEvent } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces, listRecentTraces } from "./tracing";
 import type { AgentName } from "./tracing";
+
+// --- Supervisor task throttling ---
+
+const SUPERVISOR_TIMESTAMPS_KEY = 'supervisor-task-timestamps';
+
+interface SupervisorTaskTimestamps {
+  branchCleanup?: string;       // ISO timestamp string
+  stalePrMonitoring?: string;   // ISO timestamp string
+}
+
+async function loadTaskTimestamps(): Promise<SupervisorTaskTimestamps> {
+  try {
+    const data = await loadJson<SupervisorTaskTimestamps>(SUPERVISOR_TIMESTAMPS_KEY);
+    return data ?? {};
+  } catch {
+    return {};
+  }
+}
+
+async function saveTaskTimestamps(timestamps: SupervisorTaskTimestamps): Promise<void> {
+  await saveJson(SUPERVISOR_TIMESTAMPS_KEY, timestamps);
+}
+
+function isThrottled(lastRan: string | undefined, cooldownMinutes: number): boolean {
+  if (!lastRan) return false;
+  const elapsed = Date.now() - new Date(lastRan).getTime();
+  return elapsed < cooldownMinutes * 60 * 1000;
+}
 
 /**
  * Supervisor agent: ensures every other agent is healthy and the system is learning.
@@ -162,35 +190,51 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   addPhase(trace, { name: 'escalation_management', durationMs: Date.now() - phaseStart });
   phaseStart = Date.now();
 
-  // §15: Poll HLO Lifecycle State from Open PRs
-  try {
-    const reviewingForHLO = await listWorkItems({ status: "reviewing" });
-    const reviewingWorkItems: WorkItem[] = [];
-    for (const entry of reviewingForHLO) {
-      const wi = await getWorkItem(entry.id);
-      if (wi) reviewingWorkItems.push(wi);
+  // Load throttle timestamps at the start of the throttled section
+  const timestamps = await loadTaskTimestamps();
+  const updatedTimestamps: SupervisorTaskTimestamps = { ...timestamps };
+
+  // §15: Poll HLO Lifecycle State from Open PRs — throttled to once per 30 minutes
+  if (isThrottled(timestamps.stalePrMonitoring, 30)) {
+    console.log('[Supervisor] Skipping stale PR monitoring: ran recently');
+  } else {
+    try {
+      const reviewingForHLO = await listWorkItems({ status: "reviewing" });
+      const reviewingWorkItems: WorkItem[] = [];
+      for (const entry of reviewingForHLO) {
+        const wi = await getWorkItem(entry.id);
+        if (wi) reviewingWorkItems.push(wi);
+      }
+      const hloStateMap = await pollHLOStateFromOpenPRs(reviewingWorkItems);
+      void hloStateMap;
+    } catch (err) {
+      console.error("[supervisor §15] HLO state polling failed:", err);
     }
-    const hloStateMap = await pollHLOStateFromOpenPRs(reviewingWorkItems);
-    void hloStateMap;
-  } catch (err) {
-    console.error("[supervisor §15] HLO state polling failed:", err);
+    updatedTimestamps.stalePrMonitoring = new Date().toISOString();
+    await saveTaskTimestamps(updatedTimestamps);
   }
 
   addPhase(trace, { name: 'hlo_polling', durationMs: Date.now() - phaseStart });
   phaseStart = Date.now();
 
-  // Branch cleanup
-  try {
-    const cleanupResult = await cleanupStaleBranches();
-    if (cleanupResult && cleanupResult.deletedCount > 0) {
-      const cleanupEvents = [makeEvent(
-        "cleanup", "system", undefined, undefined,
-        `Branch cleanup: deleted ${cleanupResult.deletedCount}, skipped ${cleanupResult.skipped}, errors ${cleanupResult.errors}`
-      )];
-      await import("./events").then(m => m.persistEvents(cleanupEvents));
+  // Branch cleanup — throttled to once per hour
+  if (isThrottled(timestamps.branchCleanup, 60)) {
+    console.log('[Supervisor] Skipping branch cleanup: ran recently');
+  } else {
+    try {
+      const cleanupResult = await cleanupStaleBranches();
+      if (cleanupResult && cleanupResult.deletedCount > 0) {
+        const cleanupEvents = [makeEvent(
+          "cleanup", "system", undefined, undefined,
+          `Branch cleanup: deleted ${cleanupResult.deletedCount}, skipped ${cleanupResult.skipped}, errors ${cleanupResult.errors}`
+        )];
+        await import("./events").then(m => m.persistEvents(cleanupEvents));
+      }
+    } catch (err) {
+      console.error("[supervisor] Branch cleanup failed:", err);
     }
-  } catch (err) {
-    console.error("[supervisor] Branch cleanup failed:", err);
+    updatedTimestamps.branchCleanup = new Date().toISOString();
+    await saveTaskTimestamps(updatedTimestamps);
   }
 
   addPhase(trace, { name: 'branch_cleanup', durationMs: Date.now() - phaseStart });
@@ -815,6 +859,13 @@ async function runPMAgentSweep() {
       console.log(`[supervisor §14] PM Agent sweep: skipped (last run ${hoursSinceLastRun.toFixed(1)}h ago)`);
       return;
     }
+  }
+
+  // Early-exit: skip LLM calls if there's nothing to act on
+  const shouldRun = await checkPMAgentShouldRun();
+  if (!shouldRun.shouldRun) {
+    console.log(`[PM Agent] Early exit: ${shouldRun.reason}`);
+    return;
   }
 
   console.log('[supervisor §14] PM Agent sweep: starting');
