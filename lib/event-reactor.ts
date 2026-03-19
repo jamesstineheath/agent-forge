@@ -143,10 +143,19 @@ async function handleCIFailed(event: WebhookEvent): Promise<void> {
  * PR merged → transition to merged + dispatch unblocked items.
  */
 async function handlePRMerged(event: WebhookEvent): Promise<void> {
-  const { prNumber } = event.payload;
+  const { prNumber, branch } = event.payload;
   if (!prNumber) return;
 
-  const item = await findWorkItemByPR(event.repo, prNumber);
+  // Try PR-based lookup first, then fall back to branch-based lookup.
+  // The PR lookup can fail if repo normalization differs between the webhook
+  // event's repo field and the work item's targetRepo.
+  let item = await findWorkItemByPR(event.repo, prNumber);
+  if (!item && branch) {
+    item = await findWorkItemByBranch(branch);
+    if (item) {
+      console.log(`${LOG_PREFIX} findWorkItemByPR missed PR #${prNumber}, found via branch fallback: ${item.id}`);
+    }
+  }
   if (!item) return;
 
   if (item.status === "merged") return;
