@@ -421,6 +421,16 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         });
         events.push(event);
 
+        // Dispatch any items that were blocked on this one
+        try {
+          const dispatchResult = await dispatchUnblockedItems(item.id, item.targetRepo);
+          if (dispatchResult.dispatched.length > 0) {
+            console.log(`[health-monitor] dispatched ${dispatchResult.dispatched.length} unblocked item(s) after ${item.id} merged (executing->merged reconciliation)`);
+          }
+        } catch (dispatchErr) {
+          console.warn(`[health-monitor] dispatchUnblockedItems failed after ${item.id} merged (non-fatal):`, dispatchErr);
+        }
+
         // Trigger incremental re-index on PR merge
         try {
           const mergedPrFiles = await getPRFiles(item.targetRepo, pr.number);
@@ -621,6 +631,16 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           },
         });
         events.push(event);
+
+        // Dispatch any items that were blocked on this one
+        try {
+          const dispatchResult = await dispatchUnblockedItems(item.id, item.targetRepo);
+          if (dispatchResult.dispatched.length > 0) {
+            console.log(`[health-monitor] dispatched ${dispatchResult.dispatched.length} unblocked item(s) after ${item.id} merged (reviewing->merged reconciliation)`);
+          }
+        } catch (dispatchErr) {
+          console.warn(`[health-monitor] dispatchUnblockedItems failed after ${item.id} merged (non-fatal):`, dispatchErr);
+        }
 
         // Trigger incremental re-index on PR merge
         try {
@@ -959,6 +979,94 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
   }
 
   addPhase(trace, { name: 'blocked_pr_reconciliation', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
+  // 2.10: Reviewing work item PR merge reconciliation
+  // Safety net for when webhooks miss merge events (e.g., repo normalization mismatch,
+  // Vercel edge runtime dropping fire-and-forget promises, or manual merges outside
+  // the normal TLM flow). Checks all reviewing items with PRs against GitHub.
+  for (const entry of reviewingEntries) {
+    const item = await getWorkItem(entry.id);
+    if (!item) continue;
+
+    // Guard: skip if item blob status diverges from index
+    if (item.status !== 'reviewing') {
+      console.log(`[health-monitor] Skipping reviewing reconciliation for ${item.id} — blob status is "${item.status}", not "reviewing" (index stale)`);
+      continue;
+    }
+
+    const prNumber = item.execution?.prNumber;
+    const branch = item.handoff?.branch;
+    if (!prNumber && !branch) continue;
+
+    try {
+      let pr = null;
+      if (prNumber) {
+        pr = await getPRByNumber(item.targetRepo, prNumber);
+      } else if (branch) {
+        pr = await getPRByBranch(item.targetRepo, branch);
+      }
+
+      if (pr?.mergedAt) {
+        // The main monitoring loop above should have caught this, but if the
+        // getPRByBranch call in the loop returned a different result (e.g., rate
+        // limiting, eventual consistency), this sweep catches it.
+        await updateWorkItem(item.id, {
+          status: "merged",
+          execution: {
+            ...item.execution,
+            prNumber: pr.number,
+            prUrl: pr.htmlUrl,
+            completedAt: pr.mergedAt,
+            outcome: "merged",
+          },
+        });
+        events.push(
+          makeEvent(
+            "work_item_reconciled",
+            item.id,
+            "reviewing",
+            "merged",
+            `Reconciled: work item was "reviewing" but PR #${pr.number} is merged (merged at ${pr.mergedAt})`
+          )
+        );
+        console.log(`[health-monitor] §2.10 reconciled reviewing item ${item.id} — PR already merged`);
+
+        // Dispatch any items that were blocked on this one
+        try {
+          const dispatchResult = await dispatchUnblockedItems(item.id, item.targetRepo);
+          if (dispatchResult.dispatched.length > 0) {
+            console.log(`[health-monitor §2.10] dispatched ${dispatchResult.dispatched.length} unblocked item(s) after ${item.id} merged`);
+          }
+        } catch (dispatchErr) {
+          console.warn(
+            `[health-monitor §2.10] dispatchUnblockedItems failed after reconciling ${item.id} (non-fatal):`,
+            dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr)
+          );
+        }
+
+        // Trigger incremental re-index on PR merge
+        try {
+          const prFiles = await getPRFiles(item.targetRepo, pr.number);
+          if (prFiles.length > 0) {
+            const result = await incrementalIndex(item.targetRepo, prFiles);
+            console.log(
+              `[health-monitor §2.10] Incremental re-index triggered for ${item.targetRepo} (${prFiles.length} files from PR #${pr.number}, ${result.entitiesUpdated} entities updated)`
+            );
+          }
+        } catch (indexErr) {
+          console.warn(
+            `[health-monitor §2.10] Incremental re-index failed for PR #${pr.number}:`,
+            indexErr instanceof Error ? indexErr.message : String(indexErr)
+          );
+        }
+      }
+    } catch (err) {
+      console.error(`[health-monitor] §2.10 reviewing PR reconciliation failed for work item ${item.id}:`, err);
+    }
+  }
+
+  addPhase(trace, { name: 'reviewing_pr_reconciliation', durationMs: Date.now() - phaseStart });
   phaseStart = Date.now();
 
   // 4.1: Dependency block detection
