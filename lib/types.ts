@@ -745,6 +745,34 @@ export interface ArchitecturePlan {
   generatedBy: "architecture-planner" | "gap-analysis";
 }
 
+// ── Pipeline Metrics ────────────────────────────────────────────────────────
+
+export interface PipelineMetrics {
+  // Speed
+  avgTimeToMergeMs: number;           // work item: startedAt → completedAt
+  avgTimeToFirstMergeMs: number;      // project: approved → first work item merged
+  avgPlanGenerationMs: number;        // architecture plan generation duration
+  p90TimeToMergeMs: number;
+
+  // Quality
+  workItemSuccessRate: number;        // merged / (merged + failed + cancelled)
+  criteriaPassRate: number;           // passed / total criteria
+  retryRate: number;                  // items that needed retry / total items
+  firstAttemptSuccessRate: number;    // items merged without retry / total merged
+
+  // Cost
+  totalCost: number;
+  avgCostPerWorkItem: number;
+  avgCostPerCriterion: number;
+  costEfficiency: number;             // passed criteria per dollar
+
+  // Volume
+  totalWorkItems: number;
+  totalProjects: number;
+  totalCriteria: number;
+  periodDays: number;
+}
+
 // ── Intent Validation ───────────────────────────────────────────────────────
 
 export interface ValidationProbe {

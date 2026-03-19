@@ -227,6 +227,10 @@ export async function generateArchitecturePlan(
       ...plan,
       criterionId: targetCriteria[i]?.id ?? `criterion-${i}`,
       criterionDescription: targetCriteria[i]?.description ?? "",
+      // Sanitize cost — Claude sometimes returns "$12" instead of 12
+      estimatedCost: typeof plan.estimatedCost === "string"
+        ? parseFloat(String(plan.estimatedCost).replace(/[^0-9.]/g, "")) || 5
+        : (plan.estimatedCost ?? 5),
     }),
   );
 
@@ -244,7 +248,12 @@ export async function generateArchitecturePlan(
     prerequisites: parsed.prerequisites ?? [],
     riskAssessment: parsed.riskAssessment ?? "",
     estimatedWorkItems: parsed.estimatedWorkItems ?? criterionPlans.length,
-    totalEstimatedCost: criterionPlans.reduce((sum, p) => sum + (p.estimatedCost ?? 5), 0),
+    totalEstimatedCost: criterionPlans.reduce((sum, p) => {
+      const cost = typeof p.estimatedCost === "string"
+        ? parseFloat(String(p.estimatedCost).replace(/[^0-9.]/g, "")) || 5
+        : (p.estimatedCost ?? 5);
+      return sum + cost;
+    }, 0),
     generatedAt: new Date().toISOString(),
     generatedBy: mode === "gap-analysis" ? "gap-analysis" : "architecture-planner",
   };
