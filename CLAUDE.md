@@ -17,8 +17,15 @@ A dev orchestration platform (Next.js on Vercel) that coordinates autonomous age
 
 - **Work Item Store** (Vercel Blob, `af-data/work-items/*`): Project-agnostic store for filed, queued, and executed work items.
 - **Orchestrator** (API route + Agent SDK): Reads repo context, generates handoff files, pushes to target repos, triggers execution.
-- **Air Traffic Controller** (Vercel cron): Monitors executions, enforces concurrency, detects conflicts, manages queue.
-- **Dashboard** (Next.js pages): Pipeline overview, work item backlog, execution detail, repo configuration.
+- **4 Autonomous Agents** (independent Vercel crons, `lib/atc/`):
+  - **Dispatcher** (5 min): Picks up `ready` items, checks concurrency/conflicts, dispatches to target repos.
+  - **Health Monitor** (5 min): Detects stalls, CI failures (classifies infra vs code), retries, merge conflict repair.
+  - **Project Manager** (15 min): Decomposes projects into work items, manages dependencies, tracks project lifecycle.
+  - **Supervisor** (10 min): Monitors other agents for staleness/errors, manages escalations, drift detection, branch cleanup.
+- **Event Bus** (`/api/webhooks/github`): Durable webhook event log, 30-day retention. Agents read events first (fast), fall back to API polling.
+- **Dashboard** (Next.js pages): Pipeline overview, work item backlog, agent health/traces, execution detail, repo configuration.
+
+> **Note:** The ATC monolith (`lib/atc.ts`) was replaced by these 4 agents on 2026-03-18 (ADR-010). The old `/api/atc/cron` route is removed. Do not modify `lib/atc.ts`.
 
 ### Data Plane (target repos)
 
@@ -53,7 +60,8 @@ app/
   (app)/            # Auth-protected routes
     page.tsx        # Dashboard
     work-items/     # Work item CRUD + dispatch
-    pipeline/       # Active executions, ATC view
+    pipeline/       # Active executions, pipeline view
+    agents/         # Agent health, heartbeat, traces
     repos/          # Repo registration
     settings/       # Global configuration
   (auth)/           # Public routes
@@ -64,6 +72,14 @@ lib/
   auth.ts           # Auth.js configuration
   storage.ts        # Vercel Blob / local file storage
   utils.ts          # shadcn/ui utilities
+  atc/              # Autonomous agent implementations
+    dispatcher.ts   # Work item dispatch logic
+    health-monitor.ts # CI failure detection, stall recovery, retries
+    project-manager.ts # Project decomposition, lifecycle
+    supervisor.ts   # Agent monitoring, escalations, drift detection
+    tracing.ts      # Structured agent trace logging
+    events.ts       # Event bus persistence
+    ci-classifier.ts # CI failure classification (infra vs code)
 components/
   ui/               # shadcn/ui components
   sidebar.tsx       # App navigation
@@ -90,6 +106,9 @@ handoffs/           # Handoff file directory
 - `WORK_ITEMS_API_KEY` -- Bearer token auth for `/api/work-items` (server-to-server calls from PA)
 - `AGENT_FORGE_API_SECRET` -- Bearer token auth for `/api/escalations` (pipeline agent calls)
 - `GITHUB_WEBHOOK_SECRET` -- HMAC-SHA256 secret for verifying GitHub webhook payloads at `/api/webhooks/github`
+- `AGENT_SPLIT_ENABLED` -- Feature flag: `true` enables 4 independent agent crons, `false` (or unset) keeps legacy ATC
+- `AGENT_FORGE_URL` -- Production URL (e.g., `https://agent-forge-phi.vercel.app`)
+- `QA_BYPASS_SECRET` -- Auth bypass token for QA Agent Playwright tests against preview deployments
 
 ### GitHub Secrets
 - `ANTHROPIC_API_KEY` -- For TLM agents in GitHub Actions
@@ -109,8 +128,12 @@ handoffs/           # Handoff file directory
 | CI | Push/PR to main | Build + test |
 | TLM Spec Review | Push to `handoffs/**`, workflow_dispatch | Review/improve handoff files |
 | Execute Handoff | Spec Review completion, workflow_dispatch | Execute handoff via Claude Code |
-| TLM Code Review | PR events, check_suite | Review PR diffs with context |
-| TLM Outcome Tracker | Daily cron | Assess merged PR outcomes |
+| TLM Code Review | PR events, check_suite | Review PR diffs with context; enforces TLM memory hot patterns |
+| TLM Outcome Tracker | Daily 9am UTC | Assess merged PR outcomes, update TLM memory |
+| TLM Feedback Compiler | Daily 10pm UTC | Analyze outcome patterns, propose prompt/config improvements |
+| TLM Trace Reviewer | Daily 6am UTC | Review agent traces for anomalies, update TLM memory |
+| TLM QA Agent | Vercel deployment_status | Playwright tests against preview deployments (Tier 1 advisory) |
+| Handoff Lifecycle Orchestrator | Workflow run events | Track handoff state machine across spec→execute→CI→review→merge |
 
 ### Dispatch from Cowork/Chat (no local checkout)
 
