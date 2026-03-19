@@ -219,6 +219,7 @@ interface PRDPageProperties {
   prdTitle: string;
   projectId?: string;
   targetRepo?: string;
+  secondaryRepos?: string[];
   priority?: string;
   rank?: number;
   estimatedCost?: number;
@@ -231,6 +232,7 @@ function extractPRDProperties(page: { id: string; properties: Record<string, unk
     title?: Array<{ plain_text?: string }>;
     rich_text?: Array<{ plain_text?: string }>;
     select?: { name?: string };
+    multi_select?: Array<{ name: string }>;
     number?: number | null;
   }>;
 
