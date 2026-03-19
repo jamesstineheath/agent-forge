@@ -4,10 +4,10 @@
 
 ## Currently Executing
 
-- **Re-enable QA Agent workflow with increased warmup** (jamesstineheath/agent-forge)
-  - Branch: `fix/re-enable-qa-agent-workflow-with-increased-warmup`
-  - Files: `.github/workflows/tlm-qa-agent.yml`, `.github/actions/tlm-qa-agent/action.yml`
-  - Started: 2026-03-19T05:56:50.777Z
+- **QA Agent Orchestrator + Baseline Playwright Tests** (jamesstineheath/agent-forge)
+  - Branch: `fix/qa-agent-orchestrator-baseline-playwright-tests`
+  - Files: .github/actions/tlm-qa-agent/run-qa.ts, .github/actions/tlm-qa-agent/tests/auth-setup.ts, .github/actions/tlm-qa-agent/tests/baseline.spec.ts, .github/actions/tlm-qa-agent/tests/api-health.spec.ts, .github/actions/tlm-qa-agent/playwright.config.ts
+  - Started: 2026-03-19T05:55:57.757Z
 
 ## In Review
 
@@ -21,7 +21,23 @@
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/349
   - Files: handoffs/listing-data-model-enhancement-pricehistory-coordi.md, lib/realestate/types.ts, lib/tools/real-estate.ts
 
+- **Re-enable QA Agent workflow with increased warmup** (jamesstineheath/agent-forge)
+  - Branch: `fix/re-enable-qa-agent-workflow-with-increased-warmup`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/304
+
 ## Queued for Dispatch
+
+- **Deterministic Scoring Engine** (jamesstineheath/personal-assistant)
+  - Estimated files: lib/realestate/scoring.ts
+
+- **Listing Data Model Enhancement — priceHistory and coordinates** (jamesstineheath/personal-assistant)
+  - Estimated files: lib/realestate/properties.ts, lib/realestate/geocoding.ts, lib/realestate/types.ts
+
+- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
+  - Estimated files: app/api/cron/realestate-scout/route.ts, lib/agents/definitions/realestate-scout.ts, lib/realestate/scout-phases.ts
+
+- **Tool Registry Integration — Register All New Real Estate Tools** (jamesstineheath/personal-assistant)
+  - Estimated files: lib/tools/index.ts, prompts/sections/realestate.ts, app/api/chat/route.ts
 
 - **Deterministic Scoring Function** (jamesstineheath/personal-assistant)
 
