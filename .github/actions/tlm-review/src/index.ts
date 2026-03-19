@@ -413,28 +413,43 @@ async function run(): Promise<void> {
     // Pipeline PRs from github-actions[bot] must be reviewed by TLM.
     // Bot-skip logic removed to allow TLM to review all non-draft PRs.
 
-    // Early exit: on check_suite, only proceed if ALL non-TLM checks have concluded
+    // On check_suite, wait briefly for any remaining CI checks to complete.
+    // Sometimes check_suite fires before all checks in other suites have concluded.
     if (context.eventName === "check_suite") {
-      const { data: checkRuns } = await octokit.rest.checks.listForRef({
-        owner,
-        repo,
-        ref: pr.head.sha,
-      });
+      let checksReady = false;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const { data: checkRuns } = await octokit.rest.checks.listForRef({
+          owner,
+          repo,
+          ref: pr.head.sha,
+        });
 
-      const ciChecks = checkRuns.check_runs.filter(
-        (cr) => !cr.name.toLowerCase().includes("tlm") && !cr.name.toLowerCase().includes("code review")
-      );
-
-      const stillRunning = ciChecks.filter(
-        (cr) => cr.status === "in_progress" || cr.status === "queued"
-      );
-
-      if (stillRunning.length > 0) {
-        core.info(
-          `check_suite event but ${stillRunning.length} CI check(s) still running: ${stillRunning.map((c) => c.name).join(", ")}. Skipping — will re-trigger on next suite completion.`
+        const ciChecks = checkRuns.check_runs.filter(
+          (cr) => !cr.name.toLowerCase().includes("tlm") && !cr.name.toLowerCase().includes("code review")
         );
-        return;
+
+        const stillRunning = ciChecks.filter(
+          (cr) => cr.status === "in_progress" || cr.status === "queued"
+        );
+
+        if (stillRunning.length === 0) {
+          checksReady = true;
+          break;
+        }
+
+        if (attempt < 3) {
+          core.info(
+            `check_suite event but ${stillRunning.length} CI check(s) still running: ${stillRunning.map((c) => c.name).join(", ")}. Polling (${attempt + 1}/4)...`
+          );
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+        } else {
+          core.info(
+            `check_suite event: ${stillRunning.length} CI check(s) still running after 45s. Proceeding anyway — will check CI status before merge.`
+          );
+          checksReady = true; // Let checkCIStatus handle it downstream
+        }
       }
+      if (!checksReady) return;
     }
 
     // Dedup: skip if TLM already posted a full review for this commit
@@ -484,16 +499,19 @@ async function run(): Promise<void> {
     // Check CI status before reviewing — don't approve if CI is failing
     let ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
 
-    // On pull_request events, poll briefly for CI to complete (handles fast CI runs)
+    // On pull_request events, poll for CI to complete.
+    // CI typically takes 90-120s. Poll for up to 180s (12 × 15s) to avoid
+    // deferring to check_suite, which is unreliable (chicken-and-egg: TLM's
+    // own check_suite completion can't trigger itself).
     if (context.eventName === "pull_request" && ciStatus === "pending") {
-      core.info("CI is pending, waiting up to 60s for completion...");
-      for (let i = 0; i < 4; i++) {
+      core.info("CI is pending, waiting up to 180s for completion...");
+      for (let i = 0; i < 12; i++) {
         await new Promise((resolve) => setTimeout(resolve, 15000));
         ciStatus = await checkCIStatus(octokit, owner, repo, pr.head.sha, prNumber);
         if (ciStatus !== "pending") break;
       }
       if (ciStatus === "pending") {
-        core.info("CI still pending after 60s, deferring to check_suite handler.");
+        core.info("CI still pending after 180s, deferring to check_suite handler.");
         core.setOutput("decision", "ci_pending");
         core.setOutput("summary", "CI is pending, deferring review to check_suite event.");
         return;
