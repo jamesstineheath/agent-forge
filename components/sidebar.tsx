@@ -14,7 +14,7 @@ import {
   Bot,
   Anvil,
   Settings,
-  Zap,
+
   AlertTriangle,
   Menu,
   X,
@@ -169,7 +169,7 @@ function DesktopSidebar() {
       {/* Wordmark */}
       <div className="flex items-center gap-3 px-5 pt-5 pb-4">
         <div className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
-          <Zap className="h-4 w-4 text-primary-foreground" />
+          <Anvil className="h-4 w-4 text-primary-foreground" />
           <div className="absolute inset-0 rounded-lg bg-primary/20 blur-md" />
         </div>
         <div>
@@ -217,7 +217,7 @@ function MobileNav() {
           <SheetContent side="left" className="w-64 p-0 bg-sidebar border-border">
             <SheetHeader className="flex h-14 items-center border-b border-border px-4">
               <SheetTitle className="flex items-center gap-2 font-display font-bold text-foreground">
-                <Zap size={14} className="text-primary" />
+                <Anvil size={14} className="text-primary" />
                 Agent Forge
               </SheetTitle>
             </SheetHeader>
