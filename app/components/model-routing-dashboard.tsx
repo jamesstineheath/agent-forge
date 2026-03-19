@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   useModelRoutingAnalytics,
+  useCostBaseline,
   type ModelRoutingParams,
 } from "@/lib/hooks";
 
@@ -18,6 +19,12 @@ export function ModelRoutingDashboard() {
 
   const params: ModelRoutingParams = { days, taskType: taskType || undefined };
   const { data, isLoading } = useModelRoutingAnalytics(params);
+  const { comparison, refresh: refreshBaseline } = useCostBaseline();
+
+  async function handleRecordBaseline() {
+    await fetch("/api/analytics/cost-baseline", { method: "POST" });
+    refreshBaseline();
+  }
 
   const perModelCostEntries = data?.perModelCosts
     ? Object.entries(data.perModelCosts)
@@ -274,6 +281,75 @@ export function ModelRoutingDashboard() {
           </section>
         </>
       )}
+
+      {/* Phase 1 ROI */}
+      <section>
+        <h2 className="text-lg font-semibold mb-3">Phase 1 ROI</h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Cost reduction vs all-Opus baseline
+        </p>
+        {comparison?.baseline == null ? (
+          <div>
+            <p className="text-sm text-muted-foreground mb-3">
+              No baseline recorded. Record a baseline to start tracking cost
+              reduction.
+            </p>
+            <button
+              onClick={handleRecordBaseline}
+              className="px-3 py-1.5 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              Record Baseline
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div>
+              <p className="text-2xl font-bold text-green-700 dark:text-green-400">
+                {comparison.costReductionPct != null
+                  ? `${comparison.costReductionPct.toFixed(1)}%`
+                  : "\u2014"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                cost reduction vs baseline
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="font-medium">Baseline cost/success</p>
+                <p className="text-muted-foreground">
+                  ${comparison.baselineCostPerSuccess?.toFixed(4) ?? "\u2014"}
+                </p>
+              </div>
+              <div>
+                <p className="font-medium">Current cost/success</p>
+                <p className="text-muted-foreground">
+                  ${comparison.currentCostPerSuccess?.toFixed(4) ?? "\u2014"}
+                </p>
+              </div>
+              <div>
+                <p className="font-medium">Baseline success rate</p>
+                <p className="text-muted-foreground">
+                  {comparison.baselineSuccessRate != null
+                    ? `${(comparison.baselineSuccessRate * 100).toFixed(1)}%`
+                    : "\u2014"}
+                </p>
+              </div>
+              <div>
+                <p className="font-medium">Current success rate</p>
+                <p className="text-muted-foreground">
+                  {comparison.currentSuccessRate != null
+                    ? `${(comparison.currentSuccessRate * 100).toFixed(1)}%`
+                    : "\u2014"}
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Baseline recorded{" "}
+              {new Date(comparison.baseline.recordedAt).toLocaleDateString()}
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

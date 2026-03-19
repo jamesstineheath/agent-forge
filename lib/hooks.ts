@@ -333,6 +333,22 @@ export function useEpisode(id: string | null) {
   return { data, error, isLoading, mutate };
 }
 
+// ── Cost Baseline ────────────────────────────────────────────────────────────
+
+export function useCostBaseline() {
+  const { data, error, isLoading, mutate } = useSWR<import("@/app/api/analytics/cost-baseline/route").CostComparison>(
+    "/api/analytics/cost-baseline",
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+  return {
+    comparison: data ?? null,
+    isLoading,
+    error,
+    refresh: mutate,
+  };
+}
+
 // ── Model Routing Analytics ──────────────────────────────────────────────────
 
 export interface ModelRoutingParams {
