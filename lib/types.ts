@@ -793,3 +793,86 @@ export interface ValidationResult {
   responseStatus?: number;
   durationMs?: number;
 }
+
+// ---------------------------------------------------------------------------
+// Model Routing Types
+// ---------------------------------------------------------------------------
+
+/**
+ * All pipeline task types that can be routed to a specific Claude model.
+ */
+export type TaskType =
+  | 'handoff_generation'
+  | 'decomposition'
+  | 'backlog_review'
+  | 'health_assessment'
+  | 'code_review'
+  | 'spec_review'
+  | 'outcome_tracking'
+  | 'feedback_compilation'
+  | 'dispatch'
+  | 'conflict_detection';
+
+/**
+ * Structured signals extracted from a work item to inform model routing decisions.
+ */
+export interface WorkItemSignals {
+  /** Number of acceptance criteria on the work item. */
+  criteriaCount: number;
+  /** Number of target repositories involved. */
+  repoCount: number;
+  /** The category/type label of the work item (e.g. "feature", "fix"). */
+  workItemType: string;
+  /** Estimated complexity of the work item. */
+  complexity: 'simple' | 'moderate' | 'complex';
+  /** Optional: number of files estimated to be changed. */
+  fileCount?: number;
+}
+
+/**
+ * Per-model cost and quality analytics for the dashboard.
+ */
+export interface ModelRoutingAnalytics {
+  /** Aggregated cost broken down by model identifier. */
+  perModelCosts: Record<string, number>;
+  /** Total spend per calendar day (ISO date string → cost in USD). */
+  dailySpend: Record<string, number>;
+  /** Quality scores per model (model identifier → 0–1 score). */
+  qualityScores: Record<string, number>;
+  /** Escalation rates per model (model identifier → 0–1 rate). */
+  escalationRates: Record<string, number>;
+}
+
+/**
+ * A cost baseline snapshot recorded at a point in time for future comparisons.
+ */
+export interface CostBaseline {
+  /** Average cost (USD) per successful work item at baseline. */
+  baselineCostPerSuccess: number;
+  /** ISO timestamp when this baseline was recorded. */
+  recordedAt: string;
+  /** Total number of work items included in the baseline calculation. */
+  totalItems: number;
+  /** Total cost (USD) across all items in the baseline period. */
+  totalCost: number;
+}
+
+/**
+ * A before/after cost comparison against a recorded baseline.
+ */
+export interface CostComparison {
+  /** Average cost (USD) per successful item at baseline. */
+  baselineCostPerSuccess: number;
+  /** Average cost (USD) per successful item in the current period. */
+  currentCostPerSuccess: number;
+  /** Fractional cost reduction (positive = cheaper than baseline). */
+  costReduction: number;
+  /** Success rate (0–1) during the baseline period. */
+  baselineSuccessRate: number;
+  /** Success rate (0–1) during the current period. */
+  currentSuccessRate: number;
+  /** ISO timestamp for the start of the comparison period. */
+  periodStart: string;
+  /** ISO timestamp for the end of the comparison period. */
+  periodEnd: string;
+}
