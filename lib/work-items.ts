@@ -158,10 +158,14 @@ export async function updateWorkItem(
   // This prevents ATC health monitor from overwriting MCP-driven status changes
   // (e.g., an item marked 'cancelled' via MCP being reverted to 'failed' by
   // the reconciliation loop reading stale index data).
+  // Exception: cancelled → ready is allowed for recovering wrongly-cancelled items
+  // (e.g., cascading auto-cancel from §4.1/§3.5 race, or manual recovery via MCP).
+  const isRecoveryTransition = existing.status === "cancelled" && patch.status === "ready";
   if (
     TERMINAL_STATUSES.has(existing.status) &&
     patch.status &&
-    !TERMINAL_STATUSES.has(patch.status)
+    !TERMINAL_STATUSES.has(patch.status) &&
+    !isRecoveryTransition
   ) {
     console.warn('[work-items] blocked transition from terminal status', {
       id,
