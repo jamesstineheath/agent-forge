@@ -7,6 +7,7 @@ import type { TlmWorkflowStatus } from "@/lib/hooks";
 import { PAAgentRow } from "@/components/pa-agent-row";
 import { AgentDashboard } from "@/components/agent-dashboard";
 import { AgentTraceViewer } from "@/components/agent-trace-viewer";
+import { EvaluationMetricsPanel } from "@/components/evaluation-metrics-panel";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -229,6 +230,17 @@ export default function AgentsPage() {
                 />
               ))}
             </div>
+          </div>
+
+          {/* Evaluation Metrics */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Evaluation Metrics
+              </p>
+              <span className="text-[10px] text-muted-foreground/40">(quality, cost, drift)</span>
+            </div>
+            <EvaluationMetricsPanel />
           </div>
 
           {/* Self-improvement loop */}
