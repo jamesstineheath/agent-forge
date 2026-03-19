@@ -15,6 +15,7 @@
 - **Create TLM memory migration script and compatibility adapter** (jamesstineheath/agent-forge)
   - Branch: `feat/create-tlm-memory-migration-script-and-compatibili`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/321
+  - Files: app/api/agents/tlm-memory/route.ts, handoffs/create-tlm-memory-migration-script-and-compatibili.md, lib/episode-compat.ts, lib/episode-recorder.ts, scripts/migrate-tlm-memory.ts
 
 - **Define shared travel types and models** (jamesstineheath/personal-assistant)
   - Branch: `fix/define-shared-travel-types-and-models`
