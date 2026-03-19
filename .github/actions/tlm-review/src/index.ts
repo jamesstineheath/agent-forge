@@ -837,45 +837,63 @@ async function run(): Promise<void> {
         core.warning(`Could not check if branch is behind base: ${compareErr}. Attempting merge anyway.`);
       }
 
+      // Direct merge: GitHub downgrades APPROVE to COMMENT when the reviewer
+      // (GITHUB_TOKEN = github-actions[bot]) is the same identity as the PR author.
+      // So enablePullRequestAutoMerge never fires because the approval doesn't count.
+      // Instead, merge directly since we've already verified CI passed.
       try {
-        await octokit.graphql<{
-          enablePullRequestAutoMerge: {
-            pullRequest: {
-              autoMergeRequest: { enabledAt: string } | null;
-            };
-          };
-        }>(
-          `mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
-            enablePullRequestAutoMerge(input: {
-              pullRequestId: $pullRequestId,
-              mergeMethod: $mergeMethod
-            }) {
-              pullRequest {
-                autoMergeRequest {
-                  enabledAt
-                }
-              }
-            }
-          }`,
-          {
-            pullRequestId: pr.node_id,
-            mergeMethod: 'SQUASH',
-          }
-        );
-        console.log(`[TLM-REVIEW] Auto-merge enabled for PR #${prNumber} (merges when CI passes)`);
+        await octokit.rest.pulls.merge({
+          owner,
+          repo,
+          pull_number: prNumber,
+          merge_method: "squash",
+        });
+        console.log(`[TLM-REVIEW] Directly merged PR #${prNumber} (squash)`);
       } catch (mergeErr: unknown) {
         const message = mergeErr instanceof Error ? mergeErr.message : String(mergeErr);
 
-        if (message.toLowerCase().includes('auto-merge is already enabled')) {
-          console.log(`[TLM-REVIEW] Auto-merge already enabled for PR #${prNumber}, skipping`);
+        if (message.toLowerCase().includes('already been merged')) {
+          console.log(`[TLM-REVIEW] PR #${prNumber} was already merged`);
         } else if (
           message.toLowerCase().includes('conflict') ||
           message.toLowerCase().includes('not mergeable')
         ) {
-          console.log(`[TLM-REVIEW] PR #${prNumber} has merge conflicts, skipping auto-merge`);
+          console.log(`[TLM-REVIEW] PR #${prNumber} has merge conflicts, cannot merge`);
         } else {
-          console.error(`[TLM-REVIEW] Failed to enable auto-merge for PR #${prNumber}: ${message}`);
-          core.warning(`Failed to enable auto-merge for PR #${prNumber}: ${message}`);
+          // Fall back to enablePullRequestAutoMerge if direct merge fails
+          // (e.g., branch protection requires checks that haven't completed yet)
+          console.warn(`[TLM-REVIEW] Direct merge failed for PR #${prNumber}: ${message}. Falling back to auto-merge.`);
+          try {
+            await octokit.graphql<{
+              enablePullRequestAutoMerge: {
+                pullRequest: {
+                  autoMergeRequest: { enabledAt: string } | null;
+                };
+              };
+            }>(
+              `mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod!) {
+                enablePullRequestAutoMerge(input: {
+                  pullRequestId: $pullRequestId,
+                  mergeMethod: $mergeMethod
+                }) {
+                  pullRequest {
+                    autoMergeRequest {
+                      enabledAt
+                    }
+                  }
+                }
+              }`,
+              {
+                pullRequestId: pr.node_id,
+                mergeMethod: 'SQUASH',
+              }
+            );
+            console.log(`[TLM-REVIEW] Auto-merge enabled for PR #${prNumber} as fallback`);
+          } catch (autoMergeErr: unknown) {
+            const autoMergeMessage = autoMergeErr instanceof Error ? autoMergeErr.message : String(autoMergeErr);
+            console.error(`[TLM-REVIEW] Both direct merge and auto-merge failed for PR #${prNumber}: ${autoMergeMessage}`);
+            core.warning(`Failed to merge PR #${prNumber}: ${autoMergeMessage}`);
+          }
         }
       }
     }
