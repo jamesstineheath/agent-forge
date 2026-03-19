@@ -7,6 +7,7 @@
 - **Comp Analysis Tool and UI Tab** (jamesstineheath/personal-assistant)
   - Branch: `fix/comp-analysis-tool-and-ui-tab`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/371
+  - Files: app/api/realestate/comps/route.ts, components/realestate-view.tsx, components/realestate/comps-tab.tsx, handoffs/comp-analysis-tool-and-ui-tab.md, lib/realestate/comps.ts, lib/tools/real-estate.ts
 
 - **Create TLM memory migration script and compatibility adapter** (jamesstineheath/agent-forge)
   - Branch: `feat/create-tlm-memory-migration-script-and-compatibili`
