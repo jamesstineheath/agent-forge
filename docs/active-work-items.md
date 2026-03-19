@@ -12,12 +12,6 @@
   - Branch: `fix/create-compiler-prompt-module-srccompiler-promptts`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/324
 
-- **Define Episode types and data models in lib/types.ts** (jamesstineheath/agent-forge)
-  - Branch: `fix/define-episode-types-and-data-models-in-libtypests`
-
-- **Implement TF-IDF similarity engine (lib/episode-similarity.ts)** (jamesstineheath/agent-forge)
-  - Branch: `feat/implement-tf-idf-similarity-engine-libepisode-simi`
-
 ## Queued for Dispatch
 
 - **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
