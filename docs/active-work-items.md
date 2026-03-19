@@ -9,11 +9,10 @@
   - Files: lib/realestate/scoring.ts
   - Started: 2026-03-19T06:53:21.084Z
 
-## In Review
-
-- **Enhance Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
-  - Branch: `feat/enhance-realestate-scout-cron-web-search-and-price`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/338
+- **Real Estate System Prompt Section** (jamesstineheath/personal-assistant)
+  - Branch: `fix/real-estate-system-prompt-section`
+  - Files: prompts/sections/real-estate.ts, lib/system-prompt.ts
+  - Started: 2026-03-19T07:01:49.934Z
 
 ## Queued for Dispatch
 
@@ -32,5 +31,3 @@
 - **Wire Comps Tab and Proximity Section into Main Real Estate View** (jamesstineheath/personal-assistant)
 
 - **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
-
-- **Real Estate System Prompt Section** (jamesstineheath/personal-assistant)
