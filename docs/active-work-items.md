@@ -4,11 +4,6 @@
 
 ## In Review
 
-- **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
-  - Branch: `fix/coach-chat-interface-locks-up-after-filing-a-bug-v`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/308
-  - Files: handoffs/coach-chat-interface-locks-up-after-filing-a-bug-v.md
-
 - **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
   - Branch: `fix/create-episodes-api-route-get-apiepisodes`
 
@@ -21,6 +16,10 @@
   - Branch: `fix/define-shared-travel-types-and-models`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/367
   - Files: handoffs/define-shared-travel-types-and-models.md, lib/travel/types.ts
+
+- **Define shared travel types and models** (jamesstineheath/personal-assistant)
+  - Branch: `unknown`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/367
 
 ## Queued for Dispatch
 
@@ -71,8 +70,6 @@
 - **Compose trip detail page with all sub-features** (jamesstineheath/personal-assistant)
 
 - **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
-
-- **Define shared travel types and models** (jamesstineheath/personal-assistant)
 
 - **Create travel profile persistence layer** (jamesstineheath/personal-assistant)
 
