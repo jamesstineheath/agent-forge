@@ -1,5 +1,4 @@
-import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { routedAnthropicCall } from "./model-router";
 import { getWorkItem, updateWorkItem, listWorkItems } from "./work-items";
 import { parseEstimatedFiles } from "./atc";
 import { listRepos, getRepo } from "./repos";
@@ -283,8 +282,10 @@ Generate the complete handoff markdown file now.`;
   // 1. Static instructions + template (never changes between calls)
   // 2. Repo context (semi-static — same for all work items targeting the same repo)
   // Work item details are in the user prompt (dynamic, not cached)
-  const { text } = await generateText({
-    model: anthropic("claude-sonnet-4-6"),
+  const { text } = await routedAnthropicCall({
+    model: "claude-sonnet-4-6",
+    taskType: "handoff_generation",
+    workItemId: workItem.id,
     system: [
       {
         role: "system" as const,

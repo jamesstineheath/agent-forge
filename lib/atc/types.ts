@@ -63,6 +63,7 @@ export interface HLOStateEntry {
 export type TaskType =
   | "decomposition"
   | "dispatch"
+  | "handoff_generation"
   | "health_monitor"
   | "project_manager"
   | "supervisor"
