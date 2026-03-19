@@ -11,6 +11,47 @@ export const FAST_LANE_BUDGET_MODERATE = 4;
 
 export type FailureCategory = 'transient' | 'execution' | 'structural' | 'unknown';
 
+// ---------------------------------------------------------------------------
+// Episode Memory Types
+// ---------------------------------------------------------------------------
+
+export interface Episode {
+  id: string;
+  taskDescription: string;
+  approach: string;
+  outcome: 'success' | 'failure' | 'partial';
+  outcomeDetail: string;
+  insights: string[];
+  repoSlug: string;
+  workItemId?: string;
+  projectId?: string;
+  tags: string[];
+  filesChanged: string[];
+  embedding: number[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EpisodeRetrievalResult {
+  episode: Episode;
+  similarityScore: number;
+}
+
+export interface EpisodeAttribution {
+  episodeId: string;
+  similarityScore: number;
+  influenceNote: string;
+}
+
+export interface EpisodeSearchParams {
+  query?: string;
+  fromDate?: string;
+  toDate?: string;
+  outcome?: 'success' | 'failure' | 'partial';
+  cursor?: string;
+  limit?: number;
+}
+
 // --- WorkItem ---
 
 export interface WorkItem {
@@ -77,6 +118,7 @@ export interface WorkItem {
   complexityHint?: ComplexityHint;
   failureCategory?: FailureCategory;
   attribution?: ComponentAttribution[];
+  episodeAttribution?: EpisodeAttribution[];
   createdAt: string;
   updatedAt: string;
   reasoningMetrics?: ReasoningQualityAssessment;
