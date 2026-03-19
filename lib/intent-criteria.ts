@@ -345,7 +345,7 @@ export async function importCriteriaFromNotion(prdPageId: string): Promise<Inten
  * Query the PRD database for Approved pages and import any
  * that haven't been imported yet (or are stale).
  */
-export async function importAllApprovedCriteria(): Promise<{ imported: number; skipped: number }> {
+export async function importAllApprovedCriteria(force = false): Promise<{ imported: number; skipped: number }> {
   const body = {
     filter: {
       property: "Status",
@@ -364,8 +364,8 @@ export async function importAllApprovedCriteria(): Promise<{ imported: number; s
     const prdId = (page.id as string).replace(/-/g, "");
     const existing = await getCriteria(prdId);
 
-    // Skip if already imported and Notion hasn't been updated since
-    if (existing) {
+    // Skip if already imported and Notion hasn't been updated since (unless force)
+    if (existing && !force) {
       const pageUpdated = new Date(page.last_edited_time as string).getTime();
       const lastSync = new Date(existing.notionSyncedAt).getTime();
       if (pageUpdated <= lastSync) {

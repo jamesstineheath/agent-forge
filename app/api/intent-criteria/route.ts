@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Import all approved
-  const result = await importAllApprovedCriteria();
+  // Import all approved (force=true skips staleness check for manual imports)
+  const result = await importAllApprovedCriteria(true);
   return NextResponse.json(result);
 }
