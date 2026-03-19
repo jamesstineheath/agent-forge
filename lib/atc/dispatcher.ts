@@ -4,7 +4,7 @@ import { dispatchWorkItem } from "../orchestrator";
 import type { ATCState, WorkItem } from "../types";
 import type { CycleContext } from "./types";
 import { GLOBAL_CONCURRENCY_LIMIT } from "./types";
-import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent } from "./utils";
+import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent, dispatchSortComparator } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
 
 /**
@@ -259,6 +259,10 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
       console.log(
         `[dispatcher] ${repo.fullName}: ${candidates.length} dispatchable candidate(s), ${slotsRemaining} slot(s) available`
       );
+
+      // Sort eligible items by priority (P0 first), then rank (lower = higher precedence),
+      // then createdAt (earliest first). Legacy items without priority/rank default to P1/999.
+      candidates.sort(dispatchSortComparator);
 
       const toDispatch = candidates.slice(0, Math.min(slotsRemaining, repoSlotsAvailable));
 
