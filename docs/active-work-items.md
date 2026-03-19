@@ -7,6 +7,7 @@
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
   - Branch: `feat/enhanced-realestate-scout-cron-web-search-and-pric`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/365
+  - Files: handoffs/enhanced-realestate-scout-cron-web-search-and-pric.md
 
 - **Search Listings Tool — AI Web Search for Properties** (jamesstineheath/personal-assistant)
   - Branch: `feat/search-listings-tool-ai-web-search-for-properties`
