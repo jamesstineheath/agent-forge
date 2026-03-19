@@ -4,24 +4,24 @@
 
 ## Currently Executing
 
+- **Cost Estimator Utility and API Route** (jamesstineheath/personal-assistant)
+  - Branch: `fix/cost-estimator-utility-and-api-route`
+  - Files: lib/realestate/cost-estimator.ts, app/api/realestate/cost-estimate/route.ts
+  - Started: 2026-03-19T05:21:38.529Z
+
+## In Review
+
 - **Listing Data Model Enhancement — priceHistory, coordinates, proximityData fields** (jamesstineheath/personal-assistant)
   - Branch: `fix/listing-data-model-enhancement-pricehistory-coordi`
-  - Files: lib/realestate/types.ts
-  - Started: 2026-03-19T05:06:42.280Z
-
-- **Geocoding Utility Enhancement for Batch Operations** (jamesstineheath/personal-assistant)
-  - Branch: `fix/geocoding-utility-enhancement-for-batch-operations`
-  - Files: lib/realestate/geocoding.ts
-  - Started: 2026-03-19T05:08:22.472Z
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/349
+  - Files: handoffs/listing-data-model-enhancement-pricehistory-coordi.md, lib/realestate/types.ts, lib/tools/real-estate.ts
 
 - **Show GitHub Actions TLM agents in dashboard Agent Heartbeat** (jamesstineheath/agent-forge)
   - Branch: `fix/show-github-actions-tlm-agents-in-dashboard-agent-`
-  - Files: app/(app)/agents/page.tsx, app/api/agents/tlm-agents/route.ts, components/tlm-agent-heartbeat.tsx, lib/github.ts
-  - Started: 2026-03-19T05:05:50.295Z
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/303
+  - Files: app/(app)/agents/page.tsx, app/api/agents/tlm-agents/route.ts, components/tlm-agent-heartbeat.tsx, handoffs/show-github-actions-tlm-agents-in-dashboard-agent-.md, lib/hooks.ts
 
 ## Queued for Dispatch
-
-- **Cost Estimator Utility and API Route** (jamesstineheath/personal-assistant)
 
 - **Deterministic Scoring Function** (jamesstineheath/personal-assistant)
 
