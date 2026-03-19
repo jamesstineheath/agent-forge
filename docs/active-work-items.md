@@ -4,22 +4,15 @@
 
 ## Currently Executing
 
-- **Add event emission helpers for model_call and model_escalation** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-event-emission-helpers-for-modelcall-and-model`
-  - Files: lib/atc/events.ts, lib/atc/types.ts (read-only)
-  - Started: 2026-03-19T15:06:42.967Z
+- **Add telemetry emission to model router** (jamesstineheath/agent-forge)
+  - Branch: `fix/add-telemetry-emission-to-model-router`
+  - Files: lib/model-router.ts
+  - Started: 2026-03-19T15:17:19.742Z
 
-## In Review
-
-- **Create Episode detail page (/episodes/[id])** (jamesstineheath/agent-forge)
-  - Branch: `fix/create-episode-detail-page-episodesid`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/324
-  - Files: app/(app)/episodes/[id]/page.tsx, handoffs/create-episode-detail-page-episodesid.md, lib/hooks.ts, lib/types.ts
-
-- **Create travel prompt section** (jamesstineheath/personal-assistant)
-  - Branch: `fix/create-travel-prompt-section`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/373
-  - Files: handoffs/create-travel-prompt-section.md, lib/system-prompt.ts, prompts/sections/travel.md
+- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
+  - Branch: `feat/migrate-orchestrator-to-use-model-router`
+  - Files: lib/orchestrator.ts
+  - Started: 2026-03-19T15:18:23.035Z
 
 ## Queued for Dispatch
 
@@ -91,11 +84,7 @@
 
 - **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
 
-- **Add telemetry emission to model router** (jamesstineheath/agent-forge)
-
 - **Add retry-with-escalation logic to model router** (jamesstineheath/agent-forge)
-
-- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
 
 - **Migrate decomposer to use model router** (jamesstineheath/agent-forge)
 
