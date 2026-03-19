@@ -7,6 +7,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listWorkItems, getWorkItem } from "@/lib/work-items";
+import type { WorkItem } from "@/lib/types";
 import { loadJson } from "@/lib/storage";
 
 // Notion page IDs for PM memory
@@ -118,8 +119,8 @@ export function registerPMTools(server: McpServer) {
     async (params) => {
       const allItems = await listWorkItems({});
       const projectItems = allItems.filter((item) => {
-        const wi = item as { sourceId?: string; title?: string };
-        return wi.sourceId?.includes(params.project_id) ||
+        const wi = item as WorkItem;
+        return wi.source?.sourceId?.includes(params.project_id) ||
                wi.title?.includes(params.project_id);
       });
 
