@@ -304,7 +304,18 @@ export async function importCriteriaFromNotion(prdPageId: string): Promise<Inten
 
   // Fetch blocks and parse criteria
   const blocks = await getPageBlocks(prdPageId);
+
+  // Debug: log block types so we can see what the Notion API returns
+  console.log(`[intent-criteria] Import "${props.prdTitle}": ${blocks.length} blocks`);
+  for (const b of blocks.slice(0, 20)) {
+    const t = b.type as string;
+    const c = b[t] as { rich_text?: RichTextItem[] } | undefined;
+    const text = c?.rich_text ? extractRichText(c.rich_text).slice(0, 80) : "(no text)";
+    console.log(`[intent-criteria]   ${t}: ${text}`);
+  }
+
   const criteria = parseCriteriaFromBlocks(blocks);
+  console.log(`[intent-criteria] Parsed ${criteria.length} criteria from "${props.prdTitle}"`);
 
   // Use property-level cost from Notion if parser couldn't extract per-criterion costs
   let totalEstimatedCost = criteria.reduce((sum, c) => sum + c.estimatedCost, 0);
