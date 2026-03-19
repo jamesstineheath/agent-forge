@@ -86,6 +86,25 @@ If **any** of the following occur within the first week, revert the affected pro
 - A build failure is attributable to OOM (out-of-memory) on the Standard machine
 - Queued builds cause a deployment delay exceeding 10 minutes for a production push to `main`
 
+## Validation
+
+A structured validation checklist for confirming these optimizations are
+working as intended has been created at
+[`docs/vercel-spend-validation-checklist.md`](../vercel-spend-validation-checklist.md).
+
+The checklist covers:
+1. Vercel billing dashboard shows monthly on-demand charges under $50.
+2. Code changes trigger builds and deployments across all registered repos.
+3. Docs-only changes are skipped by the build-skip script.
+4. The AF dashboard loads and displays current work item data.
+5. Each cron job fires on its adjusted schedule (confirmed via Vercel function logs).
+6. Spend alert emails are received when billing thresholds are crossed.
+7. No automated status-tracking commits appear on `main` branches.
+
+**Final validation results will be recorded in the checklist after one complete
+billing cycle.** The ADR status will be updated to `accepted-validated` once
+all items pass.
+
 ## References
 
 - [Vercel Build Machine Documentation](https://vercel.com/docs/deployments/build-machine)
