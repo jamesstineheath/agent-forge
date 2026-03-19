@@ -14,11 +14,6 @@
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/362
   - Files: handoffs/bulk-import-tool-and-chat-command.md, lib/realestate/bulk-import.ts, lib/tools/index.ts, lib/tools/realestate-listings.ts
 
-- **Wire failure attribution into Health Monitor agent** (jamesstineheath/agent-forge)
-  - Branch: `fix/wire-failure-attribution-into-health-monitor-agent`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/308
-  - Files: handoffs/wire-failure-attribution-into-health-monitor-agent.md, lib/atc/health-monitor.ts
-
 ## Queued for Dispatch
 
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
