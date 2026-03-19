@@ -6,23 +6,28 @@ on:
   check_suite:
     types: [completed]
 
-# Only run one review at a time per PR
+# Only run one review at a time per PR — do NOT cancel in progress,
+# the check_suite re-review must not be killed by the pull_request run
 concurrency:
   group: tlm-review-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.check_suite.head_sha || 'unknown' }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
   pull-requests: write
+  checks: read
 
 jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Skip if CI workflow (don't review CI-only events unless check_suite)
+    # Run on PR events, or on check_suite completion ONLY if it's from GitHub Actions (CI)
+    # Skip check_suite events from other apps (Vercel, etc.) to avoid redundant runs
     if: >-
       github.event_name == 'pull_request' ||
-      github.event_name == 'check_suite'
+      (github.event_name == 'check_suite' &&
+       github.event.check_suite.conclusion == 'success' &&
+       github.event.check_suite.app.slug == 'github-actions')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
