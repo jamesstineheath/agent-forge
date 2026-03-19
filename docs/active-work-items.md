@@ -4,6 +4,16 @@
 
 ## Currently Executing
 
+- **Listing Data Model Enhancement — priceHistory, coordinates, proximityData fields** (jamesstineheath/personal-assistant)
+  - Branch: `fix/listing-data-model-enhancement-pricehistory-coordi`
+  - Files: lib/realestate/types.ts
+  - Started: 2026-03-19T05:06:42.280Z
+
+- **Geocoding Utility Enhancement for Batch Operations** (jamesstineheath/personal-assistant)
+  - Branch: `fix/geocoding-utility-enhancement-for-batch-operations`
+  - Files: lib/realestate/geocoding.ts
+  - Started: 2026-03-19T05:08:22.472Z
+
 - **Show GitHub Actions TLM agents in dashboard Agent Heartbeat** (jamesstineheath/agent-forge)
   - Branch: `fix/show-github-actions-tlm-agents-in-dashboard-agent-`
   - Files: app/(app)/agents/page.tsx, app/api/agents/tlm-agents/route.ts, components/tlm-agent-heartbeat.tsx, lib/github.ts
@@ -18,8 +28,6 @@
 - **Preference Editor Panel Component Enhancement** (jamesstineheath/personal-assistant)
 
 - **Bulk Import Tool and Chat Command** (jamesstineheath/personal-assistant)
-
-- **Geocoding Utility Enhancement for Batch Operations** (jamesstineheath/personal-assistant)
 
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
 
