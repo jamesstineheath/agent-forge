@@ -117,20 +117,48 @@ function hasAcceptanceCriteriaSection(blocks) {
   });
 }
 
+// --- PM Preferences ---
+
+const path = require("path");
+const fs = require("fs");
+
+let pmPreferences = {};
+try {
+  const prefPath = path.join(__dirname, "pm-preferences.json");
+  pmPreferences = JSON.parse(fs.readFileSync(prefPath, "utf8"));
+} catch {
+  console.warn("[AcceptanceCriteriaAgent] Could not load pm-preferences.json, using defaults");
+}
+
 // --- Claude integration ---
 
 function buildCriteriaPrompt(prdText) {
+  const prefs = pmPreferences;
   return {
-    system: `You are an expert product analyst. Given a PRD (Product Requirements Document), generate structured, testable acceptance criteria.
+    system: `You are a product analyst writing acceptance criteria for a PM to review.
+
+AUDIENCE: ${prefs.audience || "Technical PM who understands product concepts but does not write code."}
+
+TONE: ${prefs.tone || "Direct, concise, outcome-focused."}
 
 Each criterion MUST have:
-- "description": A concrete, measurable statement. NOT vague like "system should work well". GOOD examples:
-  - "API endpoint /api/users returns 200 with JSON array of user objects containing id, name, email fields"
-  - "Dashboard loads within 2 seconds on 3G connection with 1000 data points"
-  - "Clicking 'Submit' with empty required fields shows inline validation errors for each field"
+- "description": A clear, outcome-focused statement written for a PM. Describe what the USER sees or experiences, not implementation details.
+  ${(prefs.bad_examples || []).join("\n  ")}
+  More GOOD examples:
+  - "Users can edit their preference profile and see updated scores on all listings"
+  - "The map shows listing pins with color-coded price ranges and click-to-detail"
+  - "When a new listing matches preferences, the user receives a notification within 24 hours"
+  - "The cost estimator shows monthly mortgage, taxes, insurance, and HOA on each listing detail page"
 - "type": One of: "ui", "api", "data", "integration", "performance"
 - "testable": Boolean, must be true. If you cannot make it testable, rewrite until it is.
-- "estimated_cost": Estimated implementation cost in USD (rough order of magnitude)
+- "estimated_cost": Estimated pipeline execution cost in USD. This is the cost for an AI agent to build this, not human engineering time.
+  Cost guide: ${prefs.cost_calibration ? `Simple feature: ${prefs.cost_calibration.simple_work_item}. Moderate: ${prefs.cost_calibration.moderate_work_item}. Complex: ${prefs.cost_calibration.complex_work_item}.` : "Simple: $3-5, Moderate: $5-8, Complex: $8-15."}
+
+IMPORTANT RULES:
+${(prefs.patterns_learned || []).map(p => `- ${p}`).join("\n")}
+- Generate 5-8 criteria per PRD, not 15-20. Broader is better than granular.
+- Never mention HTTP status codes, JSON field names, database schemas, or file paths.
+- Frame everything as user outcomes or system behaviors visible to the PM.
 
 Return a JSON array of criteria objects. Return ONLY the JSON array, no markdown fences or explanation.`,
     user: `Generate acceptance criteria for this PRD:\n\n${prdText}`,
@@ -138,14 +166,23 @@ Return a JSON array of criteria objects. Return ONLY the JSON array, no markdown
 }
 
 function buildRevisionPrompt(prdText, currentCriteria, feedback) {
+  const prefs = pmPreferences;
   return {
-    system: `You are an expert product analyst. You previously generated acceptance criteria for a PRD. The PM has provided feedback via comments. Revise the criteria incorporating the feedback.
+    system: `You are a product analyst revising acceptance criteria based on PM feedback.
+
+AUDIENCE: ${prefs.audience || "Technical PM who understands product concepts but does not write code."}
+TONE: ${prefs.tone || "Direct, concise, outcome-focused."}
 
 Each criterion MUST have:
-- "description": Concrete, measurable statement
+- "description": Clear, outcome-focused statement for a PM (not technical specs)
 - "type": One of: "ui", "api", "data", "integration", "performance"
 - "testable": Boolean (must be true)
-- "estimated_cost": Estimated implementation cost in USD
+- "estimated_cost": Pipeline execution cost in USD (Simple: $3-5, Moderate: $5-8, Complex: $8-15)
+
+RULES:
+${(prefs.patterns_learned || []).map(p => `- ${p}`).join("\n")}
+- 5-8 criteria total, broader is better than granular
+- No HTTP codes, JSON fields, file paths, or implementation details
 
 Return a JSON array of criteria objects. Return ONLY the JSON array, no markdown fences or explanation.`,
     user: `PRD:\n${prdText}\n\nCurrent criteria:\n${JSON.stringify(currentCriteria, null, 2)}\n\nFeedback to incorporate:\n${feedback}`,

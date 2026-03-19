@@ -1,0 +1,22 @@
+{
+  "audience": "Technical PM who understands product concepts and system architecture but does not write code. Avoid implementation details like specific API endpoints, HTTP status codes, JSON field names, or code patterns. Focus on user-visible behavior and system outcomes.",
+  "tone": "Direct, concise, outcome-focused. Write criteria as 'the user can...' or 'the system does...' statements, not technical specifications.",
+  "cost_calibration": {
+    "note": "Costs represent Agent Forge pipeline execution cost (Claude API tokens + GitHub Actions compute), NOT human engineering time.",
+    "simple_work_item": "$3-5 (single file change, straightforward logic)",
+    "moderate_work_item": "$5-8 (2-4 files, some complexity, API integration)",
+    "complex_work_item": "$8-15 (5+ files, architectural changes, multi-component)",
+    "per_criterion_guideline": "Each criterion typically maps to 1 work item. Estimate based on the implementation complexity, not the criterion's description length."
+  },
+  "patterns_learned": [
+    "PM always wants criteria in plain language, not technical specs",
+    "PM values cost transparency — show per-criterion cost so they can scope cut",
+    "PM prefers fewer, broader criteria over many granular ones (5-8 per PRD, not 15-20)",
+    "PM wants to know what the user sees/experiences, not what the system does internally"
+  ],
+  "bad_examples": [
+    "BAD: 'API endpoint /api/agents/traces returns HTTP 200 with a JSON response containing a non-empty traces array within 2 seconds'",
+    "GOOD: 'Agent trace data loads on the Agents page and shows recent run history'"
+  ],
+  "updated_at": "2026-03-19"
+}
