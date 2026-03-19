@@ -66,3 +66,75 @@
 - **Create TLM memory migration script and compatibility adapter** (jamesstineheath/agent-forge)
 
 - **Integration test: end-to-end episode lifecycle** (jamesstineheath/agent-forge)
+
+- **Define shared travel types and models** (jamesstineheath/personal-assistant)
+
+- **Create travel profile persistence layer** (jamesstineheath/personal-assistant)
+
+- **Create trip persistence layer** (jamesstineheath/personal-assistant)
+
+- **Create travel profile API routes** (jamesstineheath/personal-assistant)
+
+- **Create trip API routes** (jamesstineheath/personal-assistant)
+
+- **Create travel profile chat tools** (jamesstineheath/personal-assistant)
+
+- **Build travel profile settings UI** (jamesstineheath/personal-assistant)
+
+- **Build travel page with trip list and status badges** (jamesstineheath/personal-assistant)
+
+- **Build trip detail page shell** (jamesstineheath/personal-assistant)
+
+- **Build destination research engine and tools** (jamesstineheath/personal-assistant)
+
+- **Build itinerary generation engine and persistence** (jamesstineheath/personal-assistant)
+
+- **Build itinerary grid UI with childcare overlay** (jamesstineheath/personal-assistant)
+
+- **Build booking management engine and tools** (jamesstineheath/personal-assistant)
+
+- **Build booking tracker UI component** (jamesstineheath/personal-assistant)
+
+- **Build travel monitoring agent and cron job** (jamesstineheath/personal-assistant)
+
+- **Build alerts panel UI component** (jamesstineheath/personal-assistant)
+
+- **Compose trip detail page with all sub-features** (jamesstineheath/personal-assistant)
+
+- **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
+
+- **Define shared travel types and models** (jamesstineheath/personal-assistant)
+
+- **Create travel profile persistence layer** (jamesstineheath/personal-assistant)
+
+- **Create trip persistence layer and API routes** (jamesstineheath/personal-assistant)
+
+- **Create travel prompt section** (jamesstineheath/personal-assistant)
+
+- **Create travel tools — profile and trip management** (jamesstineheath/personal-assistant)
+
+- **Build travel profile editor UI component** (jamesstineheath/personal-assistant)
+
+- **Build trip list and card UI components** (jamesstineheath/personal-assistant)
+
+- **Build Travel main page** (jamesstineheath/personal-assistant)
+
+- **Build destination research engine** (jamesstineheath/personal-assistant)
+
+- **Build research results UI component** (jamesstineheath/personal-assistant)
+
+- **Build itinerary generation engine** (jamesstineheath/personal-assistant)
+
+- **Build itinerary grid and childcare overlay UI** (jamesstineheath/personal-assistant)
+
+- **Build booking management engine** (jamesstineheath/personal-assistant)
+
+- **Build booking tracker UI component** (jamesstineheath/personal-assistant)
+
+- **Build travel monitoring agent and cron job** (jamesstineheath/personal-assistant)
+
+- **Build alerts panel UI component** (jamesstineheath/personal-assistant)
+
+- **Compose trip detail page with all sections** (jamesstineheath/personal-assistant)
+
+- **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
