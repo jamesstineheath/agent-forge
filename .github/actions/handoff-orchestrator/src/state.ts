@@ -180,8 +180,15 @@ function findAdvancePath(
   if (currentIdx === -1) return null;
 
   // Try each subsequent state as a potential target where the event is valid
+  // BUT never auto-advance past CIPassed — CI must complete on its own.
+  // Without this guard, a code_review_completed event arriving before CI finishes
+  // would skip CIRunning→CIPassed, masking CI failures.
   for (let i = currentIdx + 1; i < STATE_ORDER.length; i++) {
     const candidateState = STATE_ORDER[i];
+    // Stop auto-advancing if we'd need to skip past CI without a CI event
+    if (candidateState === HandoffState.CIPassed && event.type !== "ci_completed") {
+      return null;
+    }
     if (getNextState(candidateState, event) !== null) {
       // Found a state that accepts this event - return the path to get there
       return STATE_ORDER.slice(currentIdx + 1, i + 1);
