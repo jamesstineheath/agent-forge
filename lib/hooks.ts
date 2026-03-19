@@ -254,6 +254,31 @@ export function useDebateSessions(repo?: string, pr?: number) {
   return { data, error, isLoading, mutate };
 }
 
+// === TLM Agents (GitHub Actions) ===
+
+export interface TlmWorkflowStatus {
+  name: string;
+  workflowFile: string;
+  lastRunAt: string | null;
+  lastConclusion: string | null;
+  totalRuns: number;
+  successRate: number | null;
+}
+
+export interface TlmAgentsData {
+  workflows: TlmWorkflowStatus[];
+  fetchedAt: string;
+}
+
+export function useTlmAgents() {
+  const { data, error, isLoading } = useSWR<TlmAgentsData>(
+    "/api/agents/tlm-agents",
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+  return { data, error, isLoading };
+}
+
 // === Cost Analytics ===
 
 export function useCostAnalytics(period: string = "30d") {
