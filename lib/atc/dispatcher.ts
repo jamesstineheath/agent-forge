@@ -39,12 +39,13 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
 
   // === PHASE 1: DISPATCH ===
 
-  // 1. Load active work items (executing or reviewing)
-  const [executingEntries, reviewingEntries] = await Promise.all([
+  // 1. Load active work items (executing, reviewing, or retrying)
+  const [executingEntries, reviewingEntries, retryingEntries] = await Promise.all([
     listWorkItems({ status: "executing" }),
     listWorkItems({ status: "reviewing" }),
+    listWorkItems({ status: "retrying" }),
   ]);
-  const activeEntries = [...executingEntries, ...reviewingEntries];
+  const activeEntries = [...executingEntries, ...reviewingEntries, ...retryingEntries];
 
   // 1.1: Build lightweight activeExecutions for dispatch (no GitHub API)
   const activeExecutions: ATCState["activeExecutions"] = [];
@@ -102,7 +103,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
 
   // 1.3: Auto-dispatch
   const totalActive = activeExecutions.filter(
-    (e) => e.status === "executing" || e.status === "reviewing"
+    (e) => e.status === "executing" || e.status === "reviewing" || e.status === "retrying"
   ).length;
 
   let slotsRemaining = GLOBAL_CONCURRENCY_LIMIT - totalActive;
@@ -284,9 +285,10 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
     const activeItems = await Promise.all([
       listWorkItems({ status: "executing" }),
       listWorkItems({ status: "reviewing" }),
+      listWorkItems({ status: "retrying" }),
       listWorkItems({ status: "ready" }),
     ]);
-    const [executingItems, reviewingItems, readyItems] = activeItems;
+    const [executingItems, reviewingItems, retryingItems, readyItems] = activeItems;
 
     const lines: string[] = [
       "# Active Work Items",
@@ -323,6 +325,18 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
       }
     }
 
+    if (retryingItems.length > 0) {
+      lines.push("## Retrying", "");
+      for (const entry of retryingItems) {
+        const item = await getWorkItem(entry.id);
+        if (!item) continue;
+        lines.push(`- **${item.title}** (${item.targetRepo})`);
+        lines.push(`  - Branch: \`${item.handoff?.branch ?? "unknown"}\``);
+        lines.push(`  - Retry: ${item.execution?.retryCount ?? "?"}`);
+        lines.push("");
+      }
+    }
+
     if (readyItems.length > 0) {
       lines.push("## Queued for Dispatch", "");
       for (const entry of readyItems) {
@@ -335,7 +349,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
       }
     }
 
-    if (executingItems.length === 0 && reviewingItems.length === 0 && readyItems.length === 0) {
+    if (executingItems.length === 0 && reviewingItems.length === 0 && retryingItems.length === 0 && readyItems.length === 0) {
       lines.push("*No active work items.*", "");
     }
 

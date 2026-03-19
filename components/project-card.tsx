@@ -21,6 +21,7 @@ const ACTIVE_STATUSES: WorkItem["status"][] = [
   "generating",
   "executing",
   "reviewing",
+  "retrying",
 ];
 
 const statusColor = (s: string) =>
@@ -30,10 +31,13 @@ const statusColor = (s: string) =>
     reviewing: "text-status-reviewing",
     executing: "text-status-executing",
     generating: "text-status-executing",
+    retrying: "text-amber-600",
     queued: "text-status-queued",
     ready: "text-status-queued",
     blocked: "text-status-blocked",
     failed: "text-status-blocked",
+    verified: "text-status-merged",
+    partial: "text-orange-600",
     draft: "text-muted-foreground",
   })[s] || "text-muted-foreground";
 
@@ -53,6 +57,9 @@ const statusBg = (s: string) =>
     blocked: "bg-status-blocked/10 text-status-blocked border-status-blocked/20",
     failed: "bg-status-blocked/10 text-status-blocked border-status-blocked/20",
     Failed: "bg-status-blocked/10 text-status-blocked border-status-blocked/20",
+    retrying: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+    verified: "bg-status-merged/10 text-status-merged border-status-merged/20",
+    partial: "bg-orange-500/10 text-orange-600 border-orange-500/20",
     Draft: "bg-secondary text-muted-foreground border-border",
     draft: "bg-secondary text-muted-foreground border-border",
   })[s] || "bg-secondary text-muted-foreground border-border";
@@ -69,6 +76,8 @@ function StatusIcon({ status }: { status: string }) {
     case "executing":
     case "generating":
       return <Play size={size} className={cls} />;
+    case "retrying":
+      return <Clock size={size} className={cls} />;
     case "blocked":
       return <Pause size={size} className={cls} />;
     case "failed":
@@ -109,6 +118,13 @@ function WorkItemMeta({ item }: { item: WorkItem }) {
       <span className="inline-flex items-center gap-0.5 text-[10px] font-mono font-medium text-primary">
         <GitPullRequest className="h-2.5 w-2.5" />
         #{item.execution.prNumber}
+      </span>
+    );
+  }
+  if (item.status === "retrying") {
+    return (
+      <span className="text-xs text-amber-600/70">
+        Retrying{item.execution?.retryCount ? ` (${item.execution.retryCount})` : ""}
       </span>
     );
   }

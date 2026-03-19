@@ -28,11 +28,14 @@ const STATUS_COLORS: Record<WorkItem["status"], string> = {
   reviewing: "bg-status-reviewing/15 text-status-reviewing",
   merged: "bg-status-merged/15 text-status-merged",
   failed: "bg-status-blocked/15 text-status-blocked",
+  retrying: "bg-amber-500/15 text-amber-600",
   parked: "bg-muted text-muted-foreground",
   blocked: "bg-status-blocked/15 text-status-blocked",
   cancelled: "bg-muted text-muted-foreground/60",
   escalated: "bg-status-reviewing/15 text-status-reviewing",
   superseded: "bg-muted text-muted-foreground/60",
+  verified: "bg-status-merged/15 text-status-merged",
+  partial: "bg-orange-500/15 text-orange-600",
 };
 
 function formatDate(ts?: string | null): string {
