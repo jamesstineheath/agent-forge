@@ -42,6 +42,18 @@ function generateEventId(): string {
   return `evt_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const APPROVAL_PATTERNS = [
+  /^\s*approved?\s*$/i,
+  /^\s*lgtm\s*$/i,
+  /^\s*ship\s*it\s*$/i,
+  /^\s*merge\s*$/i,
+  /^\s*looks\s*good\s*$/i,
+];
+
+function isApprovalComment(body: string): boolean {
+  return APPROVAL_PATTERNS.some((p) => p.test(body.trim()));
+}
+
 interface GitHubPayload {
   action?: string;
   pull_request?: {
@@ -49,7 +61,16 @@ interface GitHubPayload {
     merged?: boolean;
     head?: { ref: string; sha: string };
   };
-  repository?: { full_name: string };
+  issue?: {
+    number: number;
+    pull_request?: { url: string };
+  };
+  comment?: {
+    body: string;
+    user: { login: string; type: string };
+  };
+  sender?: { login: string; type: string };
+  repository?: { full_name: string; owner?: { login: string } };
   ref?: string;
   after?: string;
   workflow_run?: {
@@ -197,6 +218,37 @@ function mapToWebhookEvents(
         timestamp,
         repo,
         payload,
+      });
+      break;
+    }
+
+    case "issue_comment": {
+      // issue_comment fires for both issues and PRs — only care about PR comments
+      if (!body.issue?.pull_request) break;
+      if (body.action !== "created") break;
+
+      const commenter = body.comment?.user;
+      const commentBody = body.comment?.body ?? "";
+      // Filter out bots
+      if (commenter?.type === "Bot") break;
+      // Only react to repo owner approval keywords
+      const repoOwner = body.repository?.owner?.login;
+      if (!commenter || commenter.login !== repoOwner) break;
+      if (!isApprovalComment(commentBody)) break;
+
+      const prNum = body.issue.number;
+      events.push({
+        id: generateEventId(),
+        type: "github.pr.review_submitted",
+        timestamp,
+        repo,
+        payload: {
+          prNumber: prNum,
+          reviewer: commenter.login,
+          reviewState: "approved",
+          action: "comment_approved",
+          summary: `Owner approved PR #${prNum} via comment: "${commentBody.trim()}"`,
+        },
       });
       break;
     }
