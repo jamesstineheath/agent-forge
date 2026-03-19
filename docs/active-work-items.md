@@ -7,6 +7,7 @@
 - **Cost Estimator Utility and API Route** (jamesstineheath/personal-assistant)
   - Branch: `fix/cost-estimator-utility-and-api-route`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/353
+  - Files: app/api/realestate/cost-estimate/route.ts, handoffs/cost-estimator-utility-and-api-route.md
 
 - **Listing Data Model Enhancement — priceHistory, coordinates, proximityData fields** (jamesstineheath/personal-assistant)
   - Branch: `fix/listing-data-model-enhancement-pricehistory-coordi`
