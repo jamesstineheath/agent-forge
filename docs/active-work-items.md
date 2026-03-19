@@ -11,18 +11,21 @@
 
 ## In Review
 
-- **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
-  - Branch: `fix/coach-chat-interface-locks-up-after-filing-a-bug-v`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/308
-  - Files: handoffs/coach-chat-interface-locks-up-after-filing-a-bug-v.md
+- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `feat/create-change-proposer-module-srcchange-proposerts`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/326
+
+- **Define Episode types and data models in lib/types.ts** (jamesstineheath/agent-forge)
+  - Branch: `fix/define-episode-types-and-data-models-in-libtypests`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/316
 
 ## Queued for Dispatch
 
-- **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
-  - Estimated files: .github/actions/tlm-feedback-compiler/src/change-proposer.ts, .github/actions/tlm-feedback-compiler/src/types.ts, docs/feedback-compiler-history.json
-
 - **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
   - Estimated files: .github/actions/tlm-feedback-compiler/dist/index.js, .github/actions/tlm-feedback-compiler/dist/licenses.txt
+
+- **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
+  - Estimated files: components/coaching/coach-drawer.tsx, components/coaching/coaching-chat.tsx, app/(app)/training/ask-coach/page.tsx
 
 - **Quick Add and Search Now UI Buttons** (jamesstineheath/personal-assistant)
 
@@ -35,8 +38,6 @@
 - **Implement Episode persistence store (lib/episodic-memory.ts)** (jamesstineheath/agent-forge)
 
 - **Implement Episode recorder with lifecycle hooks** (jamesstineheath/agent-forge)
-
-- **Wire embeddings index into episode persistence and recorder** (jamesstineheath/agent-forge)
 
 - **Inject episode retrieval into orchestrator planning flow** (jamesstineheath/agent-forge)
 
