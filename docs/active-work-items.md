@@ -4,16 +4,15 @@
 
 ## Currently Executing
 
+- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
+  - Branch: `feat/migrate-orchestrator-to-use-model-router`
+  - Files: lib/orchestrator.ts
+  - Started: 2026-03-19T16:31:37.237Z
+
 - **Migrate PM agent to use model router** (jamesstineheath/agent-forge)
   - Branch: `feat/migrate-pm-agent-to-use-model-router`
   - Files: lib/pm-agent.ts
-  - Started: 2026-03-19T16:03:29.984Z
-
-## Retrying
-
-- **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
-  - Branch: `feat/migrate-orchestrator-to-use-model-router`
-  - Retry: 1
+  - Started: 2026-03-19T16:32:43.421Z
 
 ## Queued for Dispatch
 
