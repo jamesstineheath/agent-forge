@@ -14,6 +14,34 @@ import { dispatchUnblockedItems } from "./atc/dispatcher";
 const LOG_PREFIX = "[event-reactor]";
 
 /**
+ * Approval patterns for detecting human approval via PR comments.
+ * The repo owner cannot use GitHub's formal "Approve" button because the pipeline
+ * opens PRs under their PAT (making them the author, and GitHub blocks self-approval).
+ * Instead, approval is detected from owner comments matching these patterns.
+ */
+const APPROVAL_PATTERNS = [
+  "approve",
+  "approved",
+  "lgtm",
+  "looks good",
+  "merge",
+  "ship it",
+];
+
+function isApprovalComment(comment: string): boolean {
+  const normalized = comment.trim().toLowerCase();
+  return APPROVAL_PATTERNS.some(
+    (pattern) =>
+      normalized === pattern ||
+      normalized.startsWith(pattern + " ") ||
+      normalized.startsWith(pattern + ".") ||
+      normalized.startsWith(pattern + "!") ||
+      normalized.startsWith(pattern + ",") ||
+      normalized.startsWith(pattern + "\n")
+  );
+}
+
+/**
  * React to a batch of webhook events. Called by the webhook handler
  * after storing events. Each event is processed independently —
  * failures in one don't block others.
@@ -46,7 +74,7 @@ async function reactToEvent(event: WebhookEvent): Promise<void> {
       await handleReviewSubmitted(event);
       break;
     case "github.pr.comment":
-      await handleHumanFeedback(event);
+      await handleOwnerComment(event);
       break;
     case "github.workflow.completed":
       await handleWorkflowCompleted(event);
@@ -275,11 +303,13 @@ async function handleReviewSubmitted(event: WebhookEvent): Promise<void> {
 }
 
 /**
- * Human comment on a flagged PR → re-trigger execution with feedback.
+ * Owner comment on a flagged PR → approve (merge) or re-trigger with feedback.
  * When the repo owner comments on a PR whose work item is blocked
- * (FLAG_FOR_HUMAN state), re-dispatch execution with the comment as context.
+ * (FLAG_FOR_HUMAN state), check if the comment matches approval patterns.
+ * If approval: merge the PR with admin override, transition to merged.
+ * If feedback: re-dispatch execution with the comment as context.
  */
-async function handleHumanFeedback(event: WebhookEvent): Promise<void> {
+async function handleOwnerComment(event: WebhookEvent): Promise<void> {
   const { prNumber, commentBody } = event.payload;
   if (!prNumber) return;
 
@@ -289,30 +319,60 @@ async function handleHumanFeedback(event: WebhookEvent): Promise<void> {
   // Only act on blocked items (FLAG_FOR_HUMAN state)
   if (item.status !== "blocked") return;
 
-  const branch = item.handoff?.branch;
-  if (!branch) return;
+  if (isApprovalComment(commentBody ?? "")) {
+    // Approval path: merge the PR
+    console.log(`${LOG_PREFIX} owner approved PR #${prNumber} via comment — auto-merging`);
 
-  console.log(`${LOG_PREFIX} human feedback on PR #${prNumber} — re-triggering execution`);
+    const result = await mergePR(event.repo, prNumber);
+    if (!result.merged) {
+      console.error(`${LOG_PREFIX} failed to merge PR #${prNumber}: ${result.error}`);
+      return;
+    }
 
-  // Re-trigger execute-handoff workflow with feedback context
-  try {
-    await triggerWorkflow(item.targetRepo, "execute-handoff.yml", branch, {
-      branch,
-      human_feedback: commentBody ?? "",
+    await updateWorkItem(item.id, {
+      status: "merged",
+      execution: {
+        ...item.execution,
+        completedAt: new Date().toISOString(),
+        outcome: "merged",
+      },
     });
-  } catch (err) {
-    console.error(`${LOG_PREFIX} failed to re-trigger execution for PR #${prNumber}:`, err);
-    return;
-  }
 
-  // Transition back to executing
-  await updateWorkItem(item.id, {
-    status: "executing",
-    execution: {
-      ...item.execution,
-      outcome: undefined,
-    },
-  });
+    // Dispatch any items that were blocked on this one
+    try {
+      const dispatchResult = await dispatchUnblockedItems(item.id, item.targetRepo);
+      if (dispatchResult.dispatched.length > 0) {
+        console.log(`${LOG_PREFIX} dispatched ${dispatchResult.dispatched.length} unblocked item(s) after ${item.id} merged`);
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} failed to dispatch unblocked items:`, err);
+    }
+  } else {
+    // Feedback path: re-trigger execution with the comment
+    const branch = item.handoff?.branch;
+    if (!branch) return;
+
+    console.log(`${LOG_PREFIX} owner feedback on PR #${prNumber} — re-triggering execution`);
+
+    try {
+      await triggerWorkflow(item.targetRepo, "execute-handoff.yml", branch, {
+        branch,
+        human_feedback: commentBody ?? "",
+      });
+    } catch (err) {
+      console.error(`${LOG_PREFIX} failed to re-trigger execution for PR #${prNumber}:`, err);
+      return;
+    }
+
+    // Transition back to executing
+    await updateWorkItem(item.id, {
+      status: "executing",
+      execution: {
+        ...item.execution,
+        outcome: undefined,
+      },
+    });
+  }
 }
 
 /**
