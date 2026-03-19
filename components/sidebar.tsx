@@ -12,7 +12,7 @@ import {
   DollarSign,
   BookMarked,
   Bot,
-
+  Anvil,
   Settings,
   Zap,
   AlertTriangle,
@@ -206,7 +206,7 @@ function MobileNav() {
       <div className="flex md:hidden items-center justify-between border-b border-border bg-sidebar px-4 py-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary">
-            <Zap className="h-3.5 w-3.5 text-primary-foreground" />
+            <Anvil className="h-3.5 w-3.5 text-primary-foreground" />
           </div>
           <span className="text-[14px] font-display font-bold text-foreground">Agent Forge</span>
         </div>

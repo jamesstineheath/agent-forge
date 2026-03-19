@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4338ca"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e2e8f0"/>
+      <stop offset="100%" stop-color="#94a3b8"/>
+    </linearGradient>
+    <linearGradient id="handle" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#78716c"/>
+      <stop offset="100%" stop-color="#57534e"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+
+  <!-- Anvil body -->
+  <path d="M120 320 L160 260 L352 260 L392 320 L400 320 L400 340 L112 340 L112 320 Z" fill="url(#metal)"/>
+
+  <!-- Anvil horn (left pointed end) -->
+  <path d="M160 260 L80 280 L80 300 L120 320 L160 290 Z" fill="url(#metal)"/>
+
+  <!-- Anvil top face -->
+  <path d="M160 260 L352 260 L352 250 L160 250 Z" fill="#cbd5e1"/>
+
+  <!-- Anvil base/pedestal -->
+  <path d="M140 340 L130 400 L382 400 L372 340 Z" fill="#64748b"/>
+  <path d="M130 400 L382 400 L382 416 L130 416 Z" fill="#475569" rx="4"/>
+
+  <!-- Hammer head -->
+  <rect x="240" y="110" width="100" height="50" rx="8" fill="url(#metal)" transform="rotate(-35, 290, 135)"/>
+
+  <!-- Hammer handle -->
+  <rect x="195" y="130" width="12" height="120" rx="4" fill="url(#handle)" transform="rotate(-35, 201, 190)"/>
+
+  <!-- Sparks -->
+  <circle cx="220" cy="210" r="5" fill="#fbbf24" filter="url(#glow)" opacity="0.9"/>
+  <circle cx="195" cy="195" r="4" fill="#fb923c" filter="url(#glow)" opacity="0.85"/>
+  <circle cx="240" cy="190" r="3" fill="#fbbf24" filter="url(#glow)" opacity="0.8"/>
+  <circle cx="175" cy="215" r="3.5" fill="#f97316" filter="url(#glow)" opacity="0.75"/>
+  <circle cx="210" cy="175" r="2.5" fill="#fbbf24" filter="url(#glow)" opacity="0.7"/>
+  <circle cx="250" cy="205" r="2" fill="#fb923c" filter="url(#glow)" opacity="0.65"/>
+
+  <!-- Flying spark trails -->
+  <circle cx="160" cy="185" r="2" fill="#fbbf24" opacity="0.5"/>
+  <circle cx="145" cy="175" r="1.5" fill="#fbbf24" opacity="0.3"/>
+  <circle cx="265" cy="175" r="1.5" fill="#fb923c" opacity="0.4"/>
+</svg>
