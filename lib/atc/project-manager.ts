@@ -56,14 +56,7 @@ export async function runProjectManager(ctx: CycleContext): Promise<void> {
         continue;
       }
 
-      try {
-        await deleteJson(`atc/project-decomposed/${project.projectId}`);
-        console.log(`[project-manager] §4: cleared dedup guard for project ${project.projectId}`);
-      } catch {
-        console.log(`[project-manager] §4: no dedup guard to clear for project ${project.projectId} (ok)`);
-      }
-
-      const staleStates: WorkItem["status"][] = ["failed", "parked", "blocked", "ready", "filed", "queued"];
+      // Load all work items for this project
       const allEntries = await listWorkItems({});
       const projectItems: WorkItem[] = [];
       for (const entry of allEntries) {
@@ -72,21 +65,72 @@ export async function runProjectManager(ctx: CycleContext): Promise<void> {
           projectItems.push(wi);
         }
       }
-      const itemsToCancel = projectItems.filter((item) => staleStates.includes(item.status));
 
-      for (const item of itemsToCancel) {
-        await updateWorkItem(item.id, { status: "cancelled" });
+      const mergedItems = projectItems.filter((item) => item.status === "merged");
+      const failedOrParked = projectItems.filter(
+        (item) => item.status === "failed" || item.status === "parked"
+      );
+
+      if (mergedItems.length > 0 && failedOrParked.length > 0) {
+        // Smart retry: reset only failed/parked items, preserve merged work
+        console.log(
+          `[project-manager] §4: smart retry for ${project.projectId} — ` +
+          `${mergedItems.length} merged, ${failedOrParked.length} failed/parked to reset`
+        );
+
+        for (const item of failedOrParked) {
+          // Delete stale branch before retry
+          if (item.handoff?.branch) {
+            try {
+              const { deleteBranch } = await import("../github");
+              await deleteBranch(item.targetRepo, item.handoff.branch);
+            } catch { /* ok if branch doesn't exist */ }
+          }
+
+          await updateWorkItem(item.id, {
+            status: "ready",
+            execution: {
+              retryCount: 0,
+            },
+          });
+        }
+
+        // Do NOT clear dedup guard — decomposition stays valid
+        await clearRetryFlag(project.id, retryCount);
+
+        events.push(makeEvent(
+          "project_retry", project.projectId, undefined, "Execute",
+          `Smart retry: reset ${failedOrParked.length} failed/parked items ` +
+          `(${mergedItems.length} merged preserved). Attempt ${retryCount + 1}`
+        ));
+
+        console.log(`[project-manager] §4: smart retry for ${project.projectId} (attempt ${retryCount + 1})`);
+      } else {
+        // Full retry: no merged items exist, or no failed items to reset — re-decompose from scratch
+        try {
+          await deleteJson(`atc/project-decomposed/${project.projectId}`);
+          console.log(`[project-manager] §4: cleared dedup guard for project ${project.projectId}`);
+        } catch {
+          console.log(`[project-manager] §4: no dedup guard to clear for project ${project.projectId} (ok)`);
+        }
+
+        const staleStates: WorkItem["status"][] = ["failed", "parked", "blocked", "ready", "filed", "queued"];
+        const itemsToCancel = projectItems.filter((item) => staleStates.includes(item.status));
+
+        for (const item of itemsToCancel) {
+          await updateWorkItem(item.id, { status: "cancelled" });
+        }
+        console.log(`[project-manager] §4: cancelled ${itemsToCancel.length} stale work items for project ${project.projectId}`);
+
+        await clearRetryFlag(project.id, retryCount);
+
+        events.push(makeEvent(
+          "project_retry", project.projectId, undefined, "Execute",
+          `Full retry: cancelled ${itemsToCancel.length} items, re-decomposing. Attempt ${retryCount + 1}`
+        ));
+
+        console.log(`[project-manager] §4: full retry for ${project.projectId} (attempt ${retryCount + 1})`);
       }
-      console.log(`[project-manager] §4: cancelled ${itemsToCancel.length} stale work items for project ${project.projectId}`);
-
-      await clearRetryFlag(project.id, retryCount);
-
-      events.push(makeEvent(
-        "project_retry", project.projectId, undefined, "Execute",
-        `Retry initiated (newRetryCount=${retryCount + 1}, cancelledItems=${itemsToCancel.length})`
-      ));
-
-      console.log(`[project-manager] §4: project ${project.projectId} reset for retry (attempt ${retryCount + 1})`);
     }
   } catch (err) {
     console.error(`[project-manager] §4 error:`, err);

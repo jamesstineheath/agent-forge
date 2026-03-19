@@ -28,29 +28,40 @@ export async function checkProjectCompletion(
     return { isTerminal: false, status: null, summary: '' };
   }
 
-  // All items are in terminal states
+  // All items are in terminal states — classify by outcome
   const mergedItems = projectItems.filter((item) => item.status === 'merged');
-  const failedItems = projectItems.filter((item) => item.status !== 'merged');
+  const cancelledItems = projectItems.filter((item) => item.status === 'cancelled');
+  const activeFailures = projectItems.filter(
+    (item) => item.status !== 'merged' && item.status !== 'cancelled'
+  );
 
-  if (failedItems.length === 0) {
+  // All merged (with optional cancelled) = Complete
+  if (activeFailures.length === 0 && mergedItems.length > 0) {
+    const cancelledNote = cancelledItems.length > 0 ? `, ${cancelledItems.length} cancelled` : '';
     return {
       isTerminal: true,
       status: 'Complete',
-      summary: `All ${mergedItems.length} items merged`,
+      summary: `${mergedItems.length} merged${cancelledNote}`,
     };
   }
 
-  // Mix or all failed — a project is Failed if any item is in a non-merged terminal state
-  const failedTitles = failedItems.map((item) => item.title || item.id).join(', ');
-  const summary =
-    mergedItems.length > 0
-      ? `${mergedItems.length} merged, ${failedItems.length} failed/parked: ${failedTitles}`
-      : `All items failed/parked: ${failedTitles}`;
+  // Has failed/parked items = Failed
+  if (activeFailures.length > 0) {
+    const failedTitles = activeFailures.map((item) => item.title || item.id).join(', ');
+    return {
+      isTerminal: true,
+      status: 'Failed',
+      summary: mergedItems.length > 0
+        ? `${mergedItems.length} merged, ${activeFailures.length} failed/parked: ${failedTitles}`
+        : `All items failed/parked: ${failedTitles}`,
+    };
+  }
 
+  // All cancelled, none merged = Failed
   return {
     isTerminal: true,
     status: 'Failed',
-    summary,
+    summary: `All ${cancelledItems.length} items cancelled, none merged`,
   };
 }
 
