@@ -4,7 +4,7 @@ import { fetchRepoContext, type RepoContext } from "./orchestrator";
 import { listRepos, getRepo } from "./repos";
 import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
-import type { Project, ProjectTargetRepo, WorkItem, RepoConfig, DecomposerConfig, SubPhase, PhaseBreakdown } from "./types";
+import type { Project, ProjectTargetRepo, WorkItem, RepoConfig, DecomposerConfig, SubPhase, PhaseBreakdown, Priority } from "./types";
 
 // --- Constants ---
 
@@ -839,6 +839,8 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       riskLevel: item.riskLevel,
       complexity: item.complexity,
       dependencies: resolvedDeps,
+      triagePriority: (project.priority as Priority) ?? 'P1',
+      rank: project.rank ?? 999,
     });
 
     indexToId.set(i, workItem.id);
@@ -1138,6 +1140,8 @@ export async function decomposeFromPlan(input: {
   targetRepo: string;
   planContent: string;
   projectId?: string;
+  priority?: Priority;
+  rank?: number;
 }): Promise<DecompositionResult> {
   const { prdId, prdTitle, targetRepo, planContent, projectId } = input;
 
@@ -1151,11 +1155,12 @@ export async function decomposeFromPlan(input: {
       projectId: projectId || `PRD-${prdId.slice(0, 8)}`,
       title: prdTitle,
       targetRepo: (targetRepo.includes("/") ? targetRepo.split("/")[1] : targetRepo) as ProjectTargetRepo,
-      priority: "P1",
+      priority: input.priority ?? "P1",
       complexity: "Moderate",
       riskLevel: "Medium",
       status: "Executing",
       planUrl: null,
+      rank: input.rank,
       createdAt: new Date().toISOString(),
     };
 
