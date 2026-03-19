@@ -4,11 +4,6 @@
 
 ## Currently Executing
 
-- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
-  - Branch: `fix/create-episodes-api-route-get-apiepisodes`
-  - Files: app/api/episodes/route.ts, app/api/episodes/[id]/route.ts
-  - Started: 2026-03-19T11:52:25.261Z
-
 - **Create TLM memory migration script and compatibility adapter** (jamesstineheath/agent-forge)
   - Branch: `feat/create-tlm-memory-migration-script-and-compatibili`
   - Files: scripts/migrate-tlm-memory.ts, lib/episode-compat.ts, lib/episode-recorder.ts, app/api/agents/tlm-memory/route.ts
@@ -16,9 +11,14 @@
 
 ## In Review
 
-- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
-  - Branch: `feat/build-distindexjs-bundle-via-ncc`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/327
+- **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
+  - Branch: `fix/coach-chat-interface-locks-up-after-filing-a-bug-v`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/308
+  - Files: handoffs/coach-chat-interface-locks-up-after-filing-a-bug-v.md
+
+- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
+  - Branch: `fix/create-episodes-api-route-get-apiepisodes`
+  - PR: https://github.com/jamesstineheath/agent-forge/pull/320
 
 - **Define shared travel types and models** (jamesstineheath/personal-assistant)
   - Branch: `fix/define-shared-travel-types-and-models`
@@ -26,9 +26,6 @@
   - Files: handoffs/define-shared-travel-types-and-models.md, lib/travel/types.ts
 
 ## Queued for Dispatch
-
-- **Coach chat interface locks up after filing a bug via file_work_item** (jamesstineheath/personal-assistant)
-  - Estimated files: components/coaching/coach-drawer.tsx, components/coaching/coaching-chat.tsx, app/(app)/training/ask-coach/page.tsx
 
 - **Quick Add and Search Now UI Buttons** (jamesstineheath/personal-assistant)
 
