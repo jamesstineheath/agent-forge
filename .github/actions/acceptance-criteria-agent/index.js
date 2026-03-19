@@ -429,10 +429,12 @@ async function main() {
 }
 
 async function handleDraftPage(anthropic, pageId, title, blocks) {
-  // Skip if already has acceptance criteria section
+  // If Draft page already has criteria (e.g., reset after bad generation), delete old section and regenerate
   if (hasAcceptanceCriteriaSection(blocks)) {
-    console.log(`[AcceptanceCriteriaAgent] "${title}" already has criteria, skipping.`);
-    return;
+    console.log(`[AcceptanceCriteriaAgent] "${title}" has stale criteria from previous run, clearing before regeneration.`);
+    await deleteAcceptanceCriteriaSection(blocks);
+    // Re-fetch blocks after deletion
+    blocks = await getPageBlocks(pageId);
   }
 
   const prdText = blocksToText(blocks);
