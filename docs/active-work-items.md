@@ -9,10 +9,12 @@
   - Files: components/realestate/realestate-view.tsx, components/realestate/add-listing-dialog.tsx, components/realestate/search-dialog.tsx
   - Started: 2026-03-19T12:22:32.572Z
 
-## In Review
+- **Add shared types for model routing (TaskType, WorkItemSignals)** (jamesstineheath/agent-forge)
+  - Branch: `fix/add-shared-types-for-model-routing-tasktype-workit`
+  - Files: lib/types.ts
+  - Started: 2026-03-19T12:26:21.604Z
 
-- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
-  - Branch: `fix/create-episodes-api-route-get-apiepisodes`
+## In Review
 
 - **Create TLM memory migration script and compatibility adapter** (jamesstineheath/agent-forge)
   - Branch: `feat/create-tlm-memory-migration-script-and-compatibili`
@@ -35,6 +37,9 @@
 - **Wire Comps Tab and Proximity Section into Main Real Estate View** (jamesstineheath/personal-assistant)
 
 - **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
+
+- **Create Episodes API route (GET /api/episodes)** (jamesstineheath/agent-forge)
+  - Estimated files: app/api/episodes/route.ts, app/api/episodes/[id]/route.ts
 
 - **Create Episodes list dashboard page (/episodes)** (jamesstineheath/agent-forge)
 
@@ -109,8 +114,6 @@
 - **Compose trip detail page with all sections** (jamesstineheath/personal-assistant)
 
 - **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
-
-- **Add shared types for model routing (TaskType, WorkItemSignals)** (jamesstineheath/agent-forge)
 
 - **Add model routing event types (ModelCallEvent, ModelEscalationEvent)** (jamesstineheath/agent-forge)
 
