@@ -43,7 +43,7 @@ async function callClaudeAPI(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 4096,
+      max_tokens: 8192,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     }),
@@ -624,16 +624,53 @@ async function run(): Promise<void> {
       core.info(`PR touches ${tier2Files.length} Tier 2 sensitive path(s), adding context for Claude review.`);
     }
 
-    // Truncate very large diffs to avoid token limits (keep first 150k chars, ~37k tokens)
+    // Truncate very large diffs to avoid token limits.
+    // Strategy: if the full diff is too large, include only the most important files
+    // (non-test, non-handoff, non-generated) in full, and summarize the rest.
     let reviewDiff = diff;
-    if (diff.length > 150000) {
-      reviewDiff =
-        diff.substring(0, 150000) +
-        "\n\n[DIFF TRUNCATED - original was " +
-        diff.length +
-        " characters]";
+    const MAX_DIFF_CHARS = 150000;
+    if (diff.length > MAX_DIFF_CHARS) {
+      // Split diff by file sections and prioritize non-boilerplate files
+      const fileSections = diff.split(/^diff --git /m).filter(Boolean);
+      const prioritized: string[] = [];
+      const deprioritized: string[] = [];
+
+      for (const section of fileSections) {
+        const fullSection = "diff --git " + section;
+        const isHandoff = section.includes("handoffs/");
+        const isTest = section.includes(".test.") || section.includes("__tests__");
+        const isGenerated = section.includes("dist/") || section.includes(".lock");
+
+        if (isHandoff || isTest || isGenerated) {
+          deprioritized.push(fullSection);
+        } else {
+          prioritized.push(fullSection);
+        }
+      }
+
+      // Build truncated diff: prioritized files first, then deprioritized until limit
+      let truncated = "";
+      const included: string[] = [];
+      const skipped: string[] = [];
+
+      for (const section of [...prioritized, ...deprioritized]) {
+        if (truncated.length + section.length < MAX_DIFF_CHARS) {
+          truncated += section;
+          const fileMatch = section.match(/^diff --git a\/(.+?) /);
+          if (fileMatch) included.push(fileMatch[1]);
+        } else {
+          const fileMatch = section.match(/^diff --git a\/(.+?) /);
+          if (fileMatch) skipped.push(fileMatch[1]);
+        }
+      }
+
+      if (skipped.length > 0) {
+        truncated += `\n\n[DIFF TRUNCATED — ${skipped.length} file(s) omitted for token limits:\n${skipped.map(f => `  - ${f}`).join("\n")}\n]\n`;
+      }
+
+      reviewDiff = truncated;
       core.warning(
-        `Diff truncated from ${diff.length} to 150000 characters`
+        `Diff truncated: ${included.length} files included, ${skipped.length} files omitted (${diff.length} -> ${truncated.length} chars)`
       );
     }
 

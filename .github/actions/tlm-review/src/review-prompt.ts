@@ -213,7 +213,7 @@ export function buildUserPrompt(
 
   if (diffLineCount > maxDiffLines) {
     parts.push(
-      `\n## WARNING: Large Diff\nThis diff is ${diffLineCount} lines, which exceeds the ${maxDiffLines} line threshold. You should FLAG_FOR_HUMAN unless the changes are clearly mechanical (e.g., rename, formatting).`
+      `\n## Note: Large Diff\nThis diff is ${diffLineCount} lines (threshold: ${maxDiffLines}). Some files may have been omitted for token limits — check the truncation note at the end if present. Review the included files normally. Do NOT flag for human review based on diff size alone — only flag if you identify a specific risk.`
     );
   }
 
