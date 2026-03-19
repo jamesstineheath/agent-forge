@@ -4,17 +4,8 @@ import { createWorkItem } from "@/lib/work-items";
 import { listRepos } from "@/lib/repos";
 import type { ComplexityHint } from "@/lib/types";
 import { checkDailyCap, incrementDailyCount } from "@/lib/daily-cap";
-import {
-  createWorkItemSchema,
-  FAST_LANE_BUDGET_SIMPLE,
-  FAST_LANE_BUDGET_MODERATE,
-} from "@/lib/types";
-
-const BUDGET_DEFAULTS: Record<ComplexityHint, number> = {
-  simple: FAST_LANE_BUDGET_SIMPLE,
-  moderate: FAST_LANE_BUDGET_MODERATE,
-};
-const DEFAULT_BUDGET = FAST_LANE_BUDGET_MODERATE;
+import { createWorkItemSchema } from "@/lib/types";
+import { estimateBudget } from "@/lib/cost-estimator";
 
 export async function POST(request: NextRequest) {
   // 1. Auth — validate Bearer token against AGENT_FORGE_API_SECRET
@@ -100,13 +91,22 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 9. Resolve final budget
-  const resolvedBudget =
-    typeof budgetOverride === "number"
-      ? budgetOverride
-      : complexity
-        ? BUDGET_DEFAULTS[complexity as ComplexityHint]
-        : DEFAULT_BUDGET;
+  // 9. Resolve final budget — use learned estimates when no explicit override
+  let resolvedBudget: number;
+  let budgetSource: "learned" | "partial" | "default" | "manual" = "default";
+  let budgetSampleSize = 0;
+  if (typeof budgetOverride === "number") {
+    resolvedBudget = budgetOverride;
+    budgetSource = "manual";
+  } else {
+    const estimate = await estimateBudget({
+      complexity: (complexity as "simple" | "moderate") ?? "moderate",
+      targetRepo: (targetRepo as string).trim(),
+    });
+    resolvedBudget = estimate.estimatedBudget;
+    budgetSource = estimate.confidence;
+    budgetSampleSize = estimate.sampleSize;
+  }
 
   // 9. Create work item — parse through zod schema to apply defaults
   const parsed = createWorkItemSchema.parse({
