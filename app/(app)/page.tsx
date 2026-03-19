@@ -18,6 +18,7 @@ import {
   useEscalations,
 } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
+import { dispatchSortComparator } from "@/lib/atc/sort";
 
 function formatRelativeTime(ts?: string): string {
   if (!ts) return "\u2014";
@@ -80,6 +81,12 @@ export default function DashboardPage() {
     }
   };
 
+  const QUEUE_STATUSES = new Set<WorkItem["status"]>(["filed", "ready", "queued", "generating", "executing", "reviewing", "retrying"]);
+  const queueItems = (workItems ?? [])
+    .filter((wi) => QUEUE_STATUSES.has(wi.status))
+    .slice()
+    .sort(dispatchSortComparator);
+
   const now = new Date();
   const mergedToday =
     workItems?.filter((wi) => {
@@ -113,6 +120,45 @@ export default function DashboardPage() {
             <div className="text-sm text-muted-foreground">Loading stats...</div>
           ) : (
             <QuickStats workItems={workItems ?? []} />
+          )}
+
+          {/* Queue */}
+          {!itemsLoading && queueItems.length > 0 && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                  Queue
+                </h2>
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold tabular-nums text-primary">
+                  {queueItems.length}
+                </span>
+              </div>
+              <div className="rounded-xl card-elevated bg-surface-1 p-4 space-y-1">
+                {queueItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-2.5 text-sm py-1.5 min-w-0"
+                  >
+                    {(() => {
+                      const p = item.triagePriority;
+                      if (p === "P0") return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">P0</span>;
+                      if (p === "P1") return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-yellow-100 text-yellow-700">P1</span>;
+                      if (p === "P2") return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-600">P2</span>;
+                      return <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-500">P?</span>;
+                    })()}
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {item.rank != null ? `#${item.rank}` : "\u2014"}
+                    </span>
+                    <a href={`/work-items/${item.id}`} className="truncate text-foreground hover:underline">
+                      {item.title}
+                    </a>
+                    <span className="text-[10px] text-muted-foreground/60 ml-auto shrink-0 font-mono">
+                      {item.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {/* Needs Attention (Escalations) */}
