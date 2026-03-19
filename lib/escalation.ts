@@ -1,5 +1,20 @@
 import { loadJson, saveJson, deleteJson } from "./storage";
-import { getWorkItem, updateWorkItem } from "./work-items";
+import { getWorkItem, updateWorkItem, createWorkItem } from "./work-items";
+
+// --- Three-tier escalation routing types ---
+
+type EscalationTier = 'auto_resolve' | 'engineer' | 'product_owner';
+
+type AutoResolutionAction =
+  | { type: 'park_and_refile'; errorContext: string }
+  | { type: 'skip_and_defer'; deferTo: 'pm_sweep' }
+  | { type: 'auto_fail_project' }
+  | { type: 'proceed_anyway'; reason: string };
+
+type EscalationClassification =
+  | { tier: 'auto_resolve'; action: AutoResolutionAction }
+  | { tier: 'engineer' }
+  | { tier: 'product_owner' };
 
 // --- Fast-lane escalation types ---
 
@@ -33,6 +48,181 @@ function getEscalationKey(id: string): string {
 }
 
 /**
+ * Classify an escalation into a tier based on pattern-matching the reason string.
+ */
+function classifyEscalation(reason: string, _context?: Record<string, unknown>): EscalationClassification {
+  const r = reason.toLowerCase();
+
+  // CI failure after retry → park and refile
+  if (r.includes('ci failed') || r.includes('ci failure') || r.includes('failed with code error')) {
+    return {
+      tier: 'auto_resolve',
+      action: { type: 'park_and_refile', errorContext: reason }
+    };
+  }
+
+  // Decomposition oversized / sub-phase → proceed anyway
+  if (r.includes('decomposition produced') && r.includes('items') && r.includes('max')) {
+    return {
+      tier: 'auto_resolve',
+      action: { type: 'proceed_anyway', reason: 'Oversized decomposition — proceeding with all items' }
+    };
+  }
+  if (r.includes('sub-phase') && (r.includes('oversized') || r.includes('too large') || r.includes('exceed'))) {
+    return {
+      tier: 'auto_resolve',
+      action: { type: 'proceed_anyway', reason: 'Oversized sub-phase — proceeding anyway' }
+    };
+  }
+
+  // Empty plan → auto-fail project
+  if (r.includes('plan page is empty') || r.includes('empty plan') || r.includes('no target repo')) {
+    return {
+      tier: 'auto_resolve',
+      action: { type: 'auto_fail_project' }
+    };
+  }
+
+  // Plan validation errors → auto-fail; warnings → defer to PM sweep
+  if (r.includes('plan validation found') || r.includes('plan validation')) {
+    const hasErrors = r.includes('error') || r.includes('invalid') || r.includes('failed');
+    const onlyWarnings = r.includes('warning') && !hasErrors;
+    if (onlyWarnings) {
+      return {
+        tier: 'auto_resolve',
+        action: { type: 'skip_and_defer', deferTo: 'pm_sweep' }
+      };
+    }
+    return {
+      tier: 'auto_resolve',
+      action: { type: 'auto_fail_project' }
+    };
+  }
+
+  // Circular dependency → engineer tier
+  if (r.includes('circular dependency') || r.includes('circular dep')) {
+    return { tier: 'engineer' };
+  }
+
+  // Default: product owner
+  return { tier: 'product_owner' };
+}
+
+/**
+ * Transition a work item from "blocked" back to "ready".
+ * No-op if the item doesn't exist or isn't in "blocked" status.
+ */
+async function unblockWorkItem(workItemId: string): Promise<void> {
+  try {
+    const workItem = await getWorkItem(workItemId);
+    if (workItem && workItem.status === 'blocked') {
+      await updateWorkItem(workItemId, { status: 'ready' });
+    }
+  } catch (err) {
+    console.error(`[escalation] Failed to unblock work item ${workItemId}:`, err);
+    // Non-fatal: escalation record is already updated
+  }
+}
+
+// --- Tier handler functions ---
+
+async function handleAutoResolve(
+  escalation: Escalation,
+  action: AutoResolutionAction
+): Promise<void> {
+  console.log(`[escalation] Auto-resolving ${escalation.id} via action: ${action.type}`);
+
+  switch (action.type) {
+    case 'park_and_refile': {
+      if (escalation.workItemId) {
+        await updateWorkItem(escalation.workItemId, { status: 'parked' });
+        const original = await getWorkItem(escalation.workItemId);
+        if (original) {
+          const newItem = await createWorkItem({
+            title: `Retry (different approach): ${original.title}`,
+            description: `Original work item ${escalation.workItemId} was parked due to CI failure.\n\nError context:\n${action.errorContext}\n\nPlease attempt a different implementation approach to resolve this.`,
+            targetRepo: original.targetRepo,
+            source: original.source,
+            priority: original.priority ?? 'medium',
+            riskLevel: original.riskLevel,
+            complexity: original.complexity,
+            dependencies: [],
+          });
+          // Transition from 'filed' to 'ready' so it enters the dispatch queue
+          await updateWorkItem(newItem.id, { status: 'ready' });
+        }
+      }
+      break;
+    }
+    case 'proceed_anyway': {
+      if (escalation.workItemId) {
+        await unblockWorkItem(escalation.workItemId);
+      }
+      break;
+    }
+    case 'auto_fail_project': {
+      // Work item remains blocked — it can't proceed with no valid plan
+      break;
+    }
+    case 'skip_and_defer': {
+      if (escalation.workItemId) {
+        await unblockWorkItem(escalation.workItemId);
+      }
+      break;
+    }
+  }
+}
+
+async function handleEngineerEscalation(escalation: Escalation): Promise<void> {
+  console.log(`[escalation] Filing engineer bugfix work item for escalation ${escalation.id}`);
+
+  // Need the original work item to get targetRepo and source
+  const original = escalation.workItemId ? await getWorkItem(escalation.workItemId) : null;
+  const targetRepo = original?.targetRepo ?? 'jamesstineheath/agent-forge';
+
+  await createWorkItem({
+    title: `Bug: ${escalation.reason.slice(0, 100)}`,
+    description: `Auto-filed by escalation system (Tier 2 — Engineer).\n\nEscalation ID: ${escalation.id}\nOriginal work item: ${escalation.workItemId ?? 'N/A'}\n\nReason:\n${escalation.reason}\n\nContext:\n${JSON.stringify(escalation.contextSnapshot ?? {}, null, 2)}`,
+    targetRepo,
+    source: { type: 'direct' },
+    priority: 'high',
+    riskLevel: 'medium',
+    complexity: 'moderate',
+    dependencies: [],
+  });
+
+  if (escalation.workItemId) {
+    await unblockWorkItem(escalation.workItemId);
+  }
+}
+
+async function handleProductOwnerEscalation(escalation: Escalation): Promise<void> {
+  console.log(`[escalation] Sending product owner email for escalation ${escalation.id}`);
+  const workItem = escalation.workItemId ? await getWorkItem(escalation.workItemId) : null;
+  if (workItem) {
+    const { sendEscalationEmail } = await import("./gmail");
+    const threadId = await sendEscalationEmail(escalation, workItem);
+    if (threadId) {
+      await updateEscalation(escalation.id, { threadId });
+    }
+  } else if (escalation.projectId) {
+    // Project-level escalation
+    const { sendProjectEscalationEmail } = await import("./gmail");
+    const projectTitle = (escalation.contextSnapshot.projectTitle as string) || escalation.projectId;
+    const context = Object.keys(escalation.contextSnapshot).length > 0
+      ? JSON.stringify(escalation.contextSnapshot, null, 2)
+      : undefined;
+    await sendProjectEscalationEmail({
+      projectId: escalation.projectId,
+      projectTitle,
+      reason: escalation.reason,
+      context,
+      escalationType: "project",
+    });
+  }
+}
+
+/**
  * Create a new escalation and transition the work item to "blocked"
  */
 export async function escalate(
@@ -56,7 +246,7 @@ export async function escalate(
     createdAt: now,
   };
 
-  // Save the escalation record
+  // Save the escalation record (audit trail — always created regardless of tier)
   await saveJson(getEscalationKey(id), escalation);
 
   // Update the index
@@ -77,36 +267,38 @@ export async function escalate(
         blockedAt: now,
       },
     });
-
-    // Attempt to send escalation email via Gmail
-    const { sendEscalationEmail } = await import("./gmail");
-    const threadId = await sendEscalationEmail(escalation, workItem);
-    if (threadId) {
-      await updateEscalation(id, { threadId });
-    }
-  } else if (projectId) {
-    console.log(`[escalation] Project-level escalation for project ${projectId} (no work item to block)`);
-
-    // Send project-level escalation email
-    try {
-      const { sendProjectEscalationEmail } = await import("./gmail");
-      const projectTitle = (contextSnapshot.projectTitle as string) || projectId;
-      const context = Object.keys(contextSnapshot).length > 0
-        ? JSON.stringify(contextSnapshot, null, 2)
-        : undefined;
-      await sendProjectEscalationEmail({
-        projectId,
-        projectTitle,
-        reason,
-        context,
-        escalationType: "project",
-      });
-    } catch (error) {
-      console.warn(`[escalation] Failed to send project escalation email for ${projectId}:`, error);
-    }
   }
 
   console.log(`[escalation] Created escalation ${id} for work item ${workItemId}: ${reason}`);
+
+  // Classify and route to the appropriate tier handler
+  const classification = classifyEscalation(reason, contextSnapshot);
+  console.log(`[escalation] Classified as tier: ${classification.tier} for reason: "${reason.slice(0, 80)}"`);
+
+  try {
+    if (classification.tier === 'auto_resolve') {
+      await handleAutoResolve(escalation, classification.action);
+      await resolveEscalation(escalation.id, `Auto-resolved: ${classification.action.type}`);
+      return escalation;
+    }
+
+    if (classification.tier === 'engineer') {
+      await handleEngineerEscalation(escalation);
+      await resolveEscalation(escalation.id, 'Auto-resolved: engineer work item filed');
+      return escalation;
+    }
+
+    // product_owner tier
+    await handleProductOwnerEscalation(escalation);
+  } catch (err) {
+    console.error(`[escalation] Auto-resolution failed for ${escalation.id}, promoting to product_owner:`, err);
+    // Fallback: email the product owner
+    try {
+      await handleProductOwnerEscalation(escalation);
+    } catch (emailErr) {
+      console.error(`[escalation] Failed to send fallback product owner email:`, emailErr);
+    }
+  }
 
   return escalation;
 }
@@ -132,7 +324,7 @@ export async function updateEscalation(
 }
 
 /**
- * Resolve an escalation and transition the work item back to "queued"
+ * Resolve an escalation and unblock the associated work item
  */
 export async function resolveEscalation(
   id: string,
@@ -151,6 +343,11 @@ export async function resolveEscalation(
 
   await saveJson(getEscalationKey(id), updated);
   console.log(`[escalation] Resolved escalation ${id}: ${resolution}`);
+
+  // Unblock the work item so it re-enters the dispatch queue
+  if (escalation.workItemId) {
+    await unblockWorkItem(escalation.workItemId);
+  }
 
   return updated;
 }

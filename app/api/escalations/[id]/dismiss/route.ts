@@ -31,12 +31,11 @@ export async function POST(
       "Dismissed from dashboard UI"
     );
 
-    // Transition work item back to "queued" and clear escalation field
+    // Clear the escalation field on the work item (resolveEscalation already unblocks to "ready")
     if (escalation.workItemId) {
       const workItem = await getWorkItem(escalation.workItemId);
-      if (workItem && workItem.status === "blocked") {
+      if (workItem) {
         await updateWorkItem(escalation.workItemId, {
-          status: "queued",
           escalation: undefined,
         });
       }
