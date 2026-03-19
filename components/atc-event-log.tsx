@@ -26,6 +26,7 @@ const EVENT_COLORS: Record<ATCEvent["type"], string> = {
   dep_resolved: "bg-status-merged/15 text-status-merged",
   ci_code_retry_triggered: "bg-status-executing/10 text-status-executing",
   ci_code_retry_exhausted: "bg-status-blocked/10 text-status-blocked",
+  routing_threshold_tightened: "bg-status-reviewing/10 text-status-reviewing",
 };
 
 const ALL_TYPES = Object.keys(EVENT_COLORS) as ATCEvent["type"][];

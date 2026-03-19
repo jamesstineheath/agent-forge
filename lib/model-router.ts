@@ -12,11 +12,55 @@
 import { generateText, type ModelMessage, type SystemModelMessage } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { emitModelCallEvent, emitModelEscalationEvent } from "./atc/events";
+import { loadJson } from "./storage";
 import type { TaskType } from "./atc/types";
+import type { RoutingPolicyOverride, SignalCombinationKey } from "./model-routing-policy";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const OPUS_MODEL = "claude-opus-4-6";
+const OVERRIDES_KEY = 'config/routing-policy-overrides';
+
+// ── Override cache (60s TTL) ─────────────────────────────────────────────────
+
+let _overridesCache: RoutingPolicyOverride[] | null = null;
+let _overridesCacheExpiry = 0;
+
+async function loadOverrides(): Promise<RoutingPolicyOverride[]> {
+  const now = Date.now();
+  if (_overridesCache !== null && now < _overridesCacheExpiry) {
+    return _overridesCache;
+  }
+  try {
+    const data = await loadJson<RoutingPolicyOverride[]>(OVERRIDES_KEY);
+    _overridesCache = data ?? [];
+  } catch {
+    _overridesCache = [];
+  }
+  _overridesCacheExpiry = now + 60_000; // 60s TTL
+  return _overridesCache;
+}
+
+/**
+ * Select the appropriate model based on task signals and routing overrides.
+ * Checks feedback-compiler overrides first, then falls back to the provided default.
+ */
+export async function selectModel(
+  defaultModel: string,
+  taskType: string,
+  complexity: string = 'unknown',
+  criteriaBucket: string = 'unknown'
+): Promise<string> {
+  const overrides = await loadOverrides();
+  if (overrides.length > 0) {
+    const signalKey = `${taskType}|${complexity}|${criteriaBucket}` as SignalCombinationKey;
+    const override = overrides.find((o) => o.signalKey === signalKey);
+    if (override) {
+      return override.forceModel === 'opus' ? OPUS_MODEL : 'claude-sonnet-4-6';
+    }
+  }
+  return defaultModel;
+}
 
 // ── Cost estimation ──────────────────────────────────────────────────────────
 
