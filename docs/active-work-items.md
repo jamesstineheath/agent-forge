@@ -12,6 +12,7 @@
 - **Real Estate System Prompt Section** (jamesstineheath/personal-assistant)
   - Branch: `fix/real-estate-system-prompt-section`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/358
+  - Files: handoffs/real-estate-system-prompt-section.md, prompts/sections/real-estate.md
 
 ## Queued for Dispatch
 
