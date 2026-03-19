@@ -8,7 +8,7 @@
 
 import type { WebhookEvent } from "./event-bus-types";
 import { findWorkItemByBranch, findWorkItemByPR, updateWorkItem } from "./work-items";
-import { triggerWorkflow, deleteBranch } from "./github";
+import { triggerWorkflow, deleteBranch, mergePR } from "./github";
 import { dispatchUnblockedItems } from "./atc/dispatcher";
 
 const LOG_PREFIX = "[event-reactor]";
@@ -41,6 +41,9 @@ async function reactToEvent(event: WebhookEvent): Promise<void> {
       break;
     case "github.pr.closed":
       await handlePRClosed(event);
+      break;
+    case "github.pr.review_submitted":
+      await handleReviewSubmitted(event);
       break;
     case "github.workflow.completed":
       await handleWorkflowCompleted(event);
@@ -220,6 +223,51 @@ async function handlePRClosed(event: WebhookEvent): Promise<void> {
         outcome: "failed",
       },
     });
+  }
+}
+
+/**
+ * Human review submitted → auto-merge on approval.
+ * When a non-bot user approves a PR whose work item is blocked/reviewing
+ * (FLAG_FOR_HUMAN state), merge the PR and transition to merged.
+ */
+async function handleReviewSubmitted(event: WebhookEvent): Promise<void> {
+  const { prNumber, reviewState } = event.payload;
+
+  // Only act on approvals — ignore comments and change requests
+  if (reviewState !== "approved") return;
+  if (!prNumber) return;
+
+  const item = await findWorkItemByPR(event.repo, prNumber);
+  if (!item) return;
+
+  if (item.status !== "blocked" && item.status !== "reviewing") return;
+
+  console.log(`${LOG_PREFIX} human approved PR #${prNumber} — auto-merging`);
+
+  const result = await mergePR(event.repo, prNumber);
+  if (!result.merged) {
+    console.error(`${LOG_PREFIX} failed to merge PR #${prNumber}: ${result.error}`);
+    return;
+  }
+
+  await updateWorkItem(item.id, {
+    status: "merged",
+    execution: {
+      ...item.execution,
+      completedAt: new Date().toISOString(),
+      outcome: "merged",
+    },
+  });
+
+  // Dispatch any items that were blocked on this one
+  try {
+    const dispatchResult = await dispatchUnblockedItems(item.id, item.targetRepo);
+    if (dispatchResult.dispatched.length > 0) {
+      console.log(`${LOG_PREFIX} dispatched ${dispatchResult.dispatched.length} unblocked item(s) after ${item.id} merged`);
+    }
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} failed to dispatch unblocked items:`, err);
   }
 }
 

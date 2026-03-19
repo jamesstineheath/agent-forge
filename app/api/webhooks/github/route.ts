@@ -63,6 +63,11 @@ interface GitHubPayload {
     head_branch: string;
     head_sha: string;
   };
+  review?: {
+    state: string;
+    body: string | null;
+    user?: { login: string };
+  };
 }
 
 /**
@@ -147,6 +152,35 @@ function mapToWebhookEvents(
         summary: `Check suite: ${cs.conclusion}`,
       };
       events.push({ id: generateEventId(), type, timestamp, repo, payload });
+      break;
+    }
+
+    case "pull_request_review": {
+      const pr = body.pull_request;
+      const review = body.review;
+      if (!pr || !review || body.action !== "submitted") break;
+
+      // Filter out bot reviews — we only care about human reviews
+      const reviewer = review.user?.login ?? "";
+      if (reviewer === "github-actions[bot]" || reviewer.endsWith("[bot]")) break;
+
+      const payload: WebhookEventPayload = {
+        prNumber: pr.number,
+        branch: pr.head?.ref,
+        commitSha: pr.head?.sha,
+        reviewer,
+        reviewState: review.state,
+        reviewBody: review.body ?? undefined,
+        action: "submitted",
+        summary: `Review ${review.state} on PR #${pr.number} by ${reviewer}`,
+      };
+      events.push({
+        id: generateEventId(),
+        type: "github.pr.review_submitted",
+        timestamp,
+        repo,
+        payload,
+      });
       break;
     }
 
