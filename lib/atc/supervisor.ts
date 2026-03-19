@@ -395,6 +395,26 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   }
 
   addPhase(trace, { name: 'criteria_import', durationMs: Date.now() - phaseStart });
+  phaseStart = Date.now();
+
+  // §20 — Intent Validation (post-project-completion)
+  try {
+    const { runIntentValidation } = await import("@/lib/intent-validator");
+    const result = await runIntentValidation();
+    if (result.validated > 0) {
+      console.log(
+        `[supervisor §20] Intent validation: ${result.passed} passed, ${result.failed} failed, ${result.skipped} skipped, ${result.followUps} follow-ups`
+      );
+      addDecision(trace, {
+        action: 'intent_validation',
+        reason: `Validated ${result.validated} criteria: ${result.passed} passed, ${result.failed} failed, ${result.followUps} follow-ups filed`,
+      });
+    }
+  } catch (err) {
+    console.warn('[supervisor §20] Intent validation phase failed (non-fatal):', err);
+  }
+
+  addPhase(trace, { name: 'intent_validation', durationMs: Date.now() - phaseStart });
 
   completeTrace(trace, 'success');
 

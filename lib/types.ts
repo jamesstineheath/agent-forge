@@ -715,3 +715,23 @@ export interface IntentCriteriaIndexEntry {
   totalEstimatedCost: number;
   importedAt: string;
 }
+
+// ── Intent Validation ───────────────────────────────────────────────────────
+
+export interface ValidationProbe {
+  path: string;
+  method: "GET" | "POST";
+  lookFor: string;
+  confidence: "high" | "medium" | "low";
+  skipReason?: string;
+}
+
+export interface ValidationResult {
+  criterionId: string;
+  criterionDescription: string;
+  status: CriterionStatus;
+  evidence: string;
+  probe?: ValidationProbe;
+  responseStatus?: number;
+  durationMs?: number;
+}

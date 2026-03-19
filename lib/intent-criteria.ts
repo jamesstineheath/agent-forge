@@ -262,6 +262,37 @@ export async function listAllCriteria(): Promise<IntentCriteriaIndexEntry[]> {
   return index || [];
 }
 
+/**
+ * Find criteria sets by AF Project ID (e.g., "PRJ-43").
+ * Returns all matching criteria sets (a project could have multiple PRDs).
+ */
+export async function findCriteriaByProjectId(projectId: string): Promise<IntentCriteria[]> {
+  const index = await listAllCriteria();
+  const matches = index.filter((e) => e.projectId === projectId);
+  const results: IntentCriteria[] = [];
+  for (const entry of matches) {
+    const criteria = await getCriteria(entry.prdId);
+    if (criteria) results.push(criteria);
+  }
+  return results;
+}
+
+/**
+ * Find criteria sets that have unverified criteria (pending status).
+ */
+export async function findUnverifiedCriteria(): Promise<IntentCriteria[]> {
+  const index = await listAllCriteria();
+  const unverified = index.filter(
+    (e) => e.criteriaCount > 0 && (e.passedCount + e.failedCount) < e.criteriaCount
+  );
+  const results: IntentCriteria[] = [];
+  for (const entry of unverified) {
+    const criteria = await getCriteria(entry.prdId);
+    if (criteria) results.push(criteria);
+  }
+  return results;
+}
+
 async function saveCriteria(criteria: IntentCriteria): Promise<void> {
   await saveJson(criteriaKey(criteria.prdId), criteria);
   await updateIndex(criteria);
