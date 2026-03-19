@@ -518,18 +518,37 @@ async function fetchMergedPRs(
         repo,
         pull_number: pr.number,
       });
-      const tlmReview = reviews.find((r) =>
+      // Use findLast to get the MOST RECENT TLM review (not the first "CI Pending" one)
+      const tlmReview = reviews.reverse().find((r) =>
         r.body?.includes("TLM Review:")
       );
       if (tlmReview) {
-        if (tlmReview.body?.includes("CI_BLOCKED"))
+        if (tlmReview.body?.includes("CI_BLOCKED") || tlmReview.body?.includes("CI Pending") || tlmReview.body?.includes("CI Failing"))
           tlmDecision = "ci_blocked";
-        else if (tlmReview.body?.includes("APPROVE"))
+        else if (tlmReview.body?.includes("APPROVE") || tlmReview.state === "APPROVED")
           tlmDecision = "approve";
-        else if (tlmReview.body?.includes("REQUEST_CHANGES"))
+        else if (tlmReview.body?.includes("REQUEST_CHANGES") || tlmReview.state === "CHANGES_REQUESTED")
           tlmDecision = "request_changes";
         else if (tlmReview.body?.includes("FLAG FOR HUMAN"))
           tlmDecision = "flag_for_human";
+      }
+
+      // Fallback: check structured metadata comment (more reliable than review body parsing)
+      if (tlmDecision === "unknown") {
+        const { data: comments } = await octokit.rest.issues.listComments({
+          owner,
+          repo,
+          issue_number: pr.number,
+        });
+        const metadataComment = comments.reverse().find((c) =>
+          c.body?.includes("TLM-CODE-REVIEW-METADATA")
+        );
+        if (metadataComment?.body) {
+          const decisionMatch = metadataComment.body.match(/decision:\s*(\w+)/);
+          if (decisionMatch) {
+            tlmDecision = decisionMatch[1];
+          }
+        }
       }
     } catch {
       // OK, we'll just mark as unknown
