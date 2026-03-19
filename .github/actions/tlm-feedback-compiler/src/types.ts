@@ -55,6 +55,7 @@ export interface CompilerHistory {
 export interface CompilerAnalysis {
   patterns: DetectedPattern[];
   proposed_changes: ProposedChange[];
+  work_items: ProposedWorkItem[];
   escalations: EscalationItem[];
   summary: string;
   data_quality: {
@@ -69,6 +70,17 @@ export interface EscalationItem {
   description: string;
   severity: "high" | "medium";
   related_pattern_id: string;
+}
+
+export interface ProposedWorkItem {
+  title: string;
+  description: string;
+  target_repo: string;
+  type: "feature" | "bugfix" | "refactor" | "chore";
+  complexity: "simple" | "moderate" | "complex";
+  priority: "high" | "medium" | "low";
+  related_pattern_id: string;
+  expected_impact: string;
 }
 
 export interface TLMMemory {

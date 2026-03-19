@@ -9,6 +9,7 @@ import {
   FileDiff,
   ProposedChange,
   EscalationItem,
+  ProposedWorkItem,
 } from "./types";
 
 /**
@@ -333,4 +334,63 @@ export async function createEscalationIssues(
   }
 
   return created;
+}
+
+/**
+ * Files work items via the Agent Forge API for systemic issues
+ * that require code changes (not just prompt tweaks).
+ */
+export async function fileWorkItems(
+  workItems: ProposedWorkItem[]
+): Promise<number> {
+  const apiUrl = process.env.AGENT_FORGE_URL || process.env.INPUT_AGENT_FORGE_URL;
+  const apiSecret = process.env.AGENT_FORGE_API_SECRET || process.env.INPUT_AGENT_FORGE_API_SECRET;
+
+  if (!apiUrl || !apiSecret) {
+    core.warning("AGENT_FORGE_URL or AGENT_FORGE_API_SECRET not set — cannot file work items");
+    return 0;
+  }
+
+  let filed = 0;
+
+  for (const item of workItems) {
+    try {
+      const fullTargetRepo = item.target_repo.includes("/")
+        ? item.target_repo
+        : `jamesstineheath/${item.target_repo}`;
+
+      const response = await fetch(`${apiUrl}/api/work-items`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiSecret}`,
+        },
+        body: JSON.stringify({
+          title: item.title,
+          description: `${item.description}\n\n---\n*Filed by TLM Feedback Compiler (pattern: ${item.related_pattern_id})*\n*Expected impact: ${item.expected_impact}*`,
+          targetRepo: fullTargetRepo,
+          type: item.type,
+          complexity: item.complexity,
+          priority: item.priority,
+          source: {
+            type: "pm-agent" as const,
+            sourceId: `feedback-compiler:${item.related_pattern_id}`,
+          },
+        }),
+      });
+
+      if (response.ok) {
+        const result = (await response.json()) as { id?: string };
+        core.info(`Filed work item "${item.title}" (${result.id || "ok"})`);
+        filed++;
+      } else {
+        const errorText = await response.text();
+        core.warning(`Failed to file work item "${item.title}": ${response.status} ${errorText}`);
+      }
+    } catch (error) {
+      core.warning(`Failed to file work item "${item.title}": ${error}`);
+    }
+  }
+
+  return filed;
 }

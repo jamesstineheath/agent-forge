@@ -72,6 +72,18 @@ You MUST respond with valid JSON matching this exact schema:
       "expected_impact": "what improvement this should produce"
     }
   ],
+  "work_items": [
+    {
+      "title": "Short title for pipeline work item",
+      "description": "Detailed description of what to build/fix. Include specific files, endpoints, or components.",
+      "target_repo": "agent-forge" | "personal-assistant",
+      "type": "feature" | "bugfix" | "refactor" | "chore",
+      "complexity": "simple" | "moderate" | "complex",
+      "priority": "high" | "medium" | "low",
+      "related_pattern_id": "pattern-001",
+      "expected_impact": "what improvement this work item should produce"
+    }
+  ],
   "escalations": [
     {
       "title": "Short title for GitHub issue",
@@ -95,8 +107,12 @@ You MUST respond with valid JSON matching this exact schema:
 3. **Minimum data threshold.** If there are fewer than 3 non-premature assessments, set sufficient_data to false and limit proposals to stale pattern removal only. Do not propose prompt changes based on sparse data.
 4. **One change per pattern.** Each proposed_change addresses exactly one detected pattern.
 5. **No self-modification.** Do not propose changes to the Feedback Compiler's own prompt or code.
-6. **Escalate complexity.** If a pattern requires structural code changes (not just prompt text), create an escalation instead of a proposed_change.
+6. **Choose the right action type:**
+   - **proposed_change** — for prompt text modifications, config tweaks, or small file edits the Compiler can make directly
+   - **work_item** — for systemic issues requiring new code, new features, or multi-file changes that the pipeline should build autonomously (e.g., "SYSTEM_MAP not being updated after architecture changes" → work item to add auto-update logic)
+   - **escalation** — for issues requiring human judgment, architectural decisions, or policy changes that neither a prompt tweak nor a code change can resolve
 7. **Be conservative.** Prefer small, targeted changes over broad rewrites. The Code Reviewer and a human will review your PR.
+8. **Work items should be specific.** Include file paths, function names, and expected behavior. Vague work items ("improve error handling") will fail in the pipeline.
 `;
 
 export function buildCompilerUserPrompt(context: AnalysisContext): string {

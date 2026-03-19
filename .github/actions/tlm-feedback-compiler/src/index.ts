@@ -11,6 +11,7 @@ import {
   updateHistory,
   createPR,
   createEscalationIssues,
+  fileWorkItems,
 } from "./change-proposer";
 
 async function callClaudeAPI(
@@ -67,6 +68,7 @@ async function callClaudeAPI(
     return {
       patterns: [],
       proposed_changes: [],
+      work_items: [],
       escalations: [],
       summary: `Failed to parse compiler analysis response: ${e}`,
       data_quality: {
@@ -124,6 +126,7 @@ async function run(): Promise<void> {
         {
           patterns: [],
           proposed_changes: [],
+          work_items: [],
           escalations: [],
           summary: "Skipped: insufficient data",
           data_quality: {
@@ -171,6 +174,13 @@ async function run(): Promise<void> {
       );
     }
 
+    // Step 4.5: File work items for systemic issues
+    let workItemCount = 0;
+    if (analysis.work_items?.length > 0) {
+      workItemCount = await fileWorkItems(analysis.work_items);
+      core.info(`Filed ${workItemCount} of ${analysis.work_items.length} proposed work items`);
+    }
+
     // Step 5: Update history
     updateHistory(
       workspace,
@@ -197,11 +207,17 @@ async function run(): Promise<void> {
     core.setOutput("pr-url", prResult?.prUrl ?? "");
     core.setOutput("escalation-count", String(escalationCount));
 
+    // Set additional outputs
+    core.setOutput("work-item-count", String(workItemCount));
+
     // Post summary
     const summaryMsg = [
       `TLM Feedback Compiler: ${analysis.patterns.length} patterns detected.`,
       `Changes applied: ${appliedDiffs.length}/${analysis.proposed_changes.length}.`,
       prResult ? `PR: ${prResult.prUrl}` : "No PR created.",
+      workItemCount > 0
+        ? `Work items filed: ${workItemCount}.`
+        : "",
       escalationCount > 0
         ? `Escalations: ${escalationCount} issues created.`
         : "",
