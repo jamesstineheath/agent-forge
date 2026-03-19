@@ -11,6 +11,8 @@ export const FAST_LANE_BUDGET_MODERATE = 4;
 
 export type FailureCategory = 'transient' | 'execution' | 'structural' | 'unknown';
 
+export type Priority = 'P0' | 'P1' | 'P2';
+
 // --- WorkItem ---
 
 export interface WorkItem {
@@ -79,6 +81,8 @@ export interface WorkItem {
   attribution?: ComponentAttribution[];
   /** When true, this item bypasses concurrency limits and is dispatched immediately. */
   expedite?: boolean;
+  triagePriority?: Priority;
+  rank?: number;
   createdAt: string;
   updatedAt: string;
   reasoningMetrics?: ReasoningQualityAssessment;
