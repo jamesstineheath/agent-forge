@@ -8,10 +8,6 @@
   - Branch: `fix/fix-agent-heartbeat-dashboard-showing-00-for-activ`
   - PR: https://github.com/jamesstineheath/agent-forge/pull/292
 
-- **Trace Reviewing Agent — autonomous agent trace evaluation and improvement proposals** (jamesstineheath/agent-forge)
-  - Branch: `fix/trace-reviewing-agent-autonomous-agent-trace-evalu`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/294
-
 - **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
   - Branch: `feat/enhanced-realestate-scout-cron-web-search-and-pric`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/365
