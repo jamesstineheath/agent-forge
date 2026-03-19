@@ -817,10 +817,16 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       .map((depIdx) => indexToId.get(depIdx))
       .filter((id): id is string => id !== undefined);
 
+    // Normalize targetRepo to full "owner/repo" format — the LLM may return
+    // either short ("personal-assistant") or full ("jamesstineheath/personal-assistant")
+    const normalizedRepo = item.targetRepo.includes("/")
+      ? item.targetRepo
+      : `jamesstineheath/${item.targetRepo}`;
+
     const workItem = await createWorkItem({
       title: item.title,
       description: descriptionWithCriteria,
-      targetRepo: item.targetRepo,
+      targetRepo: normalizedRepo,
       source: {
         type: "project",
         sourceId: project.projectId,
