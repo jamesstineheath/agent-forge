@@ -1,0 +1,10 @@
+{
+  "name": "acceptance-criteria-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generates structured acceptance criteria from Notion PRDs using Claude",
+  "main": "index.js",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0"
+  }
+}
