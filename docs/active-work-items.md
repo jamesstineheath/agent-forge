@@ -7,10 +7,12 @@
 - **Preference Editor Panel Component Enhancement** (jamesstineheath/personal-assistant)
   - Branch: `feat/preference-editor-panel-component-enhancement`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/360
+  - Files: components/realestate/preference-editor.tsx, handoffs/preference-editor-panel-component-enhancement.md
 
 - **Bulk Import Tool and Chat Command** (jamesstineheath/personal-assistant)
   - Branch: `feat/bulk-import-tool-and-chat-command`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/362
+  - Files: handoffs/bulk-import-tool-and-chat-command.md, lib/realestate/bulk-import.ts, lib/tools/index.ts, lib/tools/realestate-listings.ts
 
 - **Wire failure attribution into Health Monitor agent** (jamesstineheath/agent-forge)
   - Branch: `fix/wire-failure-attribution-into-health-monitor-agent`
