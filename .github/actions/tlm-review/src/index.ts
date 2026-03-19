@@ -343,6 +343,48 @@ async function checkCIStatus(
   return "passed";
 }
 
+async function notifyFlagForHuman(payload: {
+  repo: string;
+  prNumber: number;
+  prTitle: string;
+  prUrl: string;
+  summary: string;
+  riskAssessment: string;
+  options: string[];
+  recommendedPath: string;
+}): Promise<void> {
+  const baseUrl =
+    process.env.AGENT_FORGE_URL || "https://agent-forge-phi.vercel.app";
+  const secret = process.env.AGENT_FORGE_API_SECRET;
+  if (!secret) {
+    core.warning(
+      "AGENT_FORGE_API_SECRET not set, skipping flag-for-human email notification."
+    );
+    return;
+  }
+  try {
+    const resp = await fetch(`${baseUrl}/api/notify/flag-for-human`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${secret}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    if (resp.ok) {
+      core.info(
+        `Flag-for-human email notification sent for PR #${payload.prNumber}`
+      );
+    } else {
+      core.warning(
+        `Flag-for-human notification failed: ${resp.status} ${resp.statusText}`
+      );
+    }
+  } catch (err) {
+    core.warning(`Flag-for-human notification error: ${err}`);
+  }
+}
+
 async function run(): Promise<void> {
   try {
     const apiKey = core.getInput("anthropic-api-key", { required: true });
@@ -611,6 +653,21 @@ async function run(): Promise<void> {
       });
       core.setOutput('decision', 'flag_for_human');
       core.setOutput('summary', `PR modifies ${tier1Files.length} Tier 1 sensitive path(s), requires human review`);
+
+      await notifyFlagForHuman({
+        repo: `${owner}/${repo}`,
+        prNumber,
+        prTitle: pr.title,
+        prUrl: pr.html_url,
+        summary: `This PR modifies ${tier1Files.length} Tier 1 sensitive path(s) that directly affect pipeline infrastructure.`,
+        riskAssessment: "High — changes to core pipeline files require human verification.",
+        options: [
+          "Merge as-is — the changes look correct and you trust the implementation.",
+          "Request a more targeted change — ask the executor to narrow the scope.",
+        ],
+        recommendedPath: "Review the flagged files and approve or request changes on the PR.",
+      });
+
       return;
     }
 
@@ -973,6 +1030,25 @@ async function run(): Promise<void> {
           }
         }
       }
+    }
+
+    // Notify human via email when Claude decides flag_for_human
+    if (review.decision === "flag_for_human") {
+      const issues = review.issues
+        .filter((i) => i.severity === "critical" || i.severity === "warning")
+        .map((i) => `${i.file}:${i.line} — ${i.message}`);
+      await notifyFlagForHuman({
+        repo: `${owner}/${repo}`,
+        prNumber,
+        prTitle: pr.title,
+        prUrl: pr.html_url,
+        summary: review.summary,
+        riskAssessment: review.reasoning,
+        options: issues.length > 0
+          ? [`Address ${issues.length} issue(s) flagged by review.`, "Merge as-is if issues are acceptable."]
+          : ["Review the PR and approve or request changes."],
+        recommendedPath: "Review the TLM Code Review comment on the PR for full details.",
+      });
     }
 
     // Set outputs
