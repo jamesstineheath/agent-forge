@@ -875,15 +875,29 @@ async function run(): Promise<void> {
       reviewEvent = "COMMENT";
     }
 
-    await octokit.rest.pulls.createReview({
-      owner,
-      repo,
-      pull_number: prNumber,
-      body: lines.join("\n"),
-      event: reviewEvent,
-    });
-
-    core.info(`Posted ${reviewEvent} review on PR #${prNumber}`);
+    try {
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        body: lines.join("\n"),
+        event: reviewEvent,
+      });
+      core.info(`Posted ${reviewEvent} review on PR #${prNumber}`);
+    } catch (reviewErr: unknown) {
+      const reviewError = reviewErr as { status?: number; message?: string };
+      core.warning(
+        `Failed to post ${reviewEvent} review (HTTP ${reviewError.status}): ${reviewError.message}. Falling back to COMMENT.`
+      );
+      await octokit.rest.pulls.createReview({
+        owner,
+        repo,
+        pull_number: prNumber,
+        body: lines.join("\n"),
+        event: "COMMENT",
+      });
+      core.info(`Posted COMMENT review (fallback) on PR #${prNumber}`);
+    }
 
     // Post structured metadata for pipeline consumption
     const metadataComment = [
@@ -1055,7 +1069,11 @@ async function run(): Promise<void> {
     core.setOutput("decision", review.decision);
     core.setOutput("summary", review.summary);
   } catch (error) {
-    core.setFailed(`TLM review failed: ${error}`);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStatus = (error as unknown as { status?: number })?.status;
+    core.setFailed(
+      `TLM review failed: ${errMsg}${errStatus ? ` (HTTP ${errStatus})` : ""}`
+    );
   }
 }
 
