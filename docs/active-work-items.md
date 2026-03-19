@@ -4,15 +4,13 @@
 
 ## In Review
 
-- **Enhanced Realestate Scout Cron — Web Search and Price Monitoring** (jamesstineheath/personal-assistant)
-  - Branch: `feat/enhanced-realestate-scout-cron-web-search-and-pric`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/365
-  - Files: handoffs/enhanced-realestate-scout-cron-web-search-and-pric.md
+- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `feat/create-pattern-detection-module-srcpattern-detecto`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/322
 
-- **Search Listings Tool — AI Web Search for Properties** (jamesstineheath/personal-assistant)
-  - Branch: `feat/search-listings-tool-ai-web-search-for-properties`
-  - PR: https://github.com/jamesstineheath/personal-assistant/pull/364
-  - Files: handoffs/search-listings-tool-ai-web-search-for-properties.md, lib/realestate/search.ts, lib/tools/index.ts, lib/tools/realestate-listings.ts
+- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
+  - Branch: `fix/create-compiler-prompt-module-srccompiler-promptts`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/324
 
 - **Define Episode types and data models in lib/types.ts** (jamesstineheath/agent-forge)
   - Branch: `fix/define-episode-types-and-data-models-in-libtypests`
@@ -21,12 +19,6 @@
   - Branch: `feat/implement-tf-idf-similarity-engine-libepisode-simi`
 
 ## Queued for Dispatch
-
-- **Create pattern detection module (src/pattern-detector.ts)** (jamesstineheath/personal-assistant)
-  - Estimated files: .github/actions/tlm-feedback-compiler/src/pattern-detector.ts, .github/actions/tlm-feedback-compiler/src/types.ts
-
-- **Create compiler prompt module (src/compiler-prompt.ts)** (jamesstineheath/personal-assistant)
-  - Estimated files: .github/actions/tlm-feedback-compiler/src/compiler-prompt.ts
 
 - **Create change proposer module (src/change-proposer.ts)** (jamesstineheath/personal-assistant)
   - Estimated files: .github/actions/tlm-feedback-compiler/src/change-proposer.ts, .github/actions/tlm-feedback-compiler/src/types.ts, docs/feedback-compiler-history.json
