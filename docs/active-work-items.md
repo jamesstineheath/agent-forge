@@ -16,9 +16,14 @@
 
 ## In Review
 
+- **Build dist/index.js bundle via ncc** (jamesstineheath/personal-assistant)
+  - Branch: `feat/build-distindexjs-bundle-via-ncc`
+  - PR: https://github.com/jamesstineheath/personal-assistant/pull/327
+
 - **Define shared travel types and models** (jamesstineheath/personal-assistant)
   - Branch: `fix/define-shared-travel-types-and-models`
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/367
+  - Files: handoffs/define-shared-travel-types-and-models.md, lib/travel/types.ts
 
 ## Queued for Dispatch
 
@@ -33,19 +38,9 @@
 
 - **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
 
-- **Implement Episode persistence store (lib/episodic-memory.ts)** (jamesstineheath/agent-forge)
-
-- **Implement Episode recorder with lifecycle hooks** (jamesstineheath/agent-forge)
-
-- **Inject episode retrieval into orchestrator planning flow** (jamesstineheath/agent-forge)
-
-- **Inject episode retrieval into PM agent planning flow** (jamesstineheath/agent-forge)
-
 - **Create Episodes list dashboard page (/episodes)** (jamesstineheath/agent-forge)
 
 - **Create Episode detail page (/episodes/[id])** (jamesstineheath/agent-forge)
-
-- **Add attribution trail to work item detail view** (jamesstineheath/agent-forge)
 
 - **Integration test: end-to-end episode lifecycle** (jamesstineheath/agent-forge)
 
