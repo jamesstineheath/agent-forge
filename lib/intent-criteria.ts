@@ -135,21 +135,49 @@ function parseCriteriaFromBlocks(blocks: NotionBlock[]): Criterion[] {
       continue;
     }
 
-    // Parse bulleted list items as criteria
-    if (type === "bulleted_list_item" && content?.rich_text) {
+    // Parse list items as criteria (bulleted or numbered)
+    if ((type === "bulleted_list_item" || type === "numbered_list_item") && content?.rich_text) {
       const fullText = extractRichText(content.rich_text);
       if (!fullText.trim()) continue;
 
+      // Skip metadata lines like "Testable: Yes | Est. Cost: $12"
+      if (fullText.match(/^\s*\*?\s*Testable:/i)) continue;
+
       counter++;
-      const { description, cost } = parseCriterionText(fullText);
+
+      // Extract type tag from text like "[DATA] description" or "[UI] description"
+      const typeTagMatch = fullText.match(/^\[(\w+)\]\s*/);
+      let criterionType = currentType;
+      let cleanText = fullText;
+      if (typeTagMatch) {
+        const tag = typeTagMatch[1].toLowerCase();
+        if (tag in typeMap) {
+          criterionType = typeMap[tag];
+        }
+        cleanText = fullText.slice(typeTagMatch[0].length);
+      }
+
+      const { description, cost } = parseCriterionText(cleanText);
 
       criteria.push({
         id: `c-${String(counter).padStart(3, "0")}`,
         description,
-        type: currentType,
+        type: criterionType,
         estimatedCost: cost,
         status: "pending",
       });
+      continue;
+    }
+
+    // Also check for metadata in paragraph/callout blocks following a criterion
+    // Format: "Testable: Yes | Est. Cost: $12" or span with gray color
+    if (inSection && (type === "paragraph" || type === "callout") && content?.rich_text) {
+      const text = extractRichText(content.rich_text);
+      const costMatch = text.match(/Est\.?\s*Cost:\s*\$?([\d.]+)/i);
+      if (costMatch && criteria.length > 0) {
+        // Update the most recent criterion's cost
+        criteria[criteria.length - 1].estimatedCost = parseFloat(costMatch[1]) || 5;
+      }
     }
   }
 
