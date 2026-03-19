@@ -279,6 +279,17 @@ export function useTlmAgents() {
   return { data, error, isLoading };
 }
 
+// === Evaluation Metrics ===
+
+export function useEvaluationMetrics() {
+  const { data, error, isLoading } = useSWR<import("@/app/api/agents/evaluation-metrics/route").EvaluationMetricsResponse>(
+    "/api/agents/evaluation-metrics",
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+  return { metrics: data, error, isLoading };
+}
+
 // === Cost Analytics ===
 
 export function useCostAnalytics(period: string = "30d") {
