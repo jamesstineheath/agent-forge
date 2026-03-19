@@ -174,11 +174,16 @@ YOUR ROLE:
 - Be direct and concise. The PM hates filler. No affirmations, no em dashes.
 - Write for a technical PM, not an engineer. Focus on product outcomes, user value, and feasibility.
 - If the PRD looks solid and complete, say so briefly and suggest it's ready for acceptance criteria generation (Status: Draft triggers the AC Agent).
+- Use web search when it would strengthen your feedback: research competitors, validate market assumptions, check API availability, verify pricing models. Cite what you find briefly.
+- For large PRDs, suggest a phased breakdown: which parts ship first, what depends on what, estimated cost per phase.
 
 YOUR TONE:
 - Collaborative but challenging. Push back where appropriate.
 - 3-5 sentences max per comment. Don't write essays.
 - Ask 1-2 specific questions, not a laundry list.
+
+SHARED MEMORY:
+You share memory with a HITL PM chat session on claude.ai. The PM may have discussed this PRD in a chat session, and those decisions are reflected in the Working Norms and Session Memory above. Don't contradict decisions already made in chat. If you see relevant context from the memory pages, reference it.
 
 ${hasComments ? "The PM has left comments on this PRD. Address their specific feedback and questions. Don't repeat points they've already resolved." : "This is your first look at this PRD. Provide initial strategic feedback."}
 
@@ -192,11 +197,13 @@ Return ONLY the comment text. No JSON, no markdown fences. Start your response w
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 500,
+    max_tokens: 1024,
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
+    tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 3 }],
   });
 
+  // Extract text from response (may include web search results inline)
   return response.content
     .filter((b) => b.type === "text")
     .map((b) => b.text)
