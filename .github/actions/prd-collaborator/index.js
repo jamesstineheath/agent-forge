@@ -107,11 +107,13 @@ async function loadPMMemory() {
 
 // --- PRD Processing ---
 
-async function queryDraftPRDs() {
+async function queryPRDsNeedingFeedback() {
   const body = {
     filter: {
-      property: "Status",
-      select: { equals: "Draft" },
+      or: [
+        { property: "Status", select: { equals: "Needs PM" } },
+        { property: "Status", select: { equals: "Draft" } },
+      ],
     },
     sorts: [{ property: "Rank", direction: "ascending" }],
     page_size: 20,
@@ -222,8 +224,8 @@ async function main() {
   );
 
   // Query Draft PRDs
-  const pages = await queryDraftPRDs();
-  console.log(`[PRDCollaborator] Found ${pages.length} Draft PRD(s).`);
+  const pages = await queryPRDsNeedingFeedback();
+  console.log(`[PRDCollaborator] Found ${pages.length} PRD(s) needing feedback (Needs PM + Draft).`);
 
   if (pages.length === 0) {
     console.log("[PRDCollaborator] Nothing to process. Done.");
