@@ -9,6 +9,7 @@ import { EscalationCard } from "@/components/escalation-card";
 import { ActivityFeed } from "@/components/activity-feed";
 import { WebhookEventFeed } from "@/components/webhook-event-feed";
 import { QADashboard } from "@/components/qa-dashboard";
+import { ForceOpusToggle } from "@/app/components/force-opus-toggle";
 import {
   useWorkItems,
   useRepos,
@@ -201,6 +202,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Config / Kill Switches */}
+          <ForceOpusToggle />
 
           {/* QA Agent */}
           <QADashboard />
