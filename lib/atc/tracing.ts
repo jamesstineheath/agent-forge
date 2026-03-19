@@ -127,23 +127,15 @@ export async function listRecentTraces(agent?: AgentName, limit = 20): Promise<A
   const traces: AgentTrace[] = [];
   for (const blob of selected) {
     try {
-      // Try downloadUrl first (Vercel Blob SDK v0.19+), fall back to blob.url with auth header
-      const downloadUrl = (blob as unknown as Record<string, unknown>).downloadUrl as string | undefined;
-      let response: Response;
-      if (downloadUrl) {
-        response = await fetch(downloadUrl, { cache: "no-store" });
-      } else {
-        response = await fetch(blob.url, {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
-      if (response.ok) {
-        const trace = (await response.json()) as AgentTrace;
+      // Extract the storage key from pathname: "af-data/agent-traces/dispatcher/2026-03-18T17-21-41.531Z.json"
+      // loadJson expects key without "af-data/" prefix and without ".json" suffix
+      const key = blob.pathname.replace(/^af-data\//, '').replace(/\.json$/, '');
+      const trace = await loadJson<AgentTrace>(key);
+      if (trace) {
         traces.push(trace);
       }
     } catch {
-      // Skip individual fetch errors
+      // Skip individual load errors
     }
   }
 
