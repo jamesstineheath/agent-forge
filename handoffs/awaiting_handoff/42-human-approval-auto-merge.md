@@ -14,36 +14,58 @@
 
 ## Context
 
-When TLM Code Review returns FLAG_FOR_HUMAN, the PR enters a "Needs Human Review" lifecycle state and waits for the human to decide. But when the human approves the PR (via a GitHub review approval), nothing picks it up — the pipeline has no handler for human approvals. The PR sits in limbo until someone manually merges it.
+When TLM Code Review returns FLAG_FOR_HUMAN, the PR enters a "Needs Human Review" lifecycle state and waits for the human to decide. But when the human responds, nothing picks it up — the pipeline has no handler for human responses on flagged PRs.
 
-The webhook system already receives `pull_request_review` events from GitHub. The event reactor (`lib/event-reactor.ts`) handles CI pass/fail, PR merge/close, and workflow completion — but not review approvals.
+The webhook system already receives `pull_request_review` and `issue_comment` events from GitHub. The event reactor needs three new handlers:
 
-The fix: add a `github.pr.review_submitted` event handler to the reactor. When a non-bot user submits an APPROVED review on a PR whose work item is in `blocked` or `reviewing` status with a FLAG_FOR_HUMAN lifecycle state, the reactor should merge the PR (using admin override to bypass the failed TLM review check) and transition the work item to `merged`.
+1. **Human approves** (PR review with state=approved) → auto-merge the PR with admin override, transition work item to merged, cascade unblocked items.
+2. **Human comments with feedback** (issue_comment on a flagged PR from the repo owner, not a review approval) → re-trigger execution with the human's feedback incorporated. The executor should see the comment as additional context and push updated code to the same branch/PR.
+3. **Human closes the PR** → already handled by `handlePRClosed` — marks item failed and retries with feedback.
 
-Also need to handle the rejection case: when the human closes the PR (already handled by `handlePRClosed`) or leaves a comment like "do not merge" — closing the PR is the signal to retry with feedback.
+The repo owner is identified by checking the sender against the repo owner (use `GITHUB_REPOSITORY_OWNER` env var or fetch from the repo API). Bot users (`github-actions[bot]`, `vercel[bot]`) are always filtered out.
 
 ## Pre-flight Self-Check
 
 If ANY of these fail, **abort immediately** and report via Session Abort Protocol.
 
 - [ ] pull_request_review events are parsed in the webhook route
-- [ ] Bot reviews (github-actions[bot]) are filtered out
-- [ ] handleReviewSubmitted only acts on 'approved' state
-- [ ] Work item is found by PR number before attempting merge
-- [ ] PR merge uses admin override (to bypass failed TLM check status)
-- [ ] Work item transitions to merged after successful PR merge
+- [ ] issue_comment events on PRs are parsed in the webhook route
+- [ ] Bot reviews/comments are filtered out
+- [ ] Only repo owner comments/reviews trigger actions (not random collaborators)
+- [ ] handleReviewSubmitted merges on approval with admin override
+- [ ] handleHumanFeedback re-triggers execution with comment as context
+- [ ] Work item is found by PR number before attempting any action
 - [ ] dispatchUnblockedItems is called after merge
-- [ ] Non-approved reviews (commented, changes_requested) are ignored gracefully
 
 ## Step 0: Branch, commit handoff, push
 
 Create branch `feat/human-approval-auto-merge` from `main`. Commit this handoff file. Push.
 
-## Step 1: In `app/api/webhooks/github/route.ts`, ensure `pull_request_review` events are being parsed and forwarded to the event reactor. Map them to a new event type `github.pr.review_submitted` with payload `{ repo, branch, prNumber, reviewer, state, body }`. The reviewer field should be the GitHub username. Filter out reviews from `github-actions[bot]` at the webhook level — we only care about human reviews.
+## Step 1: In `app/api/webhooks/github/route.ts`, ensure both `pull_request_review` and `issue_comment` events are parsed and forwarded to the event reactor.
 
-## Step 2: In `lib/event-reactor.ts`, add a new handler `handleReviewSubmitted(event)`. Logic: (a) If `event.payload.state !== 'approved'`, return early — we only auto-merge on approval. (b) Find the work item via `findWorkItemByPR(event.repo, event.payload.prNumber)`. (c) If no item found or item status is not `blocked` or `reviewing`, return early. (d) Merge the PR using the GitHub API with admin override: `PUT /repos/{owner}/{repo}/pulls/{prNumber}/merge` with `merge_method: 'squash'` and admin headers. Use the existing GitHub utility functions. (e) Transition the work item to `merged`. (f) Call `dispatchUnblockedItems()` to cascade. (g) Log: `[reactor] human approved PR #{prNumber} — auto-merging`.
+For `pull_request_review`: map to event type `github.pr.review_submitted` with payload `{ repo, branch, prNumber, reviewer, state, body }`. Filter out reviews from bot users (`github-actions[bot]`).
 
-## Step 3: Wire the new event type in the `reactToEvent()` switch/dispatch in `lib/event-reactor.ts`. Add `case 'github.pr.review_submitted': return handleReviewSubmitted(event)`.
+For `issue_comment` on PRs (GitHub sends issue_comment for PR comments too — check for `issue.pull_request` in the payload): map to event type `github.pr.comment` with payload `{ repo, prNumber, author, body }`. Filter out bot users. Only forward if the author matches the repo owner.
+
+## Step 2: In `lib/event-reactor.ts`, add handler `handleReviewSubmitted(event)`:
+(a) If `event.payload.state !== 'approved'`, return early.
+(b) Find the work item via `findWorkItemByPR(event.repo, event.payload.prNumber)`.
+(c) If no item found or item status is not `blocked` or `reviewing`, return early.
+(d) Merge the PR using the GitHub API with admin override: `PUT /repos/{owner}/{repo}/pulls/{prNumber}/merge` with `merge_method: 'squash'`. Use existing GitHub utility functions.
+(e) Transition the work item to `merged`.
+(f) Call `dispatchUnblockedItems()` to cascade.
+(g) Log: `[reactor] human approved PR #{prNumber} — auto-merging`.
+
+## Step 3: In `lib/event-reactor.ts`, add handler `handleHumanFeedback(event)`:
+(a) Find the work item via `findWorkItemByPR(event.repo, event.payload.prNumber)`.
+(b) If no item found or item status is not `blocked`, return early — only act on FLAG_FOR_HUMAN items.
+(c) Re-trigger the `execute-handoff.yml` workflow via `workflow_dispatch` with the existing branch. Pass the human's comment as additional context (add a `human_feedback` input to the workflow dispatch payload if needed, or append it to the handoff file on the branch).
+(d) Transition the work item from `blocked` back to `executing`.
+(e) Log: `[reactor] human feedback on PR #{prNumber} — re-triggering execution`.
+
+## Step 4: Wire both new event types in `reactToEvent()`:
+- `case 'github.pr.review_submitted': return handleReviewSubmitted(event)`
+- `case 'github.pr.comment': return handleHumanFeedback(event)`
 
 ## Session Abort Protocol
 
