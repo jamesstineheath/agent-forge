@@ -61,6 +61,7 @@ export interface HLOStateEntry {
 // --- Model event types ---
 
 export type TaskType =
+  | "decomposition"
   | "dispatch"
   | "health_monitor"
   | "project_manager"

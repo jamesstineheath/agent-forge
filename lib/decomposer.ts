@@ -1,5 +1,4 @@
-import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { routedAnthropicCall } from "./model-router";
 import { fetchPageContent } from "./notion";
 import { fetchRepoContext, type RepoContext } from "./orchestrator";
 import { listRepos, getRepo } from "./repos";
@@ -622,8 +621,10 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
         ? planPrompt
         : `${planPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED VALIDATION:\n${lastError}\n\nPlease fix the issues and return a valid JSON array.`;
 
-    const { text } = await generateText({
-      model: anthropic("claude-opus-4-6"),
+    const { text } = await routedAnthropicCall({
+      model: "claude-opus-4-6",
+      taskType: "decomposition",
+      workItemId: project.projectId,
       system: {
         role: "system" as const,
         content: SYSTEM_PROMPT,
