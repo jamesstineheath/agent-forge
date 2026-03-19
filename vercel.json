@@ -3,19 +3,19 @@
   "crons": [
     {
       "path": "/api/agents/dispatcher/cron",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/agents/health-monitor/cron",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/agents/project-manager/cron",
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/agents/health-monitor/cron",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/agents/project-manager/cron",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/agents/supervisor/cron",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/agents/digest/cron",
