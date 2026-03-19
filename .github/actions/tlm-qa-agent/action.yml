@@ -11,9 +11,9 @@ inputs:
     description: 'Pull request number'
     required: true
   repo:
-    description: 'Repository in owner/name format'
+    description: 'Repository in owner/repo format'
     required: false
-    default: ''
+    default: ${{ github.repository }}
   anthropic-api-key:
     description: 'Anthropic API key for Claude'
     required: true
