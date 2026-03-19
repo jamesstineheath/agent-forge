@@ -72,11 +72,14 @@
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
 │  │  TLM QA      │  │ Feedback     │  │    Repo      │      │
 │  │   Agent      │  │ Compiler     │  │  Metadata    │      │
-│  │ (DISABLED)   │  │ (weekly cron)│  │ (CLAUDE.md,  │      │
+│  │ (Playwright) │  │ (daily cron) │  │ (CLAUDE.md,  │      │
 │  └──────────────┘  └──────────────┘  │ system map,  │      │
 │                                       │ ADRs, TLM    │      │
-│                                       │ memory)      │      │
-│                                       └──────────────┘      │
+│  ┌──────────────┐                    │ memory)      │      │
+│  │ TLM Trace    │                    └──────────────┘      │
+│  │  Reviewer    │                                           │
+│  │ (daily cron) │                                           │
+│  └──────────────┘                                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,9 +89,10 @@
 
 ```
 Filed → Ready → Queued → Generating → Executing → Reviewing → Merged
-                  │                                     │
-                  ├── Blocked (escalated) ←──────────────┤
-                  └── Parked (conflict/failed) ←────────┘
+                  │           │                        │
+                  │           └── Retrying ────────────┘
+                  ├── Blocked (escalated) ←────────────┤
+                  └── Parked (conflict/failed) ←───────┘
 ```
 
 1. **Filed**: Work item created from PA `file_work_item` bridge, GitHub issue, Plan Decomposer, or manual entry
