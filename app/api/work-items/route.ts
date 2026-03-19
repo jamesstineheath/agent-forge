@@ -8,6 +8,7 @@ import {
 } from "@/lib/work-items";
 import { createWorkItemSchema } from "@/lib/types";
 import type { WorkItem } from "@/lib/types";
+import { dispatchSortComparator } from "@/lib/atc/utils";
 
 export async function GET(req: NextRequest) {
   const authError = await validateAuth(req, "WORK_ITEMS_API_KEY");
@@ -26,9 +27,12 @@ export async function GET(req: NextRequest) {
   if (priority) filters.priority = priority as WorkItem["priority"];
 
   try {
-    const items = full
-      ? await listWorkItemsFull(filters)
-      : await listWorkItems(filters);
+    if (full) {
+      const items = await listWorkItemsFull(filters);
+      const sorted = items.slice().sort(dispatchSortComparator);
+      return NextResponse.json(sorted);
+    }
+    const items = await listWorkItems(filters);
     return NextResponse.json(items);
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
