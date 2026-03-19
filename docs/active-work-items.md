@@ -16,11 +16,6 @@
   - PR: https://github.com/jamesstineheath/personal-assistant/pull/373
   - Files: handoffs/create-travel-prompt-section.md, lib/system-prompt.ts, prompts/sections/travel.md
 
-- **Add shared types for model routing (TaskType, WorkItemSignals)** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-shared-types-for-model-routing-tasktype-workit`
-  - PR: https://github.com/jamesstineheath/agent-forge/pull/322
-  - Files: handoffs/add-shared-types-for-model-routing-tasktype-workit.md, lib/types.ts
-
 ## Queued for Dispatch
 
 - **Tool Registry Integration — Register New Real Estate Tools** (jamesstineheath/personal-assistant)
