@@ -7,6 +7,9 @@ import type {
   TLMLesson,
   TLMMemoryStats,
 } from "@/lib/types";
+import { BlobEpisodeStore, syncMemoryWindow } from "@/lib/episode-compat";
+import { MEMORY_COMPAT_KEY } from "@/lib/episode-recorder";
+import { loadJson } from "@/lib/storage";
 
 export const revalidate = 300;
 
@@ -101,12 +104,58 @@ function parseStats(content: string): TLMMemoryStats {
   };
 }
 
+/**
+ * Attempts to read TLM memory from the episode store (compat blob or live sync).
+ * Returns parsed markdown content or null if unavailable.
+ */
+async function getEpisodeStoreMarkdown(): Promise<string | null> {
+  // 1. Try the cached compat blob
+  try {
+    const cached = await loadJson<{ markdown: string }>(MEMORY_COMPAT_KEY);
+    if (cached?.markdown && cached.markdown.trim().length > 0) {
+      return cached.markdown;
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // 2. Try live sync from episode store
+  try {
+    const store = new BlobEpisodeStore();
+    const episodes = await store.list(20);
+    if (episodes.length > 0) {
+      return await syncMemoryWindow(store);
+    }
+  } catch {
+    /* fall through to legacy */
+  }
+
+  return null;
+}
+
 export async function GET(_req: NextRequest) {
   const session = await auth();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  try {
+    // Try episode store first
+    const episodeMarkdown = await getEpisodeStoreMarkdown();
+    if (episodeMarkdown) {
+      const memory: TLMMemory = {
+        hotPatterns: parseHotPatterns(episodeMarkdown),
+        recentOutcomes: parseRecentOutcomes(episodeMarkdown),
+        lessonsLearned: parseLessonsLearned(episodeMarkdown),
+        stats: parseStats(episodeMarkdown),
+      };
+      return NextResponse.json(memory);
+    }
+  } catch {
+    // Fall through to legacy GitHub source
+  }
+
+  // Legacy: read from GitHub
   const token = process.env.GH_PAT;
   if (!token) {
     return NextResponse.json(

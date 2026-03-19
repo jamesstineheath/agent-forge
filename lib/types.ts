@@ -793,3 +793,21 @@ export interface ValidationResult {
   responseStatus?: number;
   durationMs?: number;
 }
+
+// ── Episodes (time-travel debugging) ─────────────────────────────────────────
+
+export interface Episode {
+  id: string;
+  taskDescription: string;
+  repoSlug: string;
+  tags: string[];
+  approach: string;
+  outcome: string;
+  outcomeDetail: string;
+  insights: string[];
+  filesChanged: string[];
+  workItemId?: string;
+  projectId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
