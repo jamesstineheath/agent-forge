@@ -61,6 +61,24 @@ export async function persistEvents(events: ATCEvent[]): Promise<void> {
   }
 }
 
+// -- Routing threshold event helper -------------------------------------------
+
+export async function emitRoutingThresholdEvent(payload: {
+  signalKey: string;
+  forceModel: 'opus' | 'sonnet';
+  triggeringFailureRate: number;
+  sampleSize: number;
+}): Promise<void> {
+  const event: ATCEvent = {
+    id: `rte-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    type: "routing_threshold_tightened",
+    workItemId: "system",
+    details: `Override ${payload.signalKey} → ${payload.forceModel} (failure rate: ${(payload.triggeringFailureRate * 100).toFixed(1)}%, n=${payload.sampleSize})`,
+  };
+  await persistEvents([event]);
+}
+
 // -- Model event emit helpers -------------------------------------------------
 
 async function appendModelEvent(event: ModelEvent): Promise<void> {

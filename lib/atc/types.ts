@@ -81,6 +81,10 @@ export interface ModelCallEvent {
   durationMs?: number;
   success: boolean;
   error?: string;
+  /** Optional complexity signal for routing analysis */
+  complexity?: string;
+  /** Optional criteria signal for routing analysis */
+  criteria?: unknown;
 }
 
 export interface ModelEscalationEvent {
