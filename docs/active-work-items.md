@@ -4,15 +4,15 @@
 
 ## Currently Executing
 
-- **Add telemetry emission to model router** (jamesstineheath/agent-forge)
-  - Branch: `fix/add-telemetry-emission-to-model-router`
-  - Files: lib/model-router.ts
-  - Started: 2026-03-19T15:17:19.742Z
-
 - **Migrate orchestrator to use model router** (jamesstineheath/agent-forge)
   - Branch: `feat/migrate-orchestrator-to-use-model-router`
   - Files: lib/orchestrator.ts
   - Started: 2026-03-19T15:18:23.035Z
+
+- **Migrate decomposer to use model router** (jamesstineheath/agent-forge)
+  - Branch: `feat/migrate-decomposer-to-use-model-router`
+  - Files: lib/decomposer.ts
+  - Started: 2026-03-19T15:32:21.284Z
 
 ## Queued for Dispatch
 
@@ -85,8 +85,6 @@
 - **Integration test: full travel lifecycle E2E** (jamesstineheath/personal-assistant)
 
 - **Add retry-with-escalation logic to model router** (jamesstineheath/agent-forge)
-
-- **Migrate decomposer to use model router** (jamesstineheath/agent-forge)
 
 - **Migrate PM agent to use model router** (jamesstineheath/agent-forge)
 
