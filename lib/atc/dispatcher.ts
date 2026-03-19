@@ -83,6 +83,49 @@ export async function dispatchUnblockedItems(
   return { dispatched };
 }
 
+function parsePriorityNumber(priority: string | undefined): number {
+  if (!priority) return 99;
+  const match = priority.match(/P(\d+)/i);
+  return match ? parseInt(match[1], 10) : 99;
+}
+
+function computePrioritySkipped(
+  dispatchedItem: WorkItem,
+  otherItems: WorkItem[]
+): { count: number; skippedItemIds: string[]; note: string } | undefined {
+  const dispatchedPNum = parsePriorityNumber(dispatchedItem.priority);
+  const dispatchedTime = dispatchedItem.createdAt;
+
+  const skipped = otherItems.filter((item) => {
+    const itemPNum = parsePriorityNumber(item.priority);
+    const itemTime = item.createdAt;
+    return itemPNum > dispatchedPNum && itemTime < dispatchedTime;
+  });
+
+  if (skipped.length === 0) return undefined;
+
+  // Find most common priority among skipped items
+  const pCounts = new Map<string, number>();
+  for (const item of skipped) {
+    const p = item.priority ?? "P1";
+    pCounts.set(p, (pCounts.get(p) ?? 0) + 1);
+  }
+  let mostCommon = "P1";
+  let maxCount = 0;
+  for (const [p, count] of pCounts) {
+    if (count > maxCount) {
+      mostCommon = p;
+      maxCount = count;
+    }
+  }
+
+  return {
+    count: skipped.length,
+    skippedItemIds: skipped.map((i) => i.id),
+    note: `${dispatchedItem.priority ?? "P1"} item dispatched ahead of ${skipped.length} earlier-queued ${mostCommon} item${skipped.length > 1 ? "s" : ""}`,
+  };
+}
+
 /**
  * Dispatcher agent: maximizes throughput within concurrency limits.
  *
@@ -205,7 +248,8 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
             item.id,
             "ready",
             "executing",
-            `⚡ Expedited dispatch to ${item.targetRepo} (branch: ${result.branch})`
+            `⚡ Expedited dispatch to ${item.targetRepo} (branch: ${result.branch})`,
+            { priority: item.priority, rank: 1 }
           )
         );
         expeditedCount++;
@@ -315,6 +359,8 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
 
         try {
           const result = await dispatchWorkItem(item.id);
+          const rank = candidates.indexOf(item) + 1;
+          const prioritySkipped = computePrioritySkipped(item, candidates.filter((c) => c.id !== item.id));
           addDecision(trace, { workItemId: item.id, action: 'dispatched', reason: `dispatched to ${repo.fullName} (branch: ${result.branch})` });
           events.push(
             makeEvent(
@@ -322,7 +368,8 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
               item.id,
               "ready",
               "executing",
-              `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`
+              `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`,
+              { priority: item.priority, rank, ...(prioritySkipped ? { prioritySkipped } : {}) }
             )
           );
           slotsRemaining--;
@@ -391,7 +438,8 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
             item.id,
             item.status,
             "executing",
-            `Auto-dispatched standalone item (source: ${item.source.type}) to ${item.targetRepo} (branch: ${result.branch})`
+            `Auto-dispatched standalone item (source: ${item.source.type}) to ${item.targetRepo} (branch: ${result.branch})`,
+            { priority: item.priority, rank: 1 }
           )
         );
         slotsRemaining--;

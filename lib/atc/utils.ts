@@ -50,7 +50,8 @@ export function makeEvent(
   workItemId: string,
   previousStatus: string | undefined,
   newStatus: string | undefined,
-  details: string
+  details: string,
+  extra?: Pick<ATCEvent, "priority" | "rank" | "prioritySkipped">
 ): ATCEvent {
   return {
     id: randomUUID(),
@@ -60,6 +61,7 @@ export function makeEvent(
     details,
     previousStatus,
     newStatus,
+    ...extra,
   };
 }
 
