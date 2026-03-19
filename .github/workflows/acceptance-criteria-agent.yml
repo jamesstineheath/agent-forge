@@ -1,0 +1,30 @@
+name: Acceptance Criteria Agent
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 minutes
+  workflow_dispatch: {}
+
+# Only one run at a time
+concurrency:
+  group: acceptance-criteria-agent
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  generate-criteria:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Acceptance Criteria Agent
+        uses: ./.github/actions/acceptance-criteria-agent
+        with:
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          notion-api-key: ${{ secrets.NOTION_API_KEY }}
+          agent-forge-url: ${{ secrets.AGENT_FORGE_URL }}
+          agent-forge-api-secret: ${{ secrets.AGENT_FORGE_API_SECRET }}
