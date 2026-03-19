@@ -18,12 +18,13 @@ type EscalationClassification =
 
 // --- Fast-lane escalation types ---
 
-export type EscalationReason = 'spec_review_flag' | 'budget_exceeded' | 'complexity_flag';
+export type EscalationReason = 'spec_review_flag' | 'budget_exceeded' | 'complexity_flag' | 'spend-alert';
 
 const ESCALATION_REASON_LABELS: Record<EscalationReason, string> = {
   spec_review_flag: 'Spec Review Flag — handoff was flagged during TLM spec review',
   budget_exceeded: 'Budget Exceeded — estimated cost exceeds fast-lane budget threshold',
   complexity_flag: 'Complexity Flag — item is too complex for fast-lane execution',
+  'spend-alert': 'Spend Alert — Vercel spend threshold crossed',
 };
 
 export interface Escalation {
