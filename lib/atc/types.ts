@@ -57,3 +57,41 @@ export interface HLOStateEntry {
   hloState: HLOLifecycleState | null;
   prInfo: PR | null;
 }
+
+// --- Model event types ---
+
+export type TaskType =
+  | "dispatch"
+  | "health_monitor"
+  | "project_manager"
+  | "supervisor"
+  | "spec_review"
+  | "code_review"
+  | "execution";
+
+export interface ModelCallEvent {
+  eventType: 'model_call';
+  timestamp: string;
+  workItemId?: string;
+  taskType: TaskType;
+  model: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  durationMs?: number;
+  success: boolean;
+  error?: string;
+}
+
+export interface ModelEscalationEvent {
+  eventType: 'model_escalation';
+  timestamp: string;
+  workItemId?: string;
+  taskType: TaskType;
+  reason: string;
+  confidenceScore?: number;
+  step?: string;
+}
+
+export type ModelEvent = ModelCallEvent | ModelEscalationEvent;
+
+export const MODEL_EVENTS_KEY = "atc/model-events";
