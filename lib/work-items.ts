@@ -334,6 +334,28 @@ export async function findWorkItemByBranch(branch: string): Promise<WorkItem | n
   return null;
 }
 
+/**
+ * Find a work item by its PR number and repo.
+ * Scans active and failed items to match against execution.prNumber.
+ */
+export async function findWorkItemByPR(repo: string, prNumber: number): Promise<WorkItem | null> {
+  const index = await loadIndex();
+  // Check items that could have a PR: executing, reviewing, retrying, merged, failed
+  const relevantStatuses: WorkItem["status"][] = ["executing", "reviewing", "retrying", "merged", "failed"];
+  const candidates = index.filter((e) => relevantStatuses.includes(e.status));
+
+  for (const entry of candidates) {
+    const item = await getWorkItem(entry.id);
+    if (item?.execution?.prNumber === prNumber) {
+      // Also verify repo matches (normalize both)
+      const itemRepo = normalizeTargetRepo(item.targetRepo);
+      const queryRepo = normalizeTargetRepo(repo);
+      if (itemRepo === queryRepo) return item;
+    }
+  }
+  return null;
+}
+
 export async function deleteWorkItem(id: string): Promise<boolean> {
   const existing = await getWorkItem(id);
   if (!existing) return false;
