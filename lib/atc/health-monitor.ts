@@ -945,11 +945,30 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
     const item = await getWorkItem(failedId);
     if (!item) continue;
 
+    // If the item has a PR, check whether it's closed (not merged).
+    // Closed PRs are safe to retry — clear the stale PR data so the next
+    // execution creates a fresh branch and PR. Only skip if the PR is still open
+    // (the reconciler in §2.8 handles open/merged PRs).
     if (item.execution?.prNumber != null) {
-      console.log(
-        `[health-monitor] Skipping retry for ${item.id} — has PR #${item.execution.prNumber}, deferring to reconciler`
-      );
-      continue;
+      try {
+        const pr = await getPRByNumber(item.targetRepo, item.execution.prNumber);
+        if (pr && pr.state === "open") {
+          console.log(
+            `[health-monitor] Skipping retry for ${item.id} — PR #${item.execution.prNumber} is still open, deferring to reconciler`
+          );
+          continue;
+        }
+        // PR is closed (not merged) or not found — safe to retry with fresh PR data
+        console.log(
+          `[health-monitor] PR #${item.execution.prNumber} for ${item.id} is closed/not-found — will retry with clean state`
+        );
+      } catch (err) {
+        console.warn(
+          `[health-monitor] Could not check PR #${item.execution.prNumber} state for ${item.id}, skipping retry:`,
+          err
+        );
+        continue;
+      }
     }
 
     const retryCount = item.execution?.retryCount ?? 0;
@@ -978,6 +997,10 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           retryCount: retryCount + 1,
           completedAt: undefined,
           outcome: undefined,
+          prNumber: undefined,
+          prUrl: undefined,
+          workflowRunId: undefined,
+          startedAt: undefined,
         },
       });
       events.push(
