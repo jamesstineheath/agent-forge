@@ -294,6 +294,8 @@ async function checkCIStatus(
         body: [
           "## TLM Review: CI_BLOCKED",
           "",
+          "<!-- tlm-decision: CI_BLOCKED -->",
+          "",
           "CI is failing. Code review deferred until CI passes.",
           "",
           "Failing checks:",
@@ -325,6 +327,8 @@ async function checkCIStatus(
         pull_number: prNumber,
         body: [
           "## TLM Review: CI Pending",
+          "",
+          "<!-- tlm-decision: CI_PENDING -->",
           "",
           "CI still running. Will review on check_suite completion.",
           "",
@@ -630,12 +634,15 @@ async function run(): Promise<void> {
     if (tier1Files.length > 0) {
       const fileList = tier1Files.map((f) => `- \`${f}\``).join('\n');
       core.info(`PR touches ${tier1Files.length} Tier 1 sensitive path(s), flagging for human review.`);
+      // TLM DECISION CONTRACT: embed machine-readable decision marker for Outcome Tracker
       await octokit.rest.pulls.createReview({
         owner,
         repo,
         pull_number: prNumber,
         body: [
           '## TLM Review: Decision Required',
+          '',
+          '<!-- tlm-decision: FLAG_FOR_HUMAN -->',
           '',
           '**What\'s at stake:** This PR modifies core pipeline infrastructure. Changes to these files directly affect how code gets executed, reviewed, and merged. A bug here could stall the entire pipeline.',
           '',
@@ -828,6 +835,14 @@ async function run(): Promise<void> {
     }
 
     // Build review body
+    // TLM DECISION CONTRACT:
+    // Writer (.github/actions/tlm-review): embeds decision as <!-- tlm-decision: {DECISION} -->
+    // in the PR review body (submitted via createReview API).
+    // Reader (.github/actions/tlm-outcome-tracker): extracts via regex on review body.
+    // Valid values: APPROVE | REQUEST_CHANGES | FLAG_FOR_HUMAN
+    // Default when not found: 'unknown'
+    const decisionMarker = `<!-- tlm-decision: ${review.decision.toUpperCase()} -->`;
+
     const severityEmoji: Record<string, string> = {
       critical: "\u{1F534}",
       warning: "\u{1F7E1}",
@@ -836,6 +851,8 @@ async function run(): Promise<void> {
 
     const lines: string[] = [
       `## TLM Review: ${review.decision.toUpperCase()}`,
+      "",
+      decisionMarker,
       "",
       review.summary,
       "",
