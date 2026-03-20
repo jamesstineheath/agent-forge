@@ -480,7 +480,7 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
   } finally {
     try {
       await persistTrace(trace);
-      await cleanupOldTraces('dispatcher');
+      await cleanupOldTraces('dispatcher', 7);
     } catch (tracingErr) {
       console.error('[Dispatcher] Tracing failed (non-fatal):', tracingErr);
     }

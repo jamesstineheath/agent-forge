@@ -5,6 +5,7 @@ import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { persistEvents } from "@/lib/atc/events";
 import { runSupervisor } from "@/lib/atc/supervisor";
 import { withTimeout, recordAgentRun } from "@/lib/atc/utils";
+import { persistTrace, cleanupOldTraces } from "@/lib/atc/tracing";
 import { CYCLE_TIMEOUT_MS, ATC_STATE_KEY, CycleTimeoutError } from "@/lib/atc/types";
 import type { CycleContext } from "@/lib/atc/types";
 
@@ -25,8 +26,9 @@ async function handleCron(req: NextRequest) {
     return NextResponse.json({ success: true, skipped: true, reason: "lock held" });
   }
 
+  const ctx: CycleContext = { now: new Date(), events: [] };
+
   try {
-    const ctx: CycleContext = { now: new Date(), events: [] };
     await withTimeout(runSupervisor(ctx), CYCLE_TIMEOUT_MS);
 
     // Persist events
@@ -42,6 +44,16 @@ async function handleCron(req: NextRequest) {
       recentEvents: ctx.events.slice(-20),
     });
 
+    // Persist trace (survives withTimeout cutoff — that's why it's here, not in runSupervisor)
+    try {
+      if (ctx.trace) {
+        await persistTrace(ctx.trace);
+        await cleanupOldTraces('supervisor', 7);
+      }
+    } catch (tracingErr) {
+      console.error('[supervisor] Tracing failed (non-fatal):', tracingErr);
+    }
+
     await recordAgentRun("supervisor");
 
     return NextResponse.json({
@@ -56,6 +68,12 @@ async function handleCron(req: NextRequest) {
       console.error(`[supervisor] Cycle aborted after ${CYCLE_TIMEOUT_MS / 1000}s timeout.`);
       // Still update lastRunAt so the UI knows the cron is firing
       try {
+        // Persist partial trace on timeout
+        if (ctx.trace) {
+          try {
+            await persistTrace(ctx.trace);
+          } catch { /* non-fatal */ }
+        }
         await saveJson(ATC_STATE_KEY, {
           lastRunAt: new Date().toISOString(),
           activeExecutions: [],

@@ -7,6 +7,7 @@ import {
   composeDigest,
 } from "@/lib/pm-agent";
 import { loadJson } from "@/lib/storage";
+import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "@/lib/atc/tracing";
 import type { BacklogReview, ProjectHealthReport, DigestOptions } from "@/lib/types";
 
 // ── POST /api/pm-agent ───────────────────────────────────────────────────────
@@ -35,24 +36,31 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const trace = startTrace('pm-agent');
+
   try {
+    let result: unknown;
     switch (action) {
       case "review": {
-        const result = await reviewBacklog(options);
-        return NextResponse.json(result);
+        result = await reviewBacklog(options);
+        addDecision(trace, { action: 'review', reason: 'Backlog review completed' });
+        break;
       }
       case "health": {
         const projectId = options?.projectId as string | undefined;
-        const result = await assessProjectHealth(projectId);
-        return NextResponse.json(result);
+        result = await assessProjectHealth(projectId);
+        addDecision(trace, { action: 'health', reason: `Health assessment completed${projectId ? ` for ${projectId}` : ''}` });
+        break;
       }
       case "suggest": {
-        const result = await suggestNextBatch();
-        return NextResponse.json(result);
+        result = await suggestNextBatch();
+        addDecision(trace, { action: 'suggest', reason: 'Next batch suggestion completed' });
+        break;
       }
       case "digest": {
-        const result = await composeDigest(options as unknown as DigestOptions);
-        return NextResponse.json(result);
+        result = await composeDigest(options as unknown as DigestOptions);
+        addDecision(trace, { action: 'digest', reason: 'Digest composed and sent' });
+        break;
       }
       default:
         return NextResponse.json(
@@ -60,12 +68,26 @@ export async function POST(req: NextRequest) {
           { status: 400 },
         );
     }
+
+    addPhase(trace, { name: action, durationMs: Date.now() - trace._startMs });
+    completeTrace(trace, 'success');
+
+    return NextResponse.json(result);
   } catch (err) {
+    addError(trace, err instanceof Error ? err.message : String(err));
+    completeTrace(trace, 'error');
     console.error(`[pm-agent] POST action=${action} failed:`, err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Internal server error" },
       { status: 500 },
     );
+  } finally {
+    try {
+      await persistTrace(trace);
+      await cleanupOldTraces('pm-agent', 7);
+    } catch (tracingErr) {
+      console.error('[pm-agent] Tracing failed (non-fatal):', tracingErr);
+    }
   }
 }
 
