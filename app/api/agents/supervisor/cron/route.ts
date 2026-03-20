@@ -8,6 +8,7 @@ import { withTimeout, recordAgentRun } from "@/lib/atc/utils";
 import { persistTrace, cleanupOldTraces } from "@/lib/atc/tracing";
 import { CYCLE_TIMEOUT_MS, ATC_STATE_KEY, CycleTimeoutError } from "@/lib/atc/types";
 import type { CycleContext } from "@/lib/atc/types";
+import { isPipelineKilled } from "@/lib/atc/kill-switch";
 
 export const maxDuration = 300;
 
@@ -19,6 +20,10 @@ async function handleCron(req: NextRequest) {
 
   if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (await isPipelineKilled()) {
+    return NextResponse.json({ success: true, skipped: true, reason: "kill-switch" });
   }
 
   const locked = await acquireLock(SUPERVISOR_LOCK_KEY);

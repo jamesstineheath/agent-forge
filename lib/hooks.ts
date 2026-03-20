@@ -3,6 +3,7 @@ import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, Deba
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
+import type { KillSwitchState } from "@/lib/atc/kill-switch";
 
 const fetcher = (url: string) =>
   fetch(url).then((res) => {
@@ -55,6 +56,15 @@ export interface PipelineStatus {
 export function usePipelineStatus() {
   const { data, error, isLoading, mutate } = useSWR<PipelineStatus>(
     "/api/orchestrator/status",
+    fetcher,
+    { refreshInterval: 10000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
+export function useKillSwitch() {
+  const { data, error, isLoading, mutate } = useSWR<KillSwitchState>(
+    "/api/pipeline/kill-switch",
     fetcher,
     { refreshInterval: 10000 }
   );
