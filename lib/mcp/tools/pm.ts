@@ -221,6 +221,28 @@ export function registerPMTools(server: McpServer) {
         counts[status] = items.length;
       }
 
+      // Pipeline metrics (7-day window)
+      let pipelineMetrics: unknown = null;
+      try {
+        const { computePipelineMetrics } = await import("@/lib/pipeline-metrics");
+        pipelineMetrics = await computePipelineMetrics(7);
+      } catch {
+        pipelineMetrics = { error: "Could not compute pipeline metrics" };
+      }
+
+      // Cost summary (7-day window)
+      let costSummary: unknown = null;
+      try {
+        const { getCostsForPeriod, aggregateCosts } = await import("@/lib/cost-tracking");
+        const endDate = new Date().toISOString().slice(0, 10);
+        const startDateObj = new Date();
+        startDateObj.setUTCDate(startDateObj.getUTCDate() - 7);
+        const entries = await getCostsForPeriod(startDateObj.toISOString().slice(0, 10), endDate);
+        costSummary = aggregateCosts(entries);
+      } catch {
+        costSummary = { error: "Could not compute cost summary" };
+      }
+
       return {
         content: [{
           type: "text" as const,
@@ -228,6 +250,8 @@ export function registerPMTools(server: McpServer) {
             atcState,
             agentHealth,
             workItemCounts: counts,
+            pipelineMetrics,
+            costSummary7d: costSummary,
           }, null, 2),
         }],
       };
