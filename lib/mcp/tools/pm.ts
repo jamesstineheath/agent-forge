@@ -254,6 +254,38 @@ export function registerPMTools(server: McpServer) {
         supervisorPhaseLog = { error: "Could not read supervisor execution log" };
       }
 
+      // Knowledge graph stats
+      let knowledgeGraphStats: unknown = null;
+      try {
+        const { loadRepoSnapshot } = await import("@/lib/knowledge-graph/storage");
+        const { listRepos, getRepo } = await import("@/lib/repos");
+        const allRepos = await listRepos();
+        const repoStats = [];
+        const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+        for (const entry of allRepos) {
+          const repo = await getRepo(entry.id);
+          if (!repo) continue;
+          const snapshot = await loadRepoSnapshot(repo.fullName);
+          const now = Date.now();
+          let staleness: "fresh" | "stale" | "missing" = "missing";
+          if (snapshot?.indexedAt) {
+            const age = now - new Date(snapshot.indexedAt).getTime();
+            staleness = age > SEVEN_DAYS_MS ? "stale" : "fresh";
+          }
+          repoStats.push({
+            repo: repo.fullName,
+            entityCount: snapshot?.entityCount ?? 0,
+            relationshipCount: snapshot?.relationshipCount ?? 0,
+            lastIndexedAt: snapshot?.indexedAt ?? null,
+            staleness,
+          });
+        }
+        knowledgeGraphStats = { repos: repoStats };
+      } catch {
+        knowledgeGraphStats = { error: "Could not load knowledge graph stats" };
+      }
+
       return {
         content: [{
           type: "text" as const,
@@ -264,6 +296,7 @@ export function registerPMTools(server: McpServer) {
             pipelineMetrics,
             costSummary7d: costSummary,
             supervisorPhaseLog,
+            knowledgeGraph: knowledgeGraphStats,
           }, null, 2),
         }],
       };

@@ -334,12 +334,20 @@ export async function runDecomposition(): Promise<SupervisorPhaseOutput> {
       try {
         const markdown = planToDecomposerMarkdown(plan, criteria.prdTitle);
 
+        // Extract file hints from architecture plan for graph-targeted context
+        const filesToCreate = plan.criterionPlans.flatMap((cp) => cp.filesToCreate ?? []);
+        const filesToModify = plan.criterionPlans.flatMap((cp) => cp.filesToModify ?? []);
+        const fileHints = (filesToCreate.length > 0 || filesToModify.length > 0)
+          ? { filesToCreate: [...new Set(filesToCreate)], filesToModify: [...new Set(filesToModify)] }
+          : undefined;
+
         const result = await decomposeFromPlan({
           prdId: entry.prdId,
           prdTitle: criteria.prdTitle,
           targetRepo: plan.targetRepo,
           planContent: markdown,
           projectId: criteria.projectId,
+          fileHints,
         });
 
         if (!result.workItems || result.workItems.length === 0) {
