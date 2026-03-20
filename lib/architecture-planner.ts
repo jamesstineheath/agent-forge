@@ -290,7 +290,7 @@ export function planToDecomposerMarkdown(
   lines.push("## Architecture Plan");
   lines.push("");
 
-  if (plan.sharedTypes.length > 0) {
+  if (plan.sharedTypes?.length > 0) {
     lines.push("### Shared Types & Models");
     for (const t of plan.sharedTypes) {
       lines.push(`- ${t}`);
@@ -298,7 +298,7 @@ export function planToDecomposerMarkdown(
     lines.push("");
   }
 
-  if (plan.prerequisites.length > 0) {
+  if (plan.prerequisites?.length > 0) {
     lines.push("### Prerequisites (manual steps)");
     for (const p of plan.prerequisites) {
       lines.push(`- [ ] ${p}`);
@@ -307,47 +307,48 @@ export function planToDecomposerMarkdown(
   }
 
   lines.push(`### Risk Assessment`);
-  lines.push(plan.riskAssessment);
+  lines.push(plan.riskAssessment ?? "");
   lines.push("");
 
   lines.push("## Implementation Steps");
   lines.push("");
 
-  for (let i = 0; i < plan.criterionPlans.length; i++) {
-    const cp = plan.criterionPlans[i];
+  const criterionPlans = plan.criterionPlans ?? [];
+  for (let i = 0; i < criterionPlans.length; i++) {
+    const cp = criterionPlans[i];
     lines.push(`### Step ${i + 1}: ${cp.criterionDescription}`);
     lines.push("");
     lines.push(`**Approach:** ${cp.approach}`);
     lines.push("");
 
-    if (cp.filesToCreate.length > 0) {
+    if (cp.filesToCreate?.length > 0) {
       lines.push("**New files:**");
       for (const f of cp.filesToCreate) lines.push(`- \`${f}\``);
       lines.push("");
     }
 
-    if (cp.filesToModify.length > 0) {
+    if (cp.filesToModify?.length > 0) {
       lines.push("**Modified files:**");
       for (const f of cp.filesToModify) lines.push(`- \`${f}\``);
       lines.push("");
     }
 
-    if (cp.apiEndpoints.length > 0) {
+    if (cp.apiEndpoints?.length > 0) {
       lines.push("**API endpoints:**");
       for (const e of cp.apiEndpoints) lines.push(`- ${e}`);
       lines.push("");
     }
 
-    if (cp.dataModels.length > 0) {
+    if (cp.dataModels?.length > 0) {
       lines.push("**Data models:**");
       for (const m of cp.dataModels) lines.push(`- ${m}`);
       lines.push("");
     }
 
-    if (cp.dependencies.length > 0) {
+    if (cp.dependencies?.length > 0) {
       const depNames = cp.dependencies
         .map((depId) => {
-          const dep = plan.criterionPlans.find((p) => p.criterionId === depId);
+          const dep = criterionPlans.find((p) => p.criterionId === depId);
           return dep ? dep.criterionDescription : depId;
         })
         .join(", ");
