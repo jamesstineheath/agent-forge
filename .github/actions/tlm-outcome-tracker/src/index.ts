@@ -510,7 +510,12 @@ async function fetchMergedPRs(
       );
     }
 
-    // Determine TLM review decision from PR comments
+    // TLM DECISION CONTRACT:
+    // Writer (.github/actions/tlm-review): embeds decision as <!-- tlm-decision: {DECISION} -->
+    // in the PR review body (submitted via createReview API).
+    // Reader (this file): extracts via regex on review body.
+    // Valid values: APPROVE | REQUEST_CHANGES | FLAG_FOR_HUMAN | CI_BLOCKED | CI_PENDING
+    // Default when not found: 'unknown'
     let tlmDecision = "unknown";
     try {
       const { data: reviews } = await octokit.rest.pulls.listReviews({
@@ -518,29 +523,45 @@ async function fetchMergedPRs(
         repo,
         pull_number: pr.number,
       });
-      // Use findLast to get the MOST RECENT TLM review (not the first "CI Pending" one)
-      const tlmReview = reviews.reverse().find((r) =>
-        r.body?.includes("TLM Review:")
-      );
-      if (tlmReview) {
-        if (tlmReview.body?.includes("CI_BLOCKED") || tlmReview.body?.includes("CI Pending") || tlmReview.body?.includes("CI Failing"))
-          tlmDecision = "ci_blocked";
-        else if (tlmReview.body?.includes("APPROVE") || tlmReview.state === "APPROVED")
-          tlmDecision = "approve";
-        else if (tlmReview.body?.includes("REQUEST_CHANGES") || tlmReview.state === "CHANGES_REQUESTED")
-          tlmDecision = "request_changes";
-        else if (tlmReview.body?.includes("FLAG FOR HUMAN"))
-          tlmDecision = "flag_for_human";
+
+      // Primary: look for machine-readable <!-- tlm-decision: {DECISION} --> marker
+      // Search most recent review first (reverse order)
+      for (const review of [...reviews].reverse()) {
+        if (!review.body) continue;
+        const markerMatch = review.body.match(
+          /<!--\s*tlm-decision:\s*(APPROVE|REQUEST_CHANGES|FLAG_FOR_HUMAN|CI_BLOCKED|CI_PENDING)\s*-->/
+        );
+        if (markerMatch) {
+          tlmDecision = markerMatch[1].toLowerCase();
+          break;
+        }
       }
 
-      // Fallback: check structured metadata comment (more reliable than review body parsing)
+      // Fallback 1: parse review body text (for reviews created before the marker was added)
+      if (tlmDecision === "unknown") {
+        const tlmReview = [...reviews].reverse().find((r) =>
+          r.body?.includes("TLM Review:")
+        );
+        if (tlmReview) {
+          if (tlmReview.body?.includes("CI_BLOCKED") || tlmReview.body?.includes("CI Pending") || tlmReview.body?.includes("CI Failing"))
+            tlmDecision = "ci_blocked";
+          else if (tlmReview.body?.includes("APPROVE") || tlmReview.state === "APPROVED")
+            tlmDecision = "approve";
+          else if (tlmReview.body?.includes("REQUEST_CHANGES") || tlmReview.state === "CHANGES_REQUESTED")
+            tlmDecision = "request_changes";
+          else if (tlmReview.body?.includes("FLAG_FOR_HUMAN") || tlmReview.body?.includes("FLAG FOR HUMAN"))
+            tlmDecision = "flag_for_human";
+        }
+      }
+
+      // Fallback 2: check structured metadata comment
       if (tlmDecision === "unknown") {
         const { data: comments } = await octokit.rest.issues.listComments({
           owner,
           repo,
           issue_number: pr.number,
         });
-        const metadataComment = comments.reverse().find((c) =>
+        const metadataComment = [...comments].reverse().find((c) =>
           c.body?.includes("TLM-CODE-REVIEW-METADATA")
         );
         if (metadataComment?.body) {
