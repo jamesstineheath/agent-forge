@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { runPhaseHandler } from "@/lib/atc/supervisor-phase-utils";
 import { runIntentValidationPhase } from "@/lib/atc/supervisor";
 
-export const maxDuration = 60;
+export const maxDuration = 800;
 
 export async function POST(req: NextRequest) {
   return runPhaseHandler(req, async () => {
