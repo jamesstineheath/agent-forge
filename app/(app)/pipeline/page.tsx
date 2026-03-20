@@ -8,10 +8,20 @@ import { GitPullRequest, Clock, Radio, Layers, Power, Loader2, TrendingUp, Dolla
 import { PipelineStages } from "@/components/pipeline-stages";
 import { BlockedSummary } from "@/components/blocked-summary";
 import { DebateStatsCard } from "@/components/debate-stats-card";
+import { ErrorBoundary } from "@/components/error-boundary";
 import { useWorkItems, useRepos, useKillSwitch } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = (url: string) =>
+  fetch(url).then((res) => {
+    if (!res.ok) throw new Error("Request failed");
+    return res.json();
+  }).then((data) => {
+    if (data && typeof data === 'object' && 'error' in data && !Array.isArray(data)) {
+      throw new Error(data.error);
+    }
+    return data;
+  });
 
 interface PipelineMetrics {
   speed?: { avgTimeToMergeMs?: number; p90TimeToMergeMs?: number };
@@ -255,6 +265,7 @@ export default function PipelinePage() {
       <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
         <div className="max-w-5xl space-y-6">
           {/* Pipeline Stages */}
+          <ErrorBoundary section="Pipeline State">
           {!itemsLoading && workItems && (
             <div className="space-y-3">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -263,19 +274,27 @@ export default function PipelinePage() {
               <PipelineStages workItems={workItems} />
             </div>
           )}
+          </ErrorBoundary>
 
           {/* Blocked Summary */}
+          <ErrorBoundary section="Blocked Summary">
           {!itemsLoading && workItems && (
             <BlockedSummary workItems={workItems} />
           )}
+          </ErrorBoundary>
 
           {/* Pipeline Performance KPIs */}
+          <ErrorBoundary section="Performance Metrics">
           <PipelinePerformance />
+          </ErrorBoundary>
 
           {/* Debate Reviews */}
+          <ErrorBoundary section="Debate Reviews">
           <DebateStatsCard />
+          </ErrorBoundary>
 
           {/* Active Executions */}
+          <ErrorBoundary section="Active Executions">
           {activeWorkItems.length > 0 && (
             <div className="space-y-3">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -325,7 +344,10 @@ export default function PipelinePage() {
             </div>
           )}
 
+          </ErrorBoundary>
+
           {/* Queue */}
+          <ErrorBoundary section="Queue">
           {queueItems.length > 0 && (
             <div className="space-y-3">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -358,6 +380,7 @@ export default function PipelinePage() {
               </div>
             </div>
           )}
+          </ErrorBoundary>
         </div>
       </div>
     </>
