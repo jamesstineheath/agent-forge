@@ -70,6 +70,8 @@ export interface WorkItem {
   } | null;
   /** Max allowed code-CI retries (default 1). Used by health monitor for code failure retry logic. */
   retryBudget?: number;
+  /** Why this item is blocked — distinguishes dependency-blocked from human-review-blocked. */
+  blockedReason?: "flag_for_human" | "escalation" | "dependency";
   escalation?: {
     id: string;
     reason: string;
@@ -186,6 +188,7 @@ export const updateWorkItemSchema = z.object({
       blockedAt: z.string(),
     })
     .optional(),
+  blockedReason: z.enum(["flag_for_human", "escalation", "dependency"]).optional(),
   failureCategory: z.enum(["transient", "execution", "structural", "unknown"]).optional(),
   expedite: z.boolean().optional(),
 });

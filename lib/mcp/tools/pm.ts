@@ -128,14 +128,26 @@ export function registerPMTools(server: McpServer) {
       const details = await Promise.all(
         projectItems.slice(0, 50).map(async (item) => {
           const full = await getWorkItem(item.id);
-          return full ? {
+          if (!full) return null;
+
+          // Check if all dependencies are resolved
+          let depsResolved = true;
+          if (full.dependencies?.length) {
+            const deps = await Promise.all(full.dependencies.map((d) => getWorkItem(d)));
+            depsResolved = deps.every((d) => d !== null && (d.status === "merged" || d.status === "cancelled"));
+          }
+
+          return {
             id: item.id,
             title: full.title,
             status: full.status,
+            blockedReason: full.blockedReason,
+            depsResolved,
+            hasExecution: !!full.execution?.startedAt,
             cost: full.execution?.actualCost,
             prNumber: full.execution?.prNumber,
             branch: full.handoff?.branch,
-          } : null;
+          };
         })
       );
 
