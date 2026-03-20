@@ -26,7 +26,9 @@ export function useWorkItems(filters?: WorkItemFilters & { full?: boolean }) {
   const query = params.toString();
   const url = `/api/work-items${query ? `?${query}` : ""}`;
 
-  const { data, error, isLoading, mutate } = useSWR<WorkItem[]>(url, fetcher);
+  const { data, error, isLoading, mutate } = useSWR<WorkItem[]>(url, fetcher, {
+    refreshInterval: 15000,
+  });
   return { data, error, isLoading, mutate };
 }
 
