@@ -80,6 +80,12 @@ You MUST respond with valid JSON matching this exact schema:
 The "pattern_check" field must always contain a ## Pattern Check section as described in the Pattern Enforcement instructions below.
 If you use "request_changes", explain in the comment which hot patterns were matched and what the author should do.
 
+## Cross-File Verification
+
+- For any new or modified files that import types, interfaces, or classes from other files, read those type definition files to verify that all field names and shapes used in the new code match the actual exported definitions. Do not assume the imported type is what the diff implies — check the source.
+- Check whether new utility functions, constants, or lookup structures (e.g. date formatting helpers, day/month name arrays, color mapping functions) duplicate or near-duplicate existing ones elsewhere in the codebase. If duplicates exist, flag them as candidates for consolidation.
+- Verify that the code in the PR branch is compatible with the *current* state of main's type definitions, not just the branch's own snapshot. If the PR imports shared types that may have changed on main (due to concurrent PRs or recent merges), note whether a rebase is needed to surface any type conflicts before merging.
+
 ## Important Notes
 
 - Be concise. This is automated review, not a teaching moment.
