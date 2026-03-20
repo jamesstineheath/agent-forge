@@ -707,6 +707,36 @@ export async function getCommitsBehindMain(
   }
 }
 
+/**
+ * Check whether a branch has been merged into main (via any PR).
+ * Uses the GitHub compare API: if the branch is "behind" or "identical" to main,
+ * all branch commits are already in main. A 404 means the branch was deleted
+ * (likely merged and cleaned up), which we treat as merged.
+ *
+ * Useful when work items track a secondary PR after the original merged PR.
+ */
+export async function isBranchMergedIntoMain(
+  owner: string,
+  repo: string,
+  branchName: string
+): Promise<boolean> {
+  try {
+    const url = `${GITHUB_API}/repos/${owner}/${repo}/compare/main...${encodeURIComponent(branchName)}`;
+    const res = await ghFetch(url);
+    if (!res.ok) {
+      // Branch may be deleted (already merged and cleaned up)
+      if (res.status === 404) return true;
+      return false;
+    }
+    const data = (await res.json()) as { status?: string };
+    // "behind" means all branch commits are already in main
+    // "identical" means branch == main
+    return data.status === "behind" || data.status === "identical";
+  } catch {
+    return false;
+  }
+}
+
 export async function setDefaultWorkflowPermissions(
   owner: string,
   repo: string
