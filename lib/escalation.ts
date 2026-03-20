@@ -262,6 +262,7 @@ export async function escalate(
   if (workItem) {
     await updateWorkItem(workItemId, {
       status: "blocked",
+      blockedReason: "escalation",
       escalation: {
         id,
         reason,
