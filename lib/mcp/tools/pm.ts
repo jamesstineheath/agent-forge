@@ -243,6 +243,17 @@ export function registerPMTools(server: McpServer) {
         costSummary = { error: "Could not compute cost summary" };
       }
 
+      // Supervisor phase execution log
+      let supervisorPhaseLog: unknown = null;
+      try {
+        const execLog = await loadJson("af-data/supervisor/execution-log");
+        if (execLog) {
+          supervisorPhaseLog = execLog;
+        }
+      } catch {
+        supervisorPhaseLog = { error: "Could not read supervisor execution log" };
+      }
+
       return {
         content: [{
           type: "text" as const,
@@ -252,6 +263,7 @@ export function registerPMTools(server: McpServer) {
             workItemCounts: counts,
             pipelineMetrics,
             costSummary7d: costSummary,
+            supervisorPhaseLog,
           }, null, 2),
         }],
       };
