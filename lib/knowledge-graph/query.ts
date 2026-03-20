@@ -11,6 +11,7 @@ import type {
   GraphQueryResult,
   RelationshipType,
 } from './types';
+import type { RepoContext } from '../orchestrator';
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -270,4 +271,291 @@ export function getCallChain(
       .map((id) => graph.entities.get(id))
       .filter((e): e is CodeEntity => e !== undefined),
   );
+}
+
+// ---------------------------------------------------------------------------
+// Blast radius analysis
+// ---------------------------------------------------------------------------
+
+/**
+ * Return all entities in the given file paths.
+ */
+export function getEntitiesByFiles(
+  graph: KnowledgeGraph,
+  filePaths: string[],
+): CodeEntity[] {
+  const pathSet = new Set(filePaths);
+  const results: CodeEntity[] = [];
+  for (const entity of graph.entities.values()) {
+    if (pathSet.has(entity.filePath)) {
+      results.push(entity);
+    }
+  }
+  return results;
+}
+
+/**
+ * Given files being modified, find all files that import from them (direct
+ * importers), and transitively their importers up to `depth` hops.
+ * Also identifies test files in the affected set.
+ */
+export function getBlastRadius(
+  graph: KnowledgeGraph,
+  filePaths: string[],
+  depth: number = 2,
+): {
+  affectedFiles: string[];
+  affectedEntities: CodeEntity[];
+  relationships: CodeRelationship[];
+  testFiles: string[];
+} {
+  // Build reverse-import adjacency: targetEntityId -> sourceEntityId[]
+  const reverseImports = new Map<string, Set<string>>();
+  for (const rel of graph.relationships) {
+    if (rel.type === 'imports') {
+      if (!reverseImports.has(rel.targetId)) {
+        reverseImports.set(rel.targetId, new Set());
+      }
+      reverseImports.get(rel.targetId)!.add(rel.sourceId);
+    }
+  }
+
+  // Seed: entities in the given files
+  const seedEntities = getEntitiesByFiles(graph, filePaths);
+  const visited = new Set<string>(seedEntities.map((e) => e.id));
+  let frontier = new Set<string>(visited);
+
+  // BFS up to `depth` hops through reverse imports
+  for (let d = 0; d < depth && frontier.size > 0; d++) {
+    const nextFrontier = new Set<string>();
+    for (const entityId of frontier) {
+      const importers = reverseImports.get(entityId);
+      if (!importers) continue;
+      for (const importerId of importers) {
+        if (!visited.has(importerId)) {
+          visited.add(importerId);
+          nextFrontier.add(importerId);
+        }
+      }
+    }
+    frontier = nextFrontier;
+  }
+
+  // Collect affected entities and files
+  const affectedEntities: CodeEntity[] = [];
+  const affectedFileSet = new Set<string>();
+  for (const id of visited) {
+    const entity = graph.entities.get(id);
+    if (entity) {
+      affectedEntities.push(entity);
+      affectedFileSet.add(entity.filePath);
+    }
+  }
+
+  // Relationships between affected entities
+  const relationships = graph.relationships.filter(
+    (r) => visited.has(r.sourceId) && visited.has(r.targetId),
+  );
+
+  // Identify test files
+  const testFiles = [...affectedFileSet].filter(
+    (f) =>
+      f.includes('.test.') ||
+      f.includes('.spec.') ||
+      f.includes('__tests__/') ||
+      f.includes('test/'),
+  );
+
+  return {
+    affectedFiles: [...affectedFileSet],
+    affectedEntities,
+    relationships,
+    testFiles,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Context filtering helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Given the raw SYSTEM_MAP.md content and file paths, return only the
+ * sections of the system map that are relevant to those files.
+ */
+export function getRelevantSystemMapSections(
+  systemMapContent: string,
+  filePaths: string[],
+): string {
+  if (!systemMapContent || filePaths.length === 0) return '';
+
+  // Extract directory prefixes from file paths
+  const dirPrefixes = new Set<string>();
+  for (const fp of filePaths) {
+    const parts = fp.split('/');
+    for (let i = 1; i < parts.length; i++) {
+      dirPrefixes.add(parts.slice(0, i).join('/'));
+    }
+    dirPrefixes.add(fp);
+  }
+
+  const lines = systemMapContent.split('\n');
+  const relevantLines: string[] = [];
+  let inRelevantSection = false;
+  let currentSectionLevel = 0;
+
+  for (const line of lines) {
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const heading = headingMatch[2];
+
+      const isRelevant = [...dirPrefixes].some(
+        (prefix) =>
+          heading.includes(prefix) ||
+          heading.toLowerCase().includes(prefix.split('/').pop()?.toLowerCase() ?? ''),
+      );
+
+      if (isRelevant) {
+        inRelevantSection = true;
+        currentSectionLevel = level;
+        relevantLines.push(line);
+      } else if (inRelevantSection && level <= currentSectionLevel) {
+        inRelevantSection = false;
+      } else if (inRelevantSection) {
+        relevantLines.push(line);
+      }
+    } else if (inRelevantSection) {
+      relevantLines.push(line);
+    } else {
+      const lineRelevant = [...dirPrefixes].some((prefix) => line.includes(prefix));
+      if (lineRelevant) {
+        relevantLines.push(line);
+      }
+    }
+  }
+
+  return relevantLines.join('\n').trim();
+}
+
+/**
+ * Return ADRs whose content mentions the affected directories or entity names.
+ */
+export function getRelevantADRs(
+  adrs: Array<{ title: string; status: string; decision: string }>,
+  filePaths: string[],
+  entityNames: string[],
+): Array<{ title: string; status: string; decision: string }> {
+  if (adrs.length === 0) return [];
+
+  const searchTerms = new Set<string>();
+  for (const fp of filePaths) {
+    const parts = fp.split('/');
+    for (const part of parts) {
+      if (part && !part.includes('.')) searchTerms.add(part.toLowerCase());
+    }
+    const basename = parts[parts.length - 1];
+    if (basename) {
+      searchTerms.add(basename.replace(/\.\w+$/, '').toLowerCase());
+    }
+  }
+  for (const name of entityNames) {
+    searchTerms.add(name.toLowerCase());
+  }
+
+  return adrs.filter((adr) => {
+    const text = `${adr.title} ${adr.decision}`.toLowerCase();
+    return [...searchTerms].some((term) => text.includes(term));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Targeted context builder (main integration point for decomposer)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build targeted context for the decomposer by querying the knowledge graph.
+ * Replaces the full-context dump with graph-targeted context.
+ */
+export function buildTargetedContext(
+  graph: KnowledgeGraph,
+  repoContext: RepoContext,
+  fileHints: { filesToCreate: string[]; filesToModify: string[] },
+): string {
+  const allFiles = [...fileHints.filesToCreate, ...fileHints.filesToModify];
+
+  // Get blast radius for files being modified
+  const blastRadius = getBlastRadius(graph, fileHints.filesToModify, 2);
+
+  // Get relevant system map sections
+  const allAffectedFiles = [...new Set([...allFiles, ...blastRadius.affectedFiles])];
+  const systemMapSections = repoContext.systemMap
+    ? getRelevantSystemMapSections(repoContext.systemMap, allAffectedFiles)
+    : '';
+
+  // Get entity names from blast radius for ADR matching
+  const entityNames = blastRadius.affectedEntities.map((e) => e.name);
+  const relevantADRs = getRelevantADRs(repoContext.adrs, allAffectedFiles, entityNames);
+
+  const sections: string[] = [];
+
+  sections.push(`### CLAUDE.md\n${repoContext.claudeMd || '(not available)'}`);
+
+  if (systemMapSections) {
+    sections.push(`### System Map (relevant sections)\n${systemMapSections}`);
+  } else if (repoContext.systemMap) {
+    sections.push('### System Map\n(no sections matched affected files)');
+  }
+
+  if (relevantADRs.length > 0) {
+    sections.push(
+      `### Relevant ADRs\n${relevantADRs
+        .map((adr) => `- **${adr.title}** (${adr.status}): ${adr.decision}`)
+        .join('\n')}`,
+    );
+  }
+
+  if (blastRadius.affectedFiles.length > 0) {
+    const sourceFiles = blastRadius.affectedFiles.filter(
+      (f) => !f.includes('.test.') && !f.includes('.spec.'),
+    );
+    sections.push(
+      `### Blast Radius\n` +
+        `Affected source files (${sourceFiles.length}): ${sourceFiles.slice(0, 20).join(', ')}` +
+        (sourceFiles.length > 20 ? ` (+${sourceFiles.length - 20} more)` : '') +
+        (blastRadius.testFiles.length > 0
+          ? `\nAffected test files (${blastRadius.testFiles.length}): ${blastRadius.testFiles.slice(0, 10).join(', ')}`
+          : ''),
+    );
+  }
+
+  return sections.join('\n\n');
+}
+
+/**
+ * Get a single entity by ID, plus its direct relationships and related entities.
+ */
+export function getEntityWithRelationships(
+  graph: KnowledgeGraph,
+  entityId: string,
+): { entity: CodeEntity | null; relationships: CodeRelationship[]; relatedEntities: CodeEntity[] } {
+  const entity = graph.entities.get(entityId) ?? null;
+  if (!entity) return { entity: null, relationships: [], relatedEntities: [] };
+
+  const relationships = graph.relationships.filter(
+    (r) => r.sourceId === entityId || r.targetId === entityId,
+  );
+
+  const relatedIds = new Set<string>();
+  for (const r of relationships) {
+    if (r.sourceId !== entityId) relatedIds.add(r.sourceId);
+    if (r.targetId !== entityId) relatedIds.add(r.targetId);
+  }
+
+  const relatedEntities: CodeEntity[] = [];
+  for (const id of relatedIds) {
+    const e = graph.entities.get(id);
+    if (e) relatedEntities.push(e);
+  }
+
+  return { entity, relationships, relatedEntities };
 }

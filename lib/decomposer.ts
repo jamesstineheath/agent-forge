@@ -5,6 +5,8 @@ import { listRepos, getRepo } from "./repos";
 import { createWorkItem, updateWorkItem } from "./work-items";
 import { escalate } from "./escalation";
 import type { Project, ProjectTargetRepo, WorkItem, RepoConfig, DecomposerConfig, SubPhase, PhaseBreakdown, Priority } from "./types";
+import { loadGraph } from "./knowledge-graph/storage";
+import { buildTargetedContext } from "./knowledge-graph/query";
 
 // --- Constants ---
 
@@ -613,27 +615,52 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     );
   }
 
-  // Reduce context for simple plans to avoid unnecessary Opus token cost and latency
-  const isSimplePlan = planContent.length < 2000;
-  if (isSimplePlan) {
-    for (const [, ctx] of repoContexts) {
-      // Drop recent PRs for simple plans
-      ctx.recentPRs = [];
-      // Truncate system map to key files section only
-      if (ctx.systemMap && ctx.systemMap.length > 3000) {
-        const keyFilesIdx = ctx.systemMap.indexOf('## Key Files');
-        if (keyFilesIdx !== -1) {
-          ctx.systemMap = ctx.systemMap.slice(keyFilesIdx);
-        } else {
-          ctx.systemMap = ctx.systemMap.slice(0, 3000) + '\n\n[truncated for simple plan]';
+  // Check for file hints from architecture plan (set by decomposeFromPlan)
+  const fileHints = _getFileHintsOverride(pageId);
+
+  // Use knowledge graph for targeted context if available
+  let repoContext: string;
+  if (fileHints && primaryRepo) {
+    const graph = await loadGraph(primaryRepo);
+    if (graph) {
+      const primaryCtx = repoContexts.get(primaryRepo);
+      if (primaryCtx) {
+        repoContext = `## Project Metadata\n` +
+          `- **Title:** ${project.title}\n` +
+          `- **Priority:** ${project.priority ?? "P1"}\n` +
+          `- **Target Repo:** ${primaryRepo}\n\n` +
+          `## Repo Context: ${primaryRepo} (graph-targeted)\n\n` +
+          buildTargetedContext(graph, primaryCtx, fileHints);
+        console.log(`[decomposer] Using graph-targeted context (${repoContext.length} chars) instead of full context`);
+      } else {
+        repoContext = buildRepoContext(project, repoContexts);
+      }
+    } else {
+      // No graph — fall back to existing behavior
+      console.log('[decomposer] No knowledge graph found, falling back to full context');
+      repoContext = buildRepoContext(project, repoContexts);
+    }
+  } else {
+    // Reduce context for simple plans to avoid unnecessary Opus token cost and latency
+    const isSimplePlan = planContent.length < 2000;
+    if (isSimplePlan) {
+      for (const [, ctx] of repoContexts) {
+        ctx.recentPRs = [];
+        if (ctx.systemMap && ctx.systemMap.length > 3000) {
+          const keyFilesIdx = ctx.systemMap.indexOf('## Key Files');
+          if (keyFilesIdx !== -1) {
+            ctx.systemMap = ctx.systemMap.slice(keyFilesIdx);
+          } else {
+            ctx.systemMap = ctx.systemMap.slice(0, 3000) + '\n\n[truncated for simple plan]';
+          }
         }
       }
+      console.log('[decomposer] Simple plan detected, reduced repo context');
     }
-    console.log('[decomposer] Simple plan detected, reduced repo context');
+    repoContext = buildRepoContext(project, repoContexts);
   }
 
   // 4. Call Claude Opus for decomposition
-  const repoContext = buildRepoContext(project, repoContexts);
   const planPrompt = buildPlanPrompt(planContent);
   console.log(`[decomposer] Step 3: Built prompt — repoContext: ${repoContext.length} chars, planPrompt: ${planPrompt.length} chars`);
 
@@ -1177,12 +1204,18 @@ export async function decomposeFromPlan(input: {
   projectId?: string;
   priority?: Priority;
   rank?: number;
+  fileHints?: { filesToCreate: string[]; filesToModify: string[] };
 }): Promise<DecompositionResult> {
   const { prdId, prdTitle, targetRepo, planContent, projectId } = input;
 
   // Store plan content temporarily so the decomposer can read it
   // via fetchPageContent (keyed by prdId)
   _planContentOverrides.set(prdId, planContent);
+
+  // Store file hints for graph-targeted context
+  if (input.fileHints) {
+    _fileHintsOverrides.set(prdId, input.fileHints);
+  }
 
   try {
     const syntheticProject: Project = {
@@ -1207,6 +1240,7 @@ export async function decomposeFromPlan(input: {
     return await decomposeProject(syntheticProject);
   } finally {
     _planContentOverrides.delete(prdId);
+    _fileHintsOverrides.delete(prdId);
   }
 }
 
@@ -1217,4 +1251,12 @@ const _planContentOverrides = new Map<string, string>();
 /** @internal Used by decomposeProject to check for plan content overrides */
 export function _getPlanContentOverride(pageId: string): string | undefined {
   return _planContentOverrides.get(pageId);
+}
+
+// Internal: allows decomposeFromPlan to inject file hints for graph-targeted context
+const _fileHintsOverrides = new Map<string, { filesToCreate: string[]; filesToModify: string[] }>();
+
+/** @internal Used by decomposeProject to check for file hints overrides */
+function _getFileHintsOverride(pageId: string): { filesToCreate: string[]; filesToModify: string[] } | undefined {
+  return _fileHintsOverrides.get(pageId);
 }

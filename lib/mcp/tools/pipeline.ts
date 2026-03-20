@@ -151,6 +151,49 @@ export function registerPipelineTools(server: McpServer) {
   );
 
   server.tool(
+    "reindex_repo",
+    "Trigger a full knowledge graph re-index for a target repo. Returns entity and relationship counts. Use this after significant code changes to keep the graph fresh.",
+    {
+      repo: z.string().describe("Repo short name (e.g., 'personal-assistant') or full name (e.g., 'jamesstineheath/personal-assistant')"),
+    },
+    async (params) => {
+      const { fullIndex } = await import("@/lib/knowledge-graph/indexer");
+      const { listRepos, getRepo } = await import("@/lib/repos");
+
+      // Resolve short name to full name
+      let fullName = params.repo;
+      if (!params.repo.includes("/")) {
+        const repoIndex = await listRepos();
+        const entry = repoIndex.find(
+          (r) => r.id === params.repo || r.fullName.endsWith(`/${params.repo}`),
+        );
+        if (entry) fullName = entry.fullName;
+        else {
+          return {
+            content: [{ type: "text" as const, text: `Repo not found: ${params.repo}` }],
+            isError: true,
+          };
+        }
+      }
+
+      const start = Date.now();
+      const result = await fullIndex(fullName);
+      const durationMs = Date.now() - start;
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            repo: fullName,
+            entityCount: result.entityCount,
+            durationMs,
+          }, null, 2),
+        }],
+      };
+    }
+  );
+
+  server.tool(
     "list_prs",
     "List pull requests. Defaults to open PRs. Shows title, branch, status, and mergeable state.",
     {
