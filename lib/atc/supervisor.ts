@@ -217,24 +217,38 @@ export async function runCriteriaImport(): Promise<SupervisorPhaseOutput> {
   try {
     const { listAllCriteria, fetchPRDStatus, deleteCriteria } = await import("@/lib/intent-criteria");
     const criteriaEntries = await listAllCriteria();
-    const ACTIVE_STATUSES = new Set(["Idea", "Draft", "In Review", "Approved", "Executing"]);
+    const TERMINAL_STATUSES = new Set(["Complete", "Obsolete"]);
     let cleaned = 0;
+    const evaluated: Array<{ prdId: string; title: string; status: string | null; action: string }> = [];
 
     for (const entry of criteriaEntries) {
-      if (cleaned >= 3) break; // Max 3 cleanups per cycle
+      if (cleaned >= 3) {
+        evaluated.push({ prdId: entry.prdId, title: entry.prdTitle, status: null, action: 'skipped (max 3 per cycle)' });
+        continue;
+      }
 
       const status = await fetchPRDStatus(entry.prdId);
-      if (!status || ACTIVE_STATUSES.has(status)) continue;
+      if (!status || !TERMINAL_STATUSES.has(status)) {
+        evaluated.push({ prdId: entry.prdId, title: entry.prdTitle, status: status ?? 'unknown', action: 'retained' });
+        continue;
+      }
 
       // PRD is in a terminal status — clean up
-      console.log(`[supervisor §19] Cleaned up stale criteria for completed PRD "${entry.prdTitle}" (status: ${status})`);
+      console.log(`[supervisor §19] Cleaned up stale criteria for PRD "${entry.prdTitle}" (status: ${status}, prdId: ${entry.prdId})`);
 
       await deleteCriteria(entry.prdId);
       await deleteJson(`architecture-plans/${entry.prdId}-latest`);
       await deleteJson(`atc/project-decomposed/prd-${entry.prdId}`);
 
-      out.decisions.push(`Cleaned up stale criteria/plan for completed PRD "${entry.prdTitle}"`);
+      evaluated.push({ prdId: entry.prdId, title: entry.prdTitle, status, action: 'cleaned' });
+      out.decisions.push(`Cleaned up criteria/plan for ${status} PRD "${entry.prdTitle}" (status: ${status})`);
       cleaned++;
+    }
+
+    if (evaluated.length > 0) {
+      const summary = evaluated.map(e => `${e.title} (${e.status}): ${e.action}`).join(', ');
+      console.log(`[supervisor §19] Criteria cleanup evaluated ${evaluated.length} PRDs: ${summary}`);
+      out.decisions.push(`Criteria cleanup evaluated ${evaluated.length} PRD(s): ${cleaned} cleaned, ${evaluated.length - cleaned} retained`);
     }
   } catch (err) {
     console.warn('[supervisor §19] Stale criteria cleanup failed (non-fatal):', err);
@@ -460,6 +474,13 @@ export async function runSpendMonitoring(): Promise<SupervisorPhaseOutput> {
   try {
     console.log('[supervisor §5] Spend Monitoring: start');
     const spendStatus = await getSpendStatus();
+
+    if (spendStatus.skipped) {
+      console.log(`[supervisor §5] Spend Monitoring: skipped — ${spendStatus.skipReason}`);
+      out.decisions.push(`Spend monitoring skipped: ${spendStatus.skipReason}`);
+      return out;
+    }
+
     const newlyCrossed = checkSpendThresholds(spendStatus);
 
     if (newlyCrossed.length === 0) {

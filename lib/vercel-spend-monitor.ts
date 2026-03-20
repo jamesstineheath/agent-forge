@@ -16,6 +16,10 @@ export type VercelSpendStatus = {
   budget: number;
   percentUsed: number;
   alertsSent: string[];
+  /** True when the spend check was skipped (e.g. API 404). */
+  skipped?: boolean;
+  /** Human-readable reason the check was skipped. */
+  skipReason?: string;
 };
 
 const BLOB_KEY = "vercel-spend-status";
@@ -68,6 +72,21 @@ export async function getSpendStatus(): Promise<VercelSpendStatus> {
     throw new Error(
       `Failed to reach Vercel billing API: ${err instanceof Error ? err.message : String(err)}`
     );
+  }
+
+  if (response.status === 404) {
+    console.warn(
+      `[vercel-spend-monitor] Vercel billing API returned 404 for ${url} — endpoint may not exist for this plan. Skipping spend check.`
+    );
+    const persisted = await loadPersistedStatus();
+    return {
+      currentSpend: 0,
+      budget: 0,
+      percentUsed: 0,
+      alertsSent: persisted?.alertsSent ?? [],
+      skipped: true,
+      skipReason: "Vercel billing API returned 404, endpoint may not exist for this plan",
+    };
   }
 
   if (!response.ok) {
