@@ -1,0 +1,15 @@
+{
+  "name": "tlm-trace-review",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "ncc build src/index.ts --out dist --minify"
+  },
+  "dependencies": {
+    "@actions/core": "^1.10.1"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.38.3",
+    "typescript": "^5.4.0"
+  }
+}
