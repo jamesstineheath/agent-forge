@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { GitPullRequest, Clock, Radio, Layers } from "lucide-react";
+import { GitPullRequest, Clock, Radio, Layers, Power, Loader2 } from "lucide-react";
 import { PipelineStages } from "@/components/pipeline-stages";
 import { BlockedSummary } from "@/components/blocked-summary";
 import { DebateStatsCard } from "@/components/debate-stats-card";
-import { useWorkItems, useRepos } from "@/lib/hooks";
+import { useWorkItems, useRepos, useKillSwitch } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 
 const ACTIVE_STATUSES: WorkItem["status"][] = ["generating", "executing", "reviewing"];
@@ -15,6 +15,45 @@ const ACTIVE_STATUSES: WorkItem["status"][] = ["generating", "executing", "revie
 export default function PipelinePage() {
   const { data: workItems, isLoading: itemsLoading } = useWorkItems();
   const { data: repos } = useRepos();
+  const { data: killSwitch, mutate: mutateKillSwitch } = useKillSwitch();
+  const [toggling, setToggling] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinError, setPinError] = useState(false);
+
+  const isKilled = killSwitch?.enabled ?? false;
+
+  const handleToggle = useCallback(() => {
+    setPin("");
+    setPinError(false);
+    setShowConfirm(true);
+  }, []);
+
+  const confirmToggle = useCallback(async () => {
+    setToggling(true);
+    setPinError(false);
+    try {
+      const res = await fetch("/api/pipeline/kill-switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !isKilled, pin }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        if (res.status === 403) {
+          setPinError(true);
+          setToggling(false);
+          return;
+        }
+        throw new Error(data.error || "Request failed");
+      }
+      setShowConfirm(false);
+      setPin("");
+      await mutateKillSwitch();
+    } finally {
+      setToggling(false);
+    }
+  }, [isKilled, pin, mutateKillSwitch]);
 
   const queueItems = (workItems ?? [])
     .filter((i) => i.status === "ready" || i.status === "queued")
@@ -38,6 +77,25 @@ export default function PipelinePage() {
             </p>
           </div>
           <div className="flex items-center gap-3 text-[11px]">
+            {/* Kill Switch */}
+            <button
+              onClick={handleToggle}
+              disabled={toggling}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-1 font-semibold ring-1 transition-all text-[11px]",
+                toggling && "opacity-60 cursor-wait",
+                isKilled
+                  ? "bg-status-blocked/10 text-status-blocked ring-status-blocked/30 hover:bg-status-blocked/20"
+                  : "bg-emerald-500/10 text-emerald-500 ring-emerald-500/30 hover:bg-emerald-500/20"
+              )}
+            >
+              {toggling ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Power className="h-3 w-3" />
+              )}
+              {isKilled ? "Pipeline Stopped" : "Pipeline Running"}
+            </button>
             <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1 font-medium text-muted-foreground ring-1 ring-border">
               <Radio className={cn("h-3 w-3", activeWorkItems.length > 0 ? "text-status-executing animate-status-pulse" : "text-muted-foreground/40")} />
               {activeWorkItems.length} active
@@ -49,6 +107,80 @@ export default function PipelinePage() {
           </div>
         </div>
       </header>
+
+      {/* Confirmation Dialog */}
+      {showConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="rounded-2xl bg-surface-1 p-6 shadow-2xl ring-1 ring-border max-w-sm mx-4">
+            <h2 className="text-base font-display font-bold text-foreground mb-2">
+              {isKilled ? "Start Pipeline?" : "Stop Pipeline?"}
+            </h2>
+            <p className="text-[12px] text-muted-foreground mb-4 leading-relaxed">
+              {isKilled
+                ? "This will resume all agents. Queued work items will begin processing."
+                : "This will prevent all agents (supervisor, dispatcher, health monitor, project manager) from running. Active executions will not be interrupted, but no new work will be picked up."}
+            </p>
+            <div className="mb-4">
+              <label className="block text-[11px] font-medium text-muted-foreground mb-1.5">
+                Enter PIN to confirm
+              </label>
+              <input
+                type="password"
+                value={pin}
+                onChange={(e) => { setPin(e.target.value); setPinError(false); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && pin) confirmToggle(); }}
+                placeholder="PIN"
+                autoFocus
+                className={cn(
+                  "w-full rounded-lg bg-surface-2 px-3 py-2 text-[13px] font-mono text-foreground ring-1 outline-none transition-colors placeholder:text-muted-foreground/40",
+                  pinError
+                    ? "ring-status-blocked focus:ring-status-blocked"
+                    : "ring-border focus:ring-primary"
+                )}
+              />
+              {pinError && (
+                <p className="text-[11px] text-status-blocked mt-1">Incorrect PIN</p>
+              )}
+            </div>
+            <div className="flex items-center gap-3 justify-end">
+              <button
+                onClick={() => { setShowConfirm(false); setPin(""); setPinError(false); }}
+                className="rounded-lg px-4 py-2 text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmToggle}
+                disabled={!pin || toggling}
+                className={cn(
+                  "rounded-lg px-4 py-2 text-[12px] font-semibold text-white transition-colors disabled:opacity-50",
+                  isKilled
+                    ? "bg-emerald-600 hover:bg-emerald-500"
+                    : "bg-status-blocked hover:bg-status-blocked/90"
+                )}
+              >
+                {toggling ? "..." : isKilled ? "Start Pipeline" : "Stop Pipeline"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Kill Switch Banner */}
+      {isKilled && (
+        <div className="bg-status-blocked/10 border-b border-status-blocked/20 px-6 py-2.5">
+          <div className="flex items-center gap-2 text-[11px] text-status-blocked font-medium">
+            <Power className="h-3.5 w-3.5" />
+            <span>
+              Pipeline is stopped.
+              {killSwitch?.toggledAt && (
+                <> Since {new Date(killSwitch.toggledAt).toLocaleString()}.</>
+              )}
+              {" "}All cron agents are being skipped.
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
         <div className="max-w-5xl space-y-6">
