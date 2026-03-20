@@ -9,7 +9,7 @@ import { CYCLE_TIMEOUT_MS, ATC_STATE_KEY, CycleTimeoutError } from "@/lib/atc/ty
 import type { CycleContext } from "@/lib/atc/types";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 const PROJECT_MANAGER_LOCK_KEY = "atc/project-manager-lock";
 
