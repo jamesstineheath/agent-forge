@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { runPhaseHandler } from "@/lib/atc/supervisor-phase-utils";
 import { runDecomposition } from "@/lib/atc/supervisor";
 
-export const maxDuration = 90;
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   return runPhaseHandler(req, async () => {

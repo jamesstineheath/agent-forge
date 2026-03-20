@@ -585,7 +585,9 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     return { workItems: [], phases: null, reason: 'no_target_repo' };
   }
 
+  let stepStart = Date.now();
   const referencedRepos = await findReferencedRepos(planContent, primaryRepo);
+  console.log(`[decomposer] Step 1: findReferencedRepos took ${Date.now() - stepStart}ms (${referencedRepos.length} repos found)`);
 
   if (referencedRepos.length === 0) {
     await escalate(
@@ -601,13 +603,39 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   // 3. Fetch repo context for each target repo
   const repoContexts = new Map<string, RepoContext>();
   for (const repo of referencedRepos) {
+    stepStart = Date.now();
     const ctx = await fetchRepoContext(repo);
     repoContexts.set(repo.fullName, ctx);
+    console.log(
+      `[decomposer] Step 2: fetchRepoContext(${repo.fullName}) took ${Date.now() - stepStart}ms ` +
+      `(claudeMd: ${ctx.claudeMd.length} chars, systemMap: ${ctx.systemMap?.length ?? 0} chars, ` +
+      `adrs: ${ctx.adrs.length}, recentPRs: ${ctx.recentPRs.length})`
+    );
+  }
+
+  // Reduce context for simple plans to avoid unnecessary Opus token cost and latency
+  const isSimplePlan = planContent.length < 2000;
+  if (isSimplePlan) {
+    for (const [, ctx] of repoContexts) {
+      // Drop recent PRs for simple plans
+      ctx.recentPRs = [];
+      // Truncate system map to key files section only
+      if (ctx.systemMap && ctx.systemMap.length > 3000) {
+        const keyFilesIdx = ctx.systemMap.indexOf('## Key Files');
+        if (keyFilesIdx !== -1) {
+          ctx.systemMap = ctx.systemMap.slice(keyFilesIdx);
+        } else {
+          ctx.systemMap = ctx.systemMap.slice(0, 3000) + '\n\n[truncated for simple plan]';
+        }
+      }
+    }
+    console.log('[decomposer] Simple plan detected, reduced repo context');
   }
 
   // 4. Call Claude Opus for decomposition
   const repoContext = buildRepoContext(project, repoContexts);
   const planPrompt = buildPlanPrompt(planContent);
+  console.log(`[decomposer] Step 3: Built prompt — repoContext: ${repoContext.length} chars, planPrompt: ${planPrompt.length} chars`);
 
   // Anthropic prompt caching provider options
   const cacheEphemeral = {
@@ -623,6 +651,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
         ? planPrompt
         : `${planPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED VALIDATION:\n${lastError}\n\nPlease fix the issues and return a valid JSON array.`;
 
+    const opusStart = Date.now();
     const { text } = await routedAnthropicCall({
       model: "claude-opus-4-6",
       taskType: "decomposition",
@@ -649,6 +678,10 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
         },
       ],
     });
+    console.log(
+      `[decomposer] Step 4: routedAnthropicCall attempt ${attempt + 1} took ${Date.now() - opusStart}ms ` +
+      `(response: ${text.length} chars)`
+    );
 
     // Strip markdown code fences if present
     const cleaned = text.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
