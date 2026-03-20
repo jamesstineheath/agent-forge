@@ -54,6 +54,18 @@ async function handleCron(req: NextRequest) {
   } catch (err) {
     if (err instanceof CycleTimeoutError) {
       console.error(`[supervisor] Cycle aborted after ${CYCLE_TIMEOUT_MS / 1000}s timeout.`);
+      // Still update lastRunAt so the UI knows the cron is firing
+      try {
+        await saveJson(ATC_STATE_KEY, {
+          lastRunAt: new Date().toISOString(),
+          activeExecutions: [],
+          queuedItems: -1,
+          recentEvents: [{ type: 'timeout', timestamp: new Date().toISOString(), details: `Cycle timed out after ${CYCLE_TIMEOUT_MS / 1000}s` }],
+        });
+        await recordAgentRun("supervisor");
+      } catch (stateErr) {
+        console.error('[supervisor] Failed to persist timeout state:', stateErr);
+      }
       return NextResponse.json({ success: true, timedOut: true });
     }
     const message = err instanceof Error ? err.message : "Internal server error";

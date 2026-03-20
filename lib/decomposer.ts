@@ -1152,7 +1152,7 @@ export async function decomposeFromPlan(input: {
   try {
     const syntheticProject: Project = {
       id: prdId,
-      projectId: projectId || `PRD-${prdId.slice(0, 8)}`,
+      projectId: projectId || `PRD-${prdId}`,
       title: prdTitle,
       targetRepo: (targetRepo.includes("/") ? targetRepo.split("/")[1] : targetRepo) as ProjectTargetRepo,
       priority: input.priority ?? "P1",
