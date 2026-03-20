@@ -314,6 +314,12 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   );
 
   // §14 — PM Agent Daily Sweep
+  if (elapsed() > PHASE_BUDGET_MS) {
+    console.warn(`[supervisor] Skipping §14+ — ${elapsed()}ms elapsed, over budget`);
+    addDecision(trace, { action: 'phases_skipped', reason: `Time budget exceeded at ${elapsed()}ms — skipping §14+` });
+    completeTrace(trace, 'success');
+    return;
+  }
   try {
     await runPMAgentSweep();
   } catch (error) {
@@ -321,6 +327,12 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   }
 
   // §16: Periodic Full Re-Index (stale repos >7 days)
+  if (elapsed() > PHASE_BUDGET_MS) {
+    console.warn(`[supervisor] Skipping §16+ — ${elapsed()}ms elapsed, over budget`);
+    addDecision(trace, { action: 'phases_skipped', reason: `Time budget exceeded at ${elapsed()}ms — skipping §16+` });
+    completeTrace(trace, 'success');
+    return;
+  }
   try {
     const { loadRepoSnapshot } = await import("../knowledge-graph/storage");
     const { fullIndex } = await import("../knowledge-graph/indexer");
@@ -424,6 +436,12 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   phaseStart = Date.now();
 
   // §18 — Drift Detection (at most once per 24h)
+  if (elapsed() > PHASE_BUDGET_MS) {
+    console.warn(`[supervisor] Skipping §18+ — ${elapsed()}ms elapsed, over budget`);
+    addDecision(trace, { action: 'phases_skipped', reason: `Time budget exceeded at ${elapsed()}ms — skipping §18+` });
+    completeTrace(trace, 'success');
+    return;
+  }
   try {
     await runDriftDetectionPhase(ctx);
   } catch (err) {
