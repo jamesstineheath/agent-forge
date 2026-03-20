@@ -690,6 +690,7 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           if (flagged) {
             await updateWorkItem(item.id, {
               status: "blocked" as any,
+              blockedReason: "flag_for_human",
               execution: {
                 ...item.execution,
                 prNumber,
@@ -971,6 +972,30 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
             `[health-monitor §2.9] dispatchUnblockedItems failed after reconciling ${item.id} (non-fatal):`,
             dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr)
           );
+        }
+      } else if (pr?.state === "open") {
+        // PR is open but item is blocked — check if it's still flagged for human review.
+        // If not flagged, transition back to "reviewing" so the normal review flow handles it.
+        const flagged = await isPRFlaggedForHuman(item.targetRepo, pr.number);
+        if (!flagged) {
+          await updateWorkItem(item.id, {
+            status: "reviewing",
+            execution: {
+              ...item.execution,
+              prNumber: pr.number,
+              prUrl: pr.htmlUrl,
+            },
+          });
+          events.push(
+            makeEvent(
+              "work_item_reconciled",
+              item.id,
+              "blocked",
+              "reviewing",
+              `Reconciled: work item was "blocked" but PR #${pr.number} is open and not flagged — moved to reviewing`
+            )
+          );
+          console.log(`[health-monitor] §2.9 reconciled blocked item ${item.id} — PR #${pr.number} open, not flagged, moved to reviewing`);
         }
       }
     } catch (err) {
