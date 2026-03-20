@@ -45,6 +45,7 @@ async function callClaude(prompt: string): Promise<string> {
     model: "claude-sonnet-4-6",
     taskType: "project_manager",
     prompt,
+    floorModel: "sonnet", // prevent Sonnet→Opus escalation; pm-sweep is lightweight triage
   });
   return text;
 }
