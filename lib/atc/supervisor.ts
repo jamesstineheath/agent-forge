@@ -213,6 +213,34 @@ export async function runCriteriaImport(): Promise<SupervisorPhaseOutput> {
     out.errors.push(`Criteria import: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // Stale criteria cleanup: remove criteria/plans for PRDs in terminal statuses
+  try {
+    const { listAllCriteria, fetchPRDStatus, deleteCriteria } = await import("@/lib/intent-criteria");
+    const criteriaEntries = await listAllCriteria();
+    const ACTIVE_STATUSES = new Set(["Idea", "Draft", "In Review", "Approved", "Executing"]);
+    let cleaned = 0;
+
+    for (const entry of criteriaEntries) {
+      if (cleaned >= 3) break; // Max 3 cleanups per cycle
+
+      const status = await fetchPRDStatus(entry.prdId);
+      if (!status || ACTIVE_STATUSES.has(status)) continue;
+
+      // PRD is in a terminal status — clean up
+      console.log(`[supervisor §19] Cleaned up stale criteria for completed PRD "${entry.prdTitle}" (status: ${status})`);
+
+      await deleteCriteria(entry.prdId);
+      await deleteJson(`architecture-plans/${entry.prdId}-latest`);
+      await deleteJson(`atc/project-decomposed/prd-${entry.prdId}`);
+
+      out.decisions.push(`Cleaned up stale criteria/plan for completed PRD "${entry.prdTitle}"`);
+      cleaned++;
+    }
+  } catch (err) {
+    console.warn('[supervisor §19] Stale criteria cleanup failed (non-fatal):', err);
+    out.errors.push(`Stale criteria cleanup: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   return out;
 }
 

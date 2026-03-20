@@ -8,11 +8,11 @@ import { ATC_STATE_KEY } from "@/lib/atc/types";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { PHASE_MANIFEST, type PhaseResult, type PhaseExecutionLog } from "@/lib/atc/supervisor-manifest";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 const SUPERVISOR_LOCK_KEY = "atc/supervisor-lock";
 const EXECUTION_LOG_KEY = "af-data/supervisor/execution-log";
-const COORDINATOR_BUDGET_MS = 280_000; // 280s — leave 20s for cleanup
+const COORDINATOR_BUDGET_MS = 560_000; // 560s — leave 40s for cleanup
 
 async function handleCron(req: NextRequest) {
   const authHeader = req.headers.get("Authorization");
