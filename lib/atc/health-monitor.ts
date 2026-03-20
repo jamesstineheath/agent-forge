@@ -12,6 +12,7 @@ import {
   triggerWorkflow,
   rerunFailedJobs,
   isPRFlaggedForHuman,
+  isBranchMergedIntoMain,
 } from "../github";
 import { escalate } from "../escalation";
 import { incrementalIndex } from "../knowledge-graph/indexer";
@@ -881,17 +882,85 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           );
         }
       } else if (!pr || (pr.state === "closed" && !pr.mergedAt)) {
-        // Genuinely failed, leave as-is
+        // PR is closed without merge or missing — check if the branch itself was merged into main
+        // This handles the duplicate-PR case where the second PR is still open/closed
+        // but the branch's code was already delivered via the first (auto-merged) PR.
+        if (item.handoff?.branch) {
+          const [owner, repoName] = item.targetRepo.split("/");
+          const branchMerged = await isBranchMergedIntoMain(owner, repoName, item.handoff.branch);
+          if (branchMerged) {
+            await updateWorkItem(item.id, {
+              status: "merged",
+              execution: {
+                ...item.execution,
+                completedAt: now.toISOString(),
+                outcome: "merged",
+              },
+            });
+            events.push(
+              makeEvent(
+                "work_item_reconciled",
+                item.id,
+                "failed",
+                "merged",
+                `Reconciled via branch-merge detection: branch "${item.handoff.branch}" is in main (tracked PR #${item.execution?.prNumber} was not merged)`
+              )
+            );
+            console.log(
+              `[health-monitor] §2.8 Work item ${item.id} transitioned to merged via branch-merge detection (branch: ${item.handoff.branch}, tracked PR: ${item.execution?.prNumber})`
+            );
+          }
+        }
       } else if (pr.state === "open") {
-        events.push(
-          makeEvent(
-            "work_item_reconciled",
-            item.id,
-            "failed",
-            "failed",
-            `Work item "failed" but PR #${pr.number} is still open — deferring to HLO for retry/recovery`
-          )
-        );
+        // PR is open — check if the branch itself was merged into main despite the open PR
+        if (item.handoff?.branch) {
+          const [owner, repoName] = item.targetRepo.split("/");
+          const branchMerged = await isBranchMergedIntoMain(owner, repoName, item.handoff.branch);
+          if (branchMerged) {
+            await updateWorkItem(item.id, {
+              status: "merged",
+              execution: {
+                ...item.execution,
+                prNumber: pr.number,
+                prUrl: pr.htmlUrl,
+                completedAt: now.toISOString(),
+                outcome: "merged",
+              },
+            });
+            events.push(
+              makeEvent(
+                "work_item_reconciled",
+                item.id,
+                "failed",
+                "merged",
+                `Reconciled via branch-merge detection: branch "${item.handoff.branch}" is in main despite open PR #${pr.number}`
+              )
+            );
+            console.log(
+              `[health-monitor] §2.8 Work item ${item.id} transitioned to merged via branch-merge detection (branch: ${item.handoff.branch}, open PR: #${pr.number})`
+            );
+          } else {
+            events.push(
+              makeEvent(
+                "work_item_reconciled",
+                item.id,
+                "failed",
+                "failed",
+                `Work item "failed" but PR #${pr.number} is still open — deferring to HLO for retry/recovery`
+              )
+            );
+          }
+        } else {
+          events.push(
+            makeEvent(
+              "work_item_reconciled",
+              item.id,
+              "failed",
+              "failed",
+              `Work item "failed" but PR #${pr.number} is still open — deferring to HLO for retry/recovery`
+            )
+          );
+        }
       }
     } catch (err) {
       console.error(`[health-monitor] PR reconciliation failed for work item ${item.id}:`, err);
@@ -1084,6 +1153,48 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
             `[health-monitor §2.10] Incremental re-index failed for PR #${pr.number}:`,
             indexErr instanceof Error ? indexErr.message : String(indexErr)
           );
+        }
+      } else if (branch) {
+        // PR is not merged — fallback: check if the branch itself is merged into main.
+        // This handles the duplicate-PR case where a second PR is still open
+        // but the branch's code was already delivered via the first (auto-merged) PR.
+        const [owner, repoName] = item.targetRepo.split("/");
+        const branchMerged = await isBranchMergedIntoMain(owner, repoName, branch);
+        if (branchMerged) {
+          await updateWorkItem(item.id, {
+            status: "merged",
+            execution: {
+              ...item.execution,
+              ...(pr && { prNumber: pr.number, prUrl: pr.htmlUrl }),
+              completedAt: now.toISOString(),
+              outcome: "merged",
+            },
+          });
+          events.push(
+            makeEvent(
+              "work_item_reconciled",
+              item.id,
+              "reviewing",
+              "merged",
+              `Reconciled via branch-merge detection: branch "${branch}" is in main (tracked PR ${prNumber ? `#${prNumber}` : "unknown"} not merged)`
+            )
+          );
+          console.log(
+            `[health-monitor] §2.10 Work item ${item.id} transitioned to merged via branch-merge detection (branch: ${branch}, tracked PR: ${prNumber ?? "none"})`
+          );
+
+          // Dispatch any items that were blocked on this one
+          try {
+            const dispatchResult = await dispatchUnblockedItems(item.id, item.targetRepo);
+            if (dispatchResult.dispatched.length > 0) {
+              console.log(`[health-monitor §2.10] dispatched ${dispatchResult.dispatched.length} unblocked item(s) after ${item.id} branch-merge reconciled`);
+            }
+          } catch (dispatchErr) {
+            console.warn(
+              `[health-monitor §2.10] dispatchUnblockedItems failed after branch-merge reconciling ${item.id} (non-fatal):`,
+              dispatchErr instanceof Error ? dispatchErr.message : String(dispatchErr)
+            );
+          }
         }
       }
     } catch (err) {
