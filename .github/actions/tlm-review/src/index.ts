@@ -792,11 +792,22 @@ async function run(): Promise<void> {
     );
 
     // Post inline comments for critical issues
+    // Build a Set of deleted file paths for O(1) lookup — GitHub API can't
+    // resolve line positions on removed files.
+    const deletedFiles = new Set(
+      filesData.filter(f => f.status === 'removed').map(f => f.filename)
+    );
+
     if (review.issues.length > 0) {
       const criticalIssues = review.issues.filter(
         (i) => i.severity === "critical"
       );
       for (const issue of criticalIssues) {
+        // Skip inline comments for deleted files — GitHub API can't resolve line positions
+        if (deletedFiles.has(issue.file)) {
+          core.info(`Skipping inline comment on deleted file: ${issue.file}`);
+          continue;
+        }
         try {
           await octokit.rest.pulls.createReviewComment({
             owner,
@@ -875,6 +886,8 @@ async function run(): Promise<void> {
       reviewEvent = "COMMENT";
     }
 
+    let reviewPosted = false;
+
     try {
       await octokit.rest.pulls.createReview({
         owner,
@@ -883,20 +896,45 @@ async function run(): Promise<void> {
         body: lines.join("\n"),
         event: reviewEvent,
       });
+      reviewPosted = true;
       core.info(`Posted ${reviewEvent} review on PR #${prNumber}`);
     } catch (reviewErr: unknown) {
       const reviewError = reviewErr as { status?: number; message?: string };
       core.warning(
-        `Failed to post ${reviewEvent} review (HTTP ${reviewError.status}): ${reviewError.message}. Falling back to COMMENT.`
+        `Failed to post ${reviewEvent} review (HTTP ${reviewError.status}): ${reviewError.message}. Retrying as COMMENT after 2s...`
       );
-      await octokit.rest.pulls.createReview({
-        owner,
-        repo,
-        pull_number: prNumber,
-        body: lines.join("\n"),
-        event: "COMMENT",
-      });
-      core.info(`Posted COMMENT review (fallback) on PR #${prNumber}`);
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      try {
+        await octokit.rest.pulls.createReview({
+          owner,
+          repo,
+          pull_number: prNumber,
+          body: lines.join("\n"),
+          event: "COMMENT",
+        });
+        reviewPosted = true;
+        core.info(`Posted COMMENT review (fallback) on PR #${prNumber}`);
+      } catch (fallbackErr: unknown) {
+        const fallbackError = fallbackErr as { status?: number; message?: string };
+        core.warning(
+          `COMMENT fallback also failed (HTTP ${fallbackError.status}): ${fallbackError.message}. Posting as issue comment.`
+        );
+
+        try {
+          await octokit.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: prNumber,
+            body: lines.join("\n"),
+          });
+          reviewPosted = true;
+          core.info("Posted review as issue comment (final fallback).");
+        } catch (issueErr) {
+          core.error(`All review posting methods failed. Decision was: ${review.decision}`);
+        }
+      }
     }
 
     // Post structured metadata for pipeline consumption
@@ -1052,6 +1090,16 @@ async function run(): Promise<void> {
       }
     }
 
+    // Set outputs immediately — the review decision is valid even if posting failed
+    core.setOutput("decision", review.decision);
+    core.setOutput("summary", review.summary);
+
+    if (!reviewPosted) {
+      core.warning(
+        `Review decision was "${review.decision}" but all posting methods failed. Outputs are still set for downstream consumers.`
+      );
+    }
+
     // Notify human via email when Claude decides flag_for_human
     if (review.decision === "flag_for_human") {
       const issues = review.issues
@@ -1070,10 +1118,6 @@ async function run(): Promise<void> {
         recommendedPath: "Review the TLM Code Review comment on the PR for full details.",
       });
     }
-
-    // Set outputs
-    core.setOutput("decision", review.decision);
-    core.setOutput("summary", review.summary);
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
     const errStatus = (error as unknown as { status?: number })?.status;
