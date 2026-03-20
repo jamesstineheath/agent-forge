@@ -2,7 +2,7 @@ import { saveJson, loadJson, deleteJson } from "../storage";
 
 // === Types ===
 
-export type AgentName = 'dispatcher' | 'health-monitor' | 'project-manager' | 'supervisor';
+export type AgentName = 'dispatcher' | 'health-monitor' | 'project-manager' | 'supervisor' | 'pm-agent';
 
 export interface TracePhase {
   name: string;
@@ -81,7 +81,7 @@ export async function persistTrace(trace: AgentTrace): Promise<void> {
   await saveJson(key, trace);
 }
 
-export async function cleanupOldTraces(agent: AgentName, retentionDays = 30): Promise<void> {
+export async function cleanupOldTraces(agent: AgentName, retentionDays = 7): Promise<void> {
   if (!process.env.BLOB_READ_WRITE_TOKEN) return;
 
   const { list, del } = await import("@vercel/blob");
@@ -151,7 +151,7 @@ async function listRecentTracesLocal(agent?: AgentName, limit = 20): Promise<Age
 
   const agents: AgentName[] = agent
     ? [agent]
-    : ['dispatcher', 'health-monitor', 'project-manager', 'supervisor'];
+    : ['dispatcher', 'health-monitor', 'project-manager', 'supervisor', 'pm-agent'];
 
   for (const agentName of agents) {
     const dir = join(dataDir, "agent-traces", agentName);

@@ -1499,7 +1499,7 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
   } finally {
     try {
       await persistTrace(trace);
-      await cleanupOldTraces('health-monitor');
+      await cleanupOldTraces('health-monitor', 7);
     } catch (tracingErr) {
       console.error('[HealthMonitor] Tracing failed (non-fatal):', tracingErr);
     }

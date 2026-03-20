@@ -363,7 +363,7 @@ export async function runProjectManager(ctx: CycleContext): Promise<void> {
   } finally {
     try {
       await persistTrace(trace);
-      await cleanupOldTraces('project-manager');
+      await cleanupOldTraces('project-manager', 7);
     } catch (tracingErr) {
       console.error('[ProjectManager] Tracing failed (non-fatal):', tracingErr);
     }
