@@ -62,6 +62,27 @@ export interface HLOStateEntry {
 
 // --- Model event types ---
 
+// --- Decomposer failure reason classification ---
+
+export type DecomposerFailureReason =
+  | 'empty_plan'
+  | 'no_components'
+  | 'parse_failure'
+  | 'no_target_repo'
+  | 'claude_refusal'
+  | 'empty_context'
+  | 'validation_failure'
+  | 'unknown';
+
+// --- Spec review stall thresholds ---
+
+export const SPEC_REVIEW_STALL_WARN_MINUTES = 30;
+export const SPEC_REVIEW_STALL_FAIL_MINUTES = 45;
+
+// --- Architecture planner empty context threshold ---
+
+export const MIN_REPO_CONTEXT_LENGTH = 200;
+
 export type TaskType =
   | "decomposition"
   | "dispatch"

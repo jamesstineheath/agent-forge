@@ -796,13 +796,76 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
   addPhase(trace, { name: 'monitoring', durationMs: Date.now() - phaseStart, activeItems: activeEntries.length });
   phaseStart = Date.now();
 
-  // 2.5: Generating timeout detection
+  // 2.5: Generating timeout detection + spec review trigger watcher
   const GENERATING_TIMEOUT_MINUTES = 15;
   const generatingEntries = await listWorkItems({ status: "generating" as any });
   for (const entry of generatingEntries) {
     const item = await getWorkItem(entry.id);
     if (!item) continue;
     const elapsed = (now.getTime() - new Date(item.updatedAt).getTime()) / 60_000;
+
+    // Spec review trigger watcher: if in generating > 30min with no spec review workflow run,
+    // attempt workflow_dispatch fallback. Escalate at 45min.
+    if (elapsed >= 30 && item.handoff?.branch) {
+      try {
+        const specReviewRuns = await getWorkflowRuns(
+          item.targetRepo,
+          item.handoff.branch,
+          'tlm-spec-review.yml'
+        );
+        if (specReviewRuns.length === 0) {
+          if (elapsed >= 45) {
+            // 45+ minutes with no spec review — mark failed and escalate
+            console.warn(`[health-monitor] Spec review never triggered for ${item.id} after ${Math.round(elapsed)}min — escalating`);
+            const { escalate: escFn } = await import("../escalation");
+            await updateWorkItem(item.id, {
+              status: "failed",
+              execution: {
+                ...item.execution,
+                completedAt: now.toISOString(),
+                outcome: "failed",
+              },
+            });
+            await escFn(
+              item.id,
+              `Spec review never triggered for work item ${item.id} (branch: ${item.handoff.branch}) after ${Math.round(elapsed)} minutes. GitHub push event may have been suppressed.`,
+              0.7,
+              { branch: item.handoff.branch, elapsedMinutes: Math.round(elapsed) }
+            );
+            events.push(
+              makeEvent(
+                "timeout",
+                item.id,
+                "generating",
+                "failed",
+                `Spec review never triggered after ${Math.round(elapsed)} minutes — escalated (reason: spec_review_never_triggered)`
+              )
+            );
+            continue; // Skip the normal generating timeout check
+          } else {
+            // 30-45 minutes — attempt workflow_dispatch fallback
+            console.log(`[health-monitor] Spec review not triggered for ${item.id} after ${Math.round(elapsed)}min — attempting workflow_dispatch fallback`);
+            try {
+              await triggerWorkflow(
+                item.targetRepo,
+                'tlm-spec-review.yml',
+                item.handoff.branch
+              );
+              addDecision(trace, {
+                workItemId: item.id,
+                action: 'spec_review_fallback_dispatch',
+                reason: `Dispatched spec review via workflow_dispatch for ${item.id} (${Math.round(elapsed)}min in generating, no run found)`,
+              });
+            } catch (dispatchErr) {
+              console.warn(`[health-monitor] Spec review fallback dispatch failed for ${item.id}:`, dispatchErr);
+            }
+          }
+        }
+      } catch (specErr) {
+        console.warn(`[health-monitor] Spec review watcher check failed for ${item.id} (non-fatal):`, specErr);
+      }
+    }
+
     if (elapsed >= GENERATING_TIMEOUT_MINUTES) {
       const attribution = await tryAttributeFailure(item, {
         executionLog: `Handoff generation stalled for ${Math.round(elapsed)} minutes`,

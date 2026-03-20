@@ -123,6 +123,8 @@ export interface DecompositionResult {
   workItems: WorkItem[];
   phases: WorkItem[][] | null;
   phaseBreakdown?: PhaseBreakdown;
+  /** Reason classification when decomposition returns 0 items */
+  reason?: import('./atc/types').DecomposerFailureReason;
 }
 
 interface DecomposedItem {
@@ -564,7 +566,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       { projectId: project.projectId, pageId, contentLength: planContent.length },
       project.projectId,
     );
-    return { workItems: [], phases: null };
+    return { workItems: [], phases: null, reason: 'empty_plan' };
   }
 
   // 2. Determine target repos
@@ -580,7 +582,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       { projectId: project.projectId },
       project.projectId,
     );
-    return { workItems: [], phases: null };
+    return { workItems: [], phases: null, reason: 'no_target_repo' };
   }
 
   const referencedRepos = await findReferencedRepos(planContent, primaryRepo);
@@ -593,7 +595,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       { projectId: project.projectId, primaryRepo },
       project.projectId,
     );
-    return { workItems: [], phases: null };
+    return { workItems: [], phases: null, reason: 'no_target_repo' };
   }
 
   // 3. Fetch repo context for each target repo
@@ -701,7 +703,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       { projectId: project.projectId, lastError },
       project.projectId,
     );
-    return { workItems: [], phases: null };
+    return { workItems: [], phases: null, reason: 'parse_failure' };
   }
 
   // 4.5. Inject file-overlap dependency edges (post-processing pass)
@@ -720,7 +722,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
         { projectId: project.projectId, injectedDeps },
         project.projectId,
       );
-      return { workItems: [], phases: null };
+      return { workItems: [], phases: null, reason: 'validation_failure' };
     }
   }
 

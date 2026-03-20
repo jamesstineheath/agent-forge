@@ -131,12 +131,14 @@ export interface PlanInput {
   prdContent?: string;          // raw PRD text from Notion
   mode: "plan" | "gap-analysis";
   failedResults?: ValidationResult[];  // only in gap-analysis mode
+  /** Minimum character length for repo context. If context is shorter, plan generation is skipped. */
+  minRepoContextLength?: number;
 }
 
 export async function generateArchitecturePlan(
   input: PlanInput,
 ): Promise<ArchitecturePlan> {
-  const { criteria, prdContent, mode, failedResults } = input;
+  const { criteria, prdContent, mode, failedResults, minRepoContextLength } = input;
 
   // Resolve repos and fetch context (primary + secondary)
   const repoConfig = await resolveRepo(criteria.targetRepo);
@@ -149,6 +151,29 @@ export async function generateArchitecturePlan(
     console.warn(
       `[architecture-planner] No repo config for "${criteria.targetRepo}", planning without codebase context`,
     );
+  }
+
+  // Empty context guard: if repo context is below minimum threshold, return empty plan
+  // so the supervisor can escalate instead of generating a low-quality plan.
+  if (minRepoContextLength && repoContext.length < minRepoContextLength) {
+    console.warn(
+      `[architecture-planner] Repo context too short (${repoContext.length} chars < ${minRepoContextLength} min) for "${criteria.prdTitle}" — skipping plan generation`
+    );
+    // Return a plan with 0 criterion plans so the supervisor can detect and escalate
+    const emptyPlan: ArchitecturePlan = {
+      prdId: criteria.prdId,
+      version: 1,
+      targetRepo: criteria.targetRepo ?? 'unknown',
+      criterionPlans: [],
+      sharedTypes: [],
+      prerequisites: [],
+      riskAssessment: 'Plan generation skipped: insufficient repo context',
+      estimatedWorkItems: 0,
+      totalEstimatedCost: 0,
+      generatedAt: new Date().toISOString(),
+      generatedBy: 'architecture-planner',
+    };
+    return emptyPlan;
   }
 
   // Fetch secondary repo context
