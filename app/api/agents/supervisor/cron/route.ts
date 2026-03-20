@@ -12,7 +12,7 @@ export const maxDuration = 800;
 
 const SUPERVISOR_LOCK_KEY = "atc/supervisor-lock";
 const EXECUTION_LOG_KEY = "af-data/supervisor/execution-log";
-const COORDINATOR_BUDGET_MS = 780_000; // 780s — leave 20s for cleanup
+const COORDINATOR_BUDGET_MS = 780_000; // 780s — leave 20s for cleanup (Pro Fluid Compute ceiling: 800s)
 
 async function handleCron(req: NextRequest) {
   const authHeader = req.headers.get("Authorization");

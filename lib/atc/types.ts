@@ -24,7 +24,7 @@ export const ATC_LOCK_KEY = "atc/cycle-lock";
 
 export const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 export const LOCK_HARD_CEILING_MS = 10 * 60 * 1000; // 10 minutes — force-clear zombie locks
-export const CYCLE_TIMEOUT_MS = 240 * 1000; // 240s — abort before Vercel's 300s Fluid Compute limit
+export const CYCLE_TIMEOUT_MS = 780 * 1000; // 780s — generous ceiling for Opus API calls (Pro Fluid Compute supports 800s)
 
 // Stage-aware stall timeouts:
 export const STALL_TIMEOUT_EXECUTING_NO_RUN_MINUTES = 20;
