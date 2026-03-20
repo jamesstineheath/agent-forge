@@ -83,6 +83,10 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   const trace = startTrace('supervisor');
   ctx.trace = trace;
   let phaseStart = Date.now();
+  const cycleStart = Date.now();
+  const elapsed = () => Date.now() - cycleStart;
+  // Leave 40s buffer for cleanup/trace persistence
+  const PHASE_BUDGET_MS = 200_000;
 
   try {
 
@@ -445,6 +449,12 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   phaseStart = Date.now();
 
   // §21 — Architecture Planning (auto-generate plans for approved criteria without plans)
+  if (elapsed() > PHASE_BUDGET_MS) {
+    console.warn(`[supervisor] Skipping §21+ — ${elapsed()}ms elapsed, over ${PHASE_BUDGET_MS}ms budget`);
+    addDecision(trace, { action: 'phases_skipped', reason: `Time budget exceeded at ${elapsed()}ms — skipping §21, §22, §5, §20` });
+    completeTrace(trace, 'success');
+    return;
+  }
   try {
     const { getArchitecturePlan, generateArchitecturePlan } = await import("@/lib/architecture-planner");
     const { listAllCriteria } = await import("@/lib/intent-criteria");
@@ -489,6 +499,12 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   phaseStart = Date.now();
 
   // §22 — Trigger decomposition for architecture plans that are ready
+  if (elapsed() > PHASE_BUDGET_MS) {
+    console.warn(`[supervisor] Skipping §22+ — ${elapsed()}ms elapsed, over ${PHASE_BUDGET_MS}ms budget`);
+    addDecision(trace, { action: 'phases_skipped', reason: `Time budget exceeded at ${elapsed()}ms — skipping §22, §5, §20` });
+    completeTrace(trace, 'success');
+    return;
+  }
   try {
     const { getArchitecturePlan, planToDecomposerMarkdown } = await import("@/lib/architecture-planner");
     const { listAllCriteria, getCriteria } = await import("@/lib/intent-criteria");
