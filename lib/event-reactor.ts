@@ -10,6 +10,7 @@ import type { WebhookEvent } from "./event-bus-types";
 import { findWorkItemByBranch, findWorkItemByPR, updateWorkItem } from "./work-items";
 import { triggerWorkflow, deleteBranch, mergePR } from "./github";
 import { dispatchUnblockedItems } from "./atc/dispatcher";
+import { MAX_RETRIES } from "./atc/types";
 
 const LOG_PREFIX = "[event-reactor]";
 
@@ -104,7 +105,7 @@ async function handleCIFailed(event: WebhookEvent): Promise<void> {
   console.log(`${LOG_PREFIX} CI failed for ${item.id} (branch: ${branch})`);
 
   const retryCount = item.execution?.retryCount ?? 0;
-  const maxRetries = 2;
+  const maxRetries = MAX_RETRIES;
 
   if (retryCount < maxRetries) {
     console.log(`${LOG_PREFIX} retrying ${item.id} (attempt ${retryCount + 1}/${maxRetries})`);
@@ -197,7 +198,7 @@ async function handlePRClosed(event: WebhookEvent): Promise<void> {
   console.log(`${LOG_PREFIX} PR #${prNumber} closed without merge for ${item.id}`);
 
   const retryCount = item.execution?.retryCount ?? 0;
-  const maxRetries = 2;
+  const maxRetries = MAX_RETRIES;
 
   if (retryCount < maxRetries) {
     if (branch) {

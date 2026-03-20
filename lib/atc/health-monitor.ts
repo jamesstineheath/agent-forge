@@ -471,6 +471,37 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
         });
         events.push(event);
       } else if (latestRun?.status === "completed" && latestRun.conclusion === "success" && pr) {
+        // §2.7c: Merge conflict pre-check before transitioning to reviewing
+        // Catch conflicts early — before code review wastes time on a conflicted PR
+        if (pr.state === "open") {
+          try {
+            const mergeability = await getPRMergeability(item.targetRepo, pr.number);
+            if (mergeability.mergeable === false && mergeability.mergeableState === "dirty") {
+              const [owner, repoName] = item.targetRepo.split("/");
+              const rebaseResult = await rebasePR(owner, repoName, pr.number);
+              if (rebaseResult.success) {
+                events.push(makeEvent("conflict", item.id, "executing", "executing",
+                  `PR #${pr.number} had merge conflict during executing, auto-rebased before review`));
+              } else {
+                // Can't fix conflict — close PR and fail for re-dispatch
+                await closePRWithReason(owner, repoName, pr.number, "merge_conflicts",
+                  `Merge conflict detected pre-review. Auto-rebase failed: ${rebaseResult.error}`);
+                await updateWorkItem(item.id, {
+                  status: "failed",
+                  failureCategory: "transient",
+                  execution: { ...item.execution, prNumber: pr.number, prUrl: pr.htmlUrl,
+                    completedAt: now.toISOString(), outcome: "failed" },
+                });
+                events.push(makeEvent("conflict", item.id, "executing", "failed",
+                  `PR #${pr.number} merge conflict pre-review, auto-rebase failed (${rebaseResult.error})`));
+                continue;
+              }
+            }
+          } catch (preCheckErr) {
+            console.warn(`[health-monitor] Merge conflict pre-check failed for PR #${pr.number} (non-fatal):`, preCheckErr);
+          }
+        }
+
         const event = makeEvent(
           "status_change",
           item.id,
@@ -716,6 +747,27 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
           }
         } catch (flagErr) {
           console.warn(`[health-monitor] FLAG_FOR_HUMAN check failed for PR #${prNumber} (non-fatal):`, flagErr);
+        }
+
+        // §2.7b: Code review re-execution — if reviewing for 15+ min with open PR
+        // but no TLM code review workflow has run, re-trigger it
+        if (elapsedMinutes >= 15) {
+          try {
+            const reviewRuns = await getWorkflowRuns(item.targetRepo, branch, 'tlm-review.yml');
+            if (reviewRuns.length === 0) {
+              console.log(`[health-monitor] No TLM code review run found for ${item.id} PR #${prNumber} after ${Math.round(elapsedMinutes)}m — re-triggering`);
+              await triggerWorkflow(item.targetRepo, 'tlm-review.yml', branch, {
+                pr_number: String(prNumber),
+              });
+              addDecision(trace, {
+                workItemId: item.id,
+                action: 'code_review_retrigger',
+                reason: `Re-triggered TLM code review for PR #${prNumber} after ${Math.round(elapsedMinutes)}m with no review run`,
+              });
+            }
+          } catch (reviewErr) {
+            console.warn(`[health-monitor] Code review re-trigger failed for PR #${prNumber} (non-fatal):`, reviewErr);
+          }
         }
       }
 
