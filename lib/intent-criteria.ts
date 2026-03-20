@@ -9,7 +9,7 @@
  * updated by the Intent Validator (Phase 3) post-execution.
  */
 
-import { loadJson, saveJson } from "./storage";
+import { loadJson, saveJson, deleteJson } from "./storage";
 import type {
   Criterion,
   CriterionType,
@@ -480,5 +480,33 @@ async function syncCountsToNotion(prdId: string, passedCount: number, totalCount
     });
   } catch (err) {
     console.warn(`[intent-criteria] Failed to sync counts to Notion for ${prdId}:`, err);
+  }
+}
+
+/**
+ * Fetch the current Status of a PRD page from Notion.
+ * Returns the status string (e.g., "Approved", "Complete", "Paused") or null on error.
+ */
+export async function fetchPRDStatus(prdId: string): Promise<string | null> {
+  try {
+    const pageId = prdId.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
+    const page = await notionFetch(`/pages/${pageId}`);
+    const props = page.properties as Record<string, { select?: { name?: string } }>;
+    return props["Status"]?.select?.name || null;
+  } catch (err) {
+    console.warn(`[intent-criteria] Failed to fetch PRD status for ${prdId}:`, err);
+    return null;
+  }
+}
+
+/**
+ * Delete criteria for a PRD from blob store and index.
+ */
+export async function deleteCriteria(prdId: string): Promise<void> {
+  await deleteJson(criteriaKey(prdId));
+  const index = (await loadJson<IntentCriteriaIndexEntry[]>(INDEX_KEY)) || [];
+  const filtered = index.filter((e) => e.prdId !== prdId);
+  if (filtered.length !== index.length) {
+    await saveJson(INDEX_KEY, filtered);
   }
 }
