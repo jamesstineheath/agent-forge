@@ -74,7 +74,7 @@ async function callClaudeAPI(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 4096,
+      max_tokens: 16384,
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     }),
@@ -607,14 +607,30 @@ async function run(): Promise<void> {
 
     core.info(`Assessing ${prData.length} PRs...`);
 
-    // Call Claude for assessment
-    const userPrompt = buildOutcomeUserPrompt(prData);
-    const result = await callClaudeAPI(
-      apiKey,
-      model,
-      OUTCOME_SYSTEM_PROMPT,
-      userPrompt
-    );
+    // Batch PRs to avoid oversized API responses (max 10 per call)
+    const BATCH_SIZE = 10;
+    const result: OutcomeResult = { assessments: [], patterns: [], summary: "" };
+
+    for (let i = 0; i < prData.length; i += BATCH_SIZE) {
+      const batch = prData.slice(i, i + BATCH_SIZE);
+      core.info(`Assessing batch ${Math.floor(i / BATCH_SIZE) + 1} (${batch.length} PRs)...`);
+
+      const userPrompt = buildOutcomeUserPrompt(batch);
+      const batchResult = await callClaudeAPI(
+        apiKey,
+        model,
+        OUTCOME_SYSTEM_PROMPT,
+        userPrompt
+      );
+
+      result.assessments.push(...batchResult.assessments);
+      result.patterns.push(...batchResult.patterns);
+      if (batchResult.summary) {
+        result.summary = result.summary
+          ? `${result.summary}; ${batchResult.summary}`
+          : batchResult.summary;
+      }
+    }
 
     core.info(`Assessment complete: ${result.summary}`);
 
