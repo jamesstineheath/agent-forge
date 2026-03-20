@@ -1,5 +1,6 @@
 import type { ATCEvent, ATCState, HLOLifecycleState, WorkItem } from "../types";
 import type { PR } from "../github";
+import type { AgentTrace } from "./tracing";
 
 // Re-export for convenience
 export type { ATCEvent, ATCState, HLOLifecycleState, WorkItem, PR };
@@ -10,6 +11,7 @@ export type { ATCEvent, ATCState, HLOLifecycleState, WorkItem, PR };
 export interface CycleContext {
   now: Date;
   events: ATCEvent[];
+  trace?: AgentTrace;
 }
 
 // --- Constants ---

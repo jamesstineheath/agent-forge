@@ -32,7 +32,7 @@ import {
   MAX_BRANCHES_PER_REPO,
 } from "./types";
 import { makeEvent } from "./utils";
-import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces, listRecentTraces } from "./tracing";
+import { startTrace, addPhase, addDecision, addError, completeTrace, listRecentTraces } from "./tracing";
 import type { AgentName } from "./tracing";
 
 // --- Supervisor task throttling ---
@@ -81,6 +81,7 @@ function isThrottled(lastRan: string | undefined, cooldownMinutes: number): bool
 export async function runSupervisor(ctx: CycleContext): Promise<void> {
   const { now, events } = ctx;
   const trace = startTrace('supervisor');
+  ctx.trace = trace;
   let phaseStart = Date.now();
 
   try {
@@ -493,6 +494,8 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
     const { listAllCriteria, getCriteria } = await import("@/lib/intent-criteria");
     const { decomposeFromPlan } = await import("@/lib/decomposer");
     const criteriaEntries = await listAllCriteria();
+    // Pre-fetch work items once for dedup guard validation (avoid N+1 queries)
+    const allItemsForDedup = await listWorkItems({});
 
     for (const entry of criteriaEntries) {
       const plan = await getArchitecturePlan(entry.prdId);
@@ -500,8 +503,39 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
 
       // Check if a project already exists for this PRD (dedup guard)
       const dedupKey = `atc/project-decomposed/prd-${entry.prdId}`;
-      const alreadyDecomposed = await loadJson<{ decomposedAt: string }>(dedupKey);
-      if (alreadyDecomposed) continue;
+      const alreadyDecomposed = await loadJson<{ decomposedAt: string; workItemCount?: number }>(dedupKey);
+      if (alreadyDecomposed) {
+        // Self-heal: clear guards that were set without workItemCount (pre-fix bug)
+        // Old guards lack workItemCount — verify work items actually exist before honoring
+        if (alreadyDecomposed.workItemCount === undefined) {
+          const projectId = entry.projectId;
+          if (projectId) {
+            const hasItems = allItemsForDedup.some(
+              (wi) => (wi as WorkItem).source?.sourceId === projectId &&
+                      (wi as WorkItem).status !== 'cancelled'
+            );
+            if (!hasItems) {
+              await deleteJson(dedupKey);
+              addDecision(trace, {
+                action: 'dedup_guard_cleared',
+                reason: `Cleared stale dedup guard for "${entry.prdTitle}" (${projectId}) — no active work items found`,
+              });
+              // Fall through to attempt decomposition
+            } else {
+              continue; // Has real work items, guard is valid
+            }
+          } else {
+            await deleteJson(dedupKey);
+            addDecision(trace, {
+              action: 'dedup_guard_cleared',
+              reason: `Cleared unverifiable dedup guard for "${entry.prdTitle}" — no projectId to verify`,
+            });
+            // Fall through to attempt decomposition
+          }
+        } else {
+          continue; // Guard was set by fixed code (has workItemCount), skip
+        }
+      }
 
       const criteria = await getCriteria(entry.prdId);
       if (!criteria) continue;
@@ -510,25 +544,33 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
       try {
         const markdown = planToDecomposerMarkdown(plan, criteria.prdTitle);
 
-        // Use the decomposer with the generated plan markdown
-        if (typeof decomposeFromPlan === 'function') {
-          await decomposeFromPlan({
-            prdId: entry.prdId,
-            prdTitle: criteria.prdTitle,
-            targetRepo: plan.targetRepo,
-            planContent: markdown,
-            projectId: criteria.projectId,
+        const result = await decomposeFromPlan({
+          prdId: entry.prdId,
+          prdTitle: criteria.prdTitle,
+          targetRepo: plan.targetRepo,
+          planContent: markdown,
+          projectId: criteria.projectId,
+        });
+
+        if (!result.workItems || result.workItems.length === 0) {
+          // Decomposition returned 0 work items (repo not found, plan too short, etc.)
+          // Do NOT set dedup guard — allow retry on next cycle after the issue is fixed
+          addDecision(trace, {
+            action: 'decomposition_empty',
+            reason: `Decomposition of "${criteria.prdTitle}" produced 0 work items — skipping dedup guard`,
           });
+          console.warn(`[supervisor §22] Decomposition of "${criteria.prdTitle}" produced 0 work items, will retry next cycle`);
+          continue;
         }
 
-        // Set dedup guard
-        await saveJson(dedupKey, { decomposedAt: new Date().toISOString(), planVersion: plan.version });
+        // Only set dedup guard when work items were actually created
+        await saveJson(dedupKey, { decomposedAt: new Date().toISOString(), planVersion: plan.version, workItemCount: result.workItems.length });
 
         addDecision(trace, {
           action: 'decomposition_triggered',
-          reason: `Decomposed "${criteria.prdTitle}" from architecture plan v${plan.version}`,
+          reason: `Decomposed "${criteria.prdTitle}" from architecture plan v${plan.version} — ${result.workItems.length} work items created`,
         });
-        console.log(`[supervisor §22] Decomposition complete for "${criteria.prdTitle}"`);
+        console.log(`[supervisor §22] Decomposition complete for "${criteria.prdTitle}" — ${result.workItems.length} work items created`);
         // Only decompose 1 per cycle
         break;
       } catch (decompErr) {
@@ -611,14 +653,8 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
     addError(trace, String(err));
     completeTrace(trace, 'error');
     throw err;
-  } finally {
-    try {
-      await persistTrace(trace);
-      await cleanupOldTraces('supervisor');
-    } catch (tracingErr) {
-      console.error('[Supervisor] Tracing failed (non-fatal):', tracingErr);
-    }
   }
+  // Trace persistence moved to cron route (survives withTimeout cutoff)
 }
 
 // === Private helpers ===
