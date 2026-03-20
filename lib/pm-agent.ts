@@ -1,6 +1,5 @@
-import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
 import { loadJson, saveJson } from "./storage";
+import { routedAnthropicCall } from "./model-router";
 import { listWorkItems, getWorkItem } from "./work-items";
 import { listProjects } from "./projects";
 import { sendEmail } from "./gmail";
@@ -38,15 +37,13 @@ const STORAGE_KEYS = {
   latestDigest: "pm-agent/latest-digest",
 } as const;
 
-const MODEL = "claude-sonnet-4-5-20250514";
-
 /**
- * Calls Claude API with a prompt string.
- * Matches the pattern in lib/decomposer.ts.
+ * Calls Claude API via the model router with telemetry and escalation support.
  */
 async function callClaude(prompt: string): Promise<string> {
-  const { text } = await generateText({
-    model: anthropic(MODEL),
+  const { text } = await routedAnthropicCall({
+    model: "claude-sonnet-4-6",
+    taskType: "project_manager",
     prompt,
   });
   return text;

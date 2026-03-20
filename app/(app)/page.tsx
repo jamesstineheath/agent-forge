@@ -5,6 +5,7 @@ import { CheckCircle2, ArrowRight, AlertTriangle } from "lucide-react";
 import { QuickStats } from "@/components/quick-stats";
 import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 import { ActivityFeed } from "@/components/activity-feed";
 import { WebhookEventFeed } from "@/components/webhook-event-feed";
@@ -116,13 +117,16 @@ export default function DashboardPage() {
       <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
         <div className="max-w-5xl space-y-6">
           {/* Quick Stats */}
+          <ErrorBoundary section="Quick Stats">
           {itemsLoading ? (
             <div className="text-sm text-muted-foreground">Loading stats...</div>
           ) : (
             <QuickStats workItems={workItems ?? []} />
           )}
+          </ErrorBoundary>
 
           {/* Queue */}
+          <ErrorBoundary section="Queue">
           {!itemsLoading && queueItems.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center gap-2.5">
@@ -160,8 +164,10 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+          </ErrorBoundary>
 
           {/* Needs Attention (Escalations) */}
+          <ErrorBoundary section="Escalations">
           {!escalationsLoading && escalations && escalations.length > 0 && (
             <div className="space-y-3">
               <div className="flex items-center gap-2.5">
@@ -193,8 +199,10 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+          </ErrorBoundary>
 
           {/* Projects */}
+          <ErrorBoundary section="Projects">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -248,20 +256,30 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+          </ErrorBoundary>
 
           {/* Config / Kill Switches */}
+          <ErrorBoundary section="Config">
           <ForceOpusToggle />
+          </ErrorBoundary>
 
           {/* QA Agent */}
+          <ErrorBoundary section="QA Dashboard">
           <QADashboard />
+          </ErrorBoundary>
 
           {/* Webhook Event Feed */}
+          <ErrorBoundary section="Webhook Events">
           <WebhookEventFeed />
+          </ErrorBoundary>
 
           {/* Activity Feed */}
+          <ErrorBoundary section="Activity Feed">
           <ActivityFeed />
+          </ErrorBoundary>
 
           {/* Merged Today */}
+          <ErrorBoundary section="Merged Today">
           {mergedToday.length > 0 && (
             <div className="space-y-3">
               <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
@@ -284,6 +302,7 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+          </ErrorBoundary>
         </div>
       </div>
     </>
