@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Menu,
   X,
+  Power,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -28,7 +29,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useWorkItems } from "@/lib/hooks";
+import { useWorkItems, useKillSwitch } from "@/lib/hooks";
 
 interface NavItem {
   label: string;
@@ -117,6 +118,31 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 function HealthPanel() {
   const { data: workItems } = useWorkItems();
+  const { data: killSwitch } = useKillSwitch();
+
+  const isKilled = killSwitch?.enabled ?? false;
+
+  // Kill switch takes priority over normal health display
+  if (isKilled) {
+    return (
+      <Link
+        href="/pipeline"
+        className="rounded-lg p-3 block transition-colors bg-status-blocked/[0.06] ring-1 ring-status-blocked/10 hover:bg-status-blocked/[0.1] cursor-pointer"
+        role="status"
+        aria-label="Pipeline stopped"
+      >
+        <div className="flex items-center gap-2 mb-1.5">
+          <Power className="h-3 w-3 text-status-blocked" aria-hidden="true" />
+          <span className="text-[11px] font-semibold text-status-blocked">
+            Pipeline Stopped
+          </span>
+        </div>
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
+          All agents paused. Click to manage.
+        </p>
+      </Link>
+    );
+  }
 
   const activeCount = (workItems ?? []).filter(
     (i) => i.status === "generating" || i.status === "executing" || i.status === "reviewing"
