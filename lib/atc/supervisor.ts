@@ -31,6 +31,7 @@ import {
   CLEANUP_THROTTLE_MINUTES,
   STALE_BRANCH_HOURS,
   MAX_BRANCHES_PER_REPO,
+  getPrioritizedPhases,
 } from "./types";
 import { makeEvent } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, listRecentTraces } from "./tracing";
@@ -90,6 +91,13 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   const PHASE_BUDGET_MS = 200_000;
 
   try {
+
+  // Phase priority metadata (PRD-50) — log planned execution order
+  const prioritizedPhases = getPrioritizedPhases();
+  addDecision(trace, {
+    action: 'phase_priority_plan',
+    reason: `Executing ${prioritizedPhases.length} phases in priority order: ${prioritizedPhases.map((p) => `${p.name}(${p.basePriority})`).join(', ')}`,
+  });
 
   // §10: Escalation timeout monitoring
   try {
