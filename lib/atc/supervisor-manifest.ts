@@ -39,8 +39,8 @@ export const PHASE_MANIFEST: PhaseDefinition[] = [
   // CRITICAL — always run first, in this order
   { name: 'escalation-management', tier: 'critical', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§10-12: Timeout monitoring, Gmail polling, reminders' },
   { name: 'criteria-import',       tier: 'critical', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§19: Import approved criteria from Notion' },
-  { name: 'architecture-planning', tier: 'critical', maxDurationSeconds: 90, timeoutMs: 85_000, description: '§21: Generate architecture plans' },
-  { name: 'decomposition',         tier: 'critical', maxDurationSeconds: 90, timeoutMs: 85_000, description: '§22: Trigger decomposition from plans' },
+  { name: 'architecture-planning', tier: 'critical', maxDurationSeconds: 120, timeoutMs: 115_000, description: '§21: Generate architecture plans' },
+  { name: 'decomposition',         tier: 'critical', maxDurationSeconds: 120, timeoutMs: 115_000, description: '§22: Trigger decomposition from plans' },
 
   // STANDARD — run after critical, skipped if time exhausted
   { name: 'intent-validation',     tier: 'standard', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§20: Post-project criteria verification' },
