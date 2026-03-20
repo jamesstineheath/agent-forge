@@ -30,8 +30,8 @@ Any of these are true:
 Use this ONLY when the PR involves a genuine risk/tradeoff that requires a human judgment call. James is not an engineer — frame the decision in terms of impact (cost, reliability, uptime, user experience) not implementation details.
 
 Flag ONLY when one of these high-impact risks applies:
-- **Cost risk**: Changes that could significantly increase API spend, compute costs, or third-party service usage (new AI model calls, increased cron frequency, new paid API integrations)
-- **Reliability risk**: Changes to core pipeline orchestration, retry logic, or error handling that could cause cascading failures or data loss
+- **Cost risk**: Changes that could significantly increase API spend, compute costs, or third-party service usage (new AI model calls, increased cron frequency, new paid API integrations). This includes timeout/budget increases that extend AI model call durations — a timeout bump from 60s to 300s on an Opus call has direct cost implications.
+- **Reliability risk**: Changes to core pipeline orchestration, retry logic, or error handling that could cause cascading failures or data loss. Large refactors that restructure existing modules into many new files (5+ new files) carry elevated reliability risk — check that timeout/budget settings, interface contracts, and error paths are preserved.
 - **Uptime risk**: Changes to authentication, middleware, or deployment config that could take the app offline
 - **Architectural tradeoff**: Two or more valid approaches exist with meaningfully different long-term consequences
 
