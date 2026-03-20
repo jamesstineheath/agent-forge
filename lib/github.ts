@@ -43,6 +43,9 @@ export interface PR {
   mergedAt: string | null;
   mergeable: boolean | null;
   mergeableState: string | null;
+  additions: number;
+  deletions: number;
+  changed_files: number;
 }
 
 // ── MCP Pipeline Operations ──────────────────────────────────────
@@ -480,6 +483,27 @@ export async function getPRFiles(repo: string, prNumber: number): Promise<string
   return files.map(f => f.filename);
 }
 
+export async function getPRFilesDetailed(
+  repo: string,
+  prNumber: number
+): Promise<Array<{ filename: string; status: string; additions: number; deletions: number }>> {
+  const url = `${GITHUB_API}/repos/${repo}/pulls/${prNumber}/files?per_page=100`;
+  const res = await ghFetch(url);
+  if (!res.ok) return [];
+  const files = (await res.json()) as Array<{
+    filename: string;
+    status: string;
+    additions: number;
+    deletions: number;
+  }>;
+  return files.map((f) => ({
+    filename: f.filename,
+    status: f.status,
+    additions: f.additions,
+    deletions: f.deletions,
+  }));
+}
+
 export async function getPRByNumber(repo: string, prNumber: number): Promise<PR | null> {
   const url = `${GITHUB_API}/repos/${repo}/pulls/${prNumber}`;
   const res = await ghFetch(url);
@@ -492,6 +516,9 @@ export async function getPRByNumber(repo: string, prNumber: number): Promise<PR 
     merged_at: string | null;
     mergeable: boolean | null;
     mergeable_state: string | null;
+    additions: number;
+    deletions: number;
+    changed_files: number;
   };
   return {
     number: pr.number,
@@ -501,6 +528,9 @@ export async function getPRByNumber(repo: string, prNumber: number): Promise<PR 
     mergedAt: pr.merged_at,
     mergeable: pr.mergeable,
     mergeableState: pr.mergeable_state,
+    additions: pr.additions,
+    deletions: pr.deletions,
+    changed_files: pr.changed_files,
   };
 }
 
@@ -555,6 +585,9 @@ export async function getPRByBranch(repo: string, branch: string): Promise<PR | 
     merged_at: string | null;
     mergeable: boolean | null;
     mergeable_state: string | null;
+    additions: number;
+    deletions: number;
+    changed_files: number;
   }>;
   if (prs.length === 0) return null;
   const pr = prs[0];
@@ -566,6 +599,9 @@ export async function getPRByBranch(repo: string, branch: string): Promise<PR | 
     mergedAt: pr.merged_at,
     mergeable: pr.mergeable ?? null,
     mergeableState: pr.mergeable_state ?? null,
+    additions: pr.additions,
+    deletions: pr.deletions,
+    changed_files: pr.changed_files,
   };
 }
 
