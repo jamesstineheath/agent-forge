@@ -42,11 +42,16 @@ export async function getSpendStatus(): Promise<VercelSpendStatus> {
   const token = process.env.VERCEL_API_TOKEN;
   const teamId = process.env.VERCEL_TEAM_ID;
 
-  if (!token) {
-    throw new Error("VERCEL_API_TOKEN environment variable is not set");
-  }
-  if (!teamId) {
-    throw new Error("VERCEL_TEAM_ID environment variable is not set");
+  if (!token || !teamId) {
+    const missing = [!token && "VERCEL_API_TOKEN", !teamId && "VERCEL_TEAM_ID"].filter(Boolean).join(", ");
+    console.warn(`[vercel-spend-monitor] ${missing} not set, skipping spend check`);
+    const persisted = await loadPersistedStatus();
+    return {
+      currentSpend: 0,
+      budget: 0,
+      percentUsed: 0,
+      alertsSent: persisted?.alertsSent ?? [],
+    };
   }
 
   const url = `${VERCEL_API_BASE}/v2/teams/${teamId}/billing`;

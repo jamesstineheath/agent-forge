@@ -151,6 +151,57 @@ export function registerPipelineTools(server: McpServer) {
   );
 
   server.tool(
+    "toggle_kill_switch",
+    "Toggle the pipeline kill switch ON (stop all pipeline activity) or OFF (resume). Requires a PIN for safety. Use get_pipeline_health to check current kill switch state before toggling.",
+    {
+      enabled: z.boolean().describe("true = stop pipeline, false = resume pipeline"),
+      pin: z.string().describe("Safety PIN required to toggle the kill switch"),
+    },
+    async (params) => {
+      const { setKillSwitch } = await import("@/lib/atc/kill-switch");
+
+      const expectedPin = process.env.KILL_SWITCH_PIN;
+      if (!expectedPin || params.pin !== expectedPin) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid PIN" }, null, 2) }],
+          isError: true,
+        };
+      }
+
+      const state = await setKillSwitch(params.enabled, "mcp");
+      console.log(`[kill-switch] Pipeline ${params.enabled ? "STOPPED" : "STARTED"} via MCP at ${state.toggledAt}`);
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            success: true,
+            enabled: state.enabled,
+            toggledAt: state.toggledAt,
+            toggledBy: state.toggledBy,
+            message: state.enabled
+              ? "Pipeline STOPPED. All cron agents will skip their next cycle."
+              : "Pipeline RESUMED. Cron agents will execute on their next cycle.",
+          }, null, 2),
+        }],
+      };
+    }
+  );
+
+  server.tool(
+    "get_kill_switch_state",
+    "Check the current state of the pipeline kill switch. Returns whether it's enabled, when it was last toggled, and by whom.",
+    {},
+    async () => {
+      const { getKillSwitchState } = await import("@/lib/atc/kill-switch");
+      const state = await getKillSwitchState();
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(state, null, 2) }],
+      };
+    }
+  );
+
+  server.tool(
     "reindex_repo",
     "Trigger a full knowledge graph re-index for a target repo. Returns entity and relationship counts. Use this after significant code changes to keep the graph fresh.",
     {
