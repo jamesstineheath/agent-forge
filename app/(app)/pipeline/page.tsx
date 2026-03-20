@@ -2,13 +2,83 @@
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
+import useSWR from "swr";
 import { cn } from "@/lib/utils";
-import { GitPullRequest, Clock, Radio, Layers, Power, Loader2 } from "lucide-react";
+import { GitPullRequest, Clock, Radio, Layers, Power, Loader2, TrendingUp, DollarSign, CheckCircle, RotateCcw } from "lucide-react";
 import { PipelineStages } from "@/components/pipeline-stages";
 import { BlockedSummary } from "@/components/blocked-summary";
 import { DebateStatsCard } from "@/components/debate-stats-card";
 import { useWorkItems, useRepos, useKillSwitch } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+interface PipelineMetrics {
+  speed?: { avgTimeToMergeMs?: number; p90TimeToMergeMs?: number };
+  quality?: { workItemSuccessRate?: number; firstAttemptSuccessRate?: number; retryRate?: number };
+  cost?: { totalCost?: number; avgCostPerWorkItem?: number; costEfficiency?: number };
+  volume?: { totalWorkItems?: number; totalProjects?: number; periodDays?: number };
+}
+
+function PipelinePerformance() {
+  const { data, isLoading } = useSWR<PipelineMetrics>("/api/metrics?days=7", fetcher, { refreshInterval: 300_000 });
+
+  if (isLoading || !data) {
+    return (
+      <div className="rounded-xl card-elevated bg-surface-1 p-4 animate-pulse">
+        <div className="h-16 bg-muted rounded" />
+      </div>
+    );
+  }
+
+  const formatMs = (ms?: number) => {
+    if (!ms) return "—";
+    const hours = ms / 3_600_000;
+    return hours >= 1 ? `${hours.toFixed(1)}h` : `${(ms / 60_000).toFixed(0)}m`;
+  };
+
+  const formatPct = (v?: number) => (v != null ? `${(v * 100).toFixed(0)}%` : "—");
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+        Performance (7d)
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="rounded-xl card-elevated bg-surface-1 p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendingUp className="h-3 w-3 text-muted-foreground/60" />
+            <span className="text-[10px] text-muted-foreground">Avg Time to Merge</span>
+          </div>
+          <span className="text-lg font-display font-bold text-foreground">{formatMs(data.speed?.avgTimeToMergeMs)}</span>
+        </div>
+        <div className="rounded-xl card-elevated bg-surface-1 p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <CheckCircle className="h-3 w-3 text-muted-foreground/60" />
+            <span className="text-[10px] text-muted-foreground">Success Rate</span>
+          </div>
+          <span className="text-lg font-display font-bold text-foreground">{formatPct(data.quality?.workItemSuccessRate)}</span>
+        </div>
+        <div className="rounded-xl card-elevated bg-surface-1 p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <RotateCcw className="h-3 w-3 text-muted-foreground/60" />
+            <span className="text-[10px] text-muted-foreground">1st Attempt Rate</span>
+          </div>
+          <span className="text-lg font-display font-bold text-foreground">{formatPct(data.quality?.firstAttemptSuccessRate)}</span>
+        </div>
+        <div className="rounded-xl card-elevated bg-surface-1 p-3">
+          <div className="flex items-center gap-1.5 mb-1">
+            <DollarSign className="h-3 w-3 text-muted-foreground/60" />
+            <span className="text-[10px] text-muted-foreground">Cost / Work Item</span>
+          </div>
+          <span className="text-lg font-display font-bold text-foreground">
+            {data.cost?.avgCostPerWorkItem != null ? `$${data.cost.avgCostPerWorkItem.toFixed(2)}` : "—"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const ACTIVE_STATUSES: WorkItem["status"][] = ["generating", "executing", "reviewing"];
 
@@ -198,6 +268,9 @@ export default function PipelinePage() {
           {!itemsLoading && workItems && (
             <BlockedSummary workItems={workItems} />
           )}
+
+          {/* Pipeline Performance KPIs */}
+          <PipelinePerformance />
 
           {/* Debate Reviews */}
           <DebateStatsCard />

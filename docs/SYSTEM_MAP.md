@@ -88,9 +88,9 @@
 ### Work Item Lifecycle
 
 ```
-Filed → Ready → Queued → Generating → Executing → Reviewing → Merged
-                  │           │                        │
-                  │           └── Retrying ────────────┘
+Filed → Ready → Queued → Generating → Executing → Reviewing → Merged → Verified
+                  │           │                        │           │
+                  │           └── Retrying ────────────┘           └── Partial
                   ├── Blocked (escalated) ←────────────┤
                   └── Parked (conflict/failed) ←───────┘
 ```
@@ -102,8 +102,10 @@ Filed → Ready → Queued → Generating → Executing → Reviewing → Merged
 5. **Executing**: Handoff pushed to target repo, Execute Handoff workflow running
 6. **Reviewing**: PR opened, TLM Code Review in progress
 7. **Merged**: PR merged (auto or manual), outcome tracked. Also set by Health Monitor reconciliation when a "failed" item's PR is actually merged.
-8. **Blocked**: Escalation created, awaiting human resolution via email
-9. **Parked**: File conflict detected or execution failed, waiting for retry
+8. **Verified**: All acceptance criteria passed post-merge validation (set by Intent Validator).
+9. **Partial**: Some acceptance criteria failed post-merge validation; gap analysis filed (set by Intent Validator).
+10. **Blocked**: Escalation created, awaiting human resolution via email
+11. **Parked**: File conflict detected or execution failed, waiting for retry
 
 ### Autonomous Agent Architecture (ADR-010)
 
@@ -114,7 +116,7 @@ The ATC monolith has been decomposed into 4 autonomous agents:
 | **Dispatcher** | `/api/agents/dispatcher/cron` | 5 min | Index reconciliation, conflict detection, concurrency enforcement, auto-dispatch |
 | **Health Monitor** | `/api/agents/health-monitor/cron` | 5 min | Stall detection, merge conflict recovery, auto-rebase, failed item reconciliation, dependency re-evaluation |
 | **Project Manager** | `/api/pm-agent` | 15 min | Backlog review, project health assessment, decomposition, completion detection |
-| **Supervisor** | `/api/agents/supervisor/cron` | 10 min | Agent health monitoring, escalation management, maintenance tasks |
+| **Supervisor** | `/api/agents/supervisor/cron` | 10 min | Agent health, escalation management, criteria import, architecture planning, decomposition, intent validation, phase-prioritized execution |
 
 **Shared infrastructure:**
 - **Distributed lock** (`lib/atc/lock.ts`): Optimistic Vercel Blob lock with write-then-reread race detection. 5-min TTL, 10-min hard ceiling.
@@ -211,6 +213,9 @@ Outcome Tracker (daily)
 | TLM Memory API | `app/api/agents/tlm-memory/route.ts` | Parsed TLM memory state |
 | Feedback Compiler API | `app/api/agents/feedback-compiler/route.ts` | Feedback compiler status |
 | PM Agent API | `app/api/pm-agent/route.ts` | Multi-action PM agent endpoint |
+| Telemetry API | `app/api/telemetry/route.ts` | Unified telemetry query (events, traces, costs, metrics) |
+| Pipeline Metrics | `lib/pipeline-metrics.ts` | Speed, quality, cost, volume KPIs |
+| Cost Tracking | `lib/cost-tracking.ts` | Cost recording, period queries, aggregation |
 | **Dashboard** | | |
 | Hooks (SWR) | `lib/hooks.ts` | React data fetching hooks |
 | Handoffs | `handoffs/` | Version-controlled handoff files |
@@ -224,7 +229,7 @@ Outcome Tracker (daily)
 | TLM Outcome Tracker | `.github/actions/tlm-outcome-tracker/` | Daily assessment of merged PR outcomes |
 | Feedback Compiler | `.github/actions/tlm-feedback-compiler/` | Weekly self-improvement proposals |
 | TLM Trace Reviewer | `.github/actions/tlm-trace-review/` | Daily trace analysis, anomaly detection, auto-files work items for systemic issues |
-| TLM QA Agent | `.github/actions/tlm-qa-agent/` | Post-deploy verification (DISABLED) |
+| TLM QA Agent | `.github/actions/tlm-qa-agent/` | Post-deploy verification (advisory mode, Playwright + smoke + criteria) |
 | Execute Handoff | `.github/workflows/execute-handoff.yml` | Claude Code runs handoff, waits for CI |
 | TLM Review | `.github/workflows/tlm-review.yml` | Triggers Code Reviewer on PR events |
 | Spec Review | `.github/workflows/tlm-spec-review.yml` | Triggers on handoff push |

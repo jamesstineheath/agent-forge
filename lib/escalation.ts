@@ -224,7 +224,23 @@ async function handleProductOwnerEscalation(escalation: Escalation): Promise<voi
 }
 
 /**
- * Create a new escalation and transition the work item to "blocked"
+ * Find an active (pending) escalation matching a workItemId + reason combination.
+ * Used for deduplication to prevent the same failure from creating duplicate escalations.
+ */
+export async function findActiveEscalation(
+  workItemId: string,
+  reason: string
+): Promise<Escalation | null> {
+  const pending = await listEscalations("pending");
+  return pending.find(
+    (esc) => esc.workItemId === workItemId && esc.reason === reason
+  ) ?? null;
+}
+
+/**
+ * Create a new escalation and transition the work item to "blocked".
+ * Deduplicates: if an active escalation already exists for the same workItemId + reason,
+ * returns the existing one instead of creating a duplicate.
  */
 export async function escalate(
   workItemId: string,
@@ -233,6 +249,13 @@ export async function escalate(
   contextSnapshot: Record<string, unknown>,
   projectId?: string
 ): Promise<Escalation> {
+  // Dedup check: skip creation if an active escalation already exists for this workItemId + reason
+  const existing = await findActiveEscalation(workItemId, reason);
+  if (existing) {
+    console.log(`[escalation] Dedup: active escalation ${existing.id} already exists for work item ${workItemId} with same reason — skipping`);
+    return existing;
+  }
+
   const id = `esc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   const now = new Date().toISOString();
 

@@ -16,6 +16,7 @@ import {
   resolveEscalation,
   updateEscalation,
   escalate,
+  findActiveEscalation,
 } from "../escalation";
 import { getSpendStatus, checkSpendThresholds, persistSpendStatus } from "../vercel-spend-monitor";
 import { summarizeDailyCacheMetrics } from "../cache-metrics";
@@ -30,6 +31,7 @@ import {
   CLEANUP_THROTTLE_MINUTES,
   STALE_BRANCH_HOURS,
   MAX_BRANCHES_PER_REPO,
+  getPrioritizedPhases,
 } from "./types";
 import { makeEvent } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, listRecentTraces } from "./tracing";
@@ -89,6 +91,13 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   const PHASE_BUDGET_MS = 200_000;
 
   try {
+
+  // Phase priority metadata (PRD-50) — log planned execution order
+  const prioritizedPhases = getPrioritizedPhases();
+  addDecision(trace, {
+    action: 'phase_priority_plan',
+    reason: `Executing ${prioritizedPhases.length} phases in priority order: ${prioritizedPhases.map((p) => `${p.name}(${p.basePriority})`).join(', ')}`,
+  });
 
   // §10: Escalation timeout monitoring
   try {
@@ -476,6 +485,7 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
   try {
     const { getArchitecturePlan, generateArchitecturePlan } = await import("@/lib/architecture-planner");
     const { listAllCriteria } = await import("@/lib/intent-criteria");
+    const { MIN_REPO_CONTEXT_LENGTH } = await import("./types");
     const criteriaEntries = await listAllCriteria();
 
     for (const entry of criteriaEntries) {
@@ -495,7 +505,34 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
         const plan = await generateArchitecturePlan({
           criteria,
           mode: "plan",
+          // Empty context guard: generateArchitecturePlan will skip if repo context
+          // is below MIN_REPO_CONTEXT_LENGTH. We handle the guard at the plan level:
+          // if the plan comes back with 0 criterion plans, treat as empty context failure.
+          minRepoContextLength: MIN_REPO_CONTEXT_LENGTH,
         });
+
+        if (!plan || plan.criterionPlans.length === 0) {
+          // Empty context or failed plan — escalate instead of proceeding
+          console.warn(`[supervisor §21] Architecture plan for "${criteria.prdTitle}" produced 0 criterion plans — skipping`);
+          addDecision(trace, {
+            action: 'architecture_planner_empty_context',
+            reason: `Architecture plan for "${criteria.prdTitle}" produced 0 criterion plans — likely empty repo context`,
+          });
+          const { persistEvents } = await import("./events");
+          await persistEvents([makeEvent(
+            'error', 'system', undefined, undefined,
+            `Architecture planner produced empty plan for "${criteria.prdTitle}" (PRD ${entry.prdId}) — likely empty repo context`
+          )]);
+          await escalate(
+            'system',
+            `Architecture planner produced empty plan for "${criteria.prdTitle}" (PRD ${entry.prdId}). Repo context fetch may have failed. Plan generation skipped.`,
+            0.5,
+            { prdId: entry.prdId, prdTitle: criteria.prdTitle, targetRepo: criteria.targetRepo },
+            entry.projectId
+          );
+          continue;
+        }
+
         addDecision(trace, {
           action: 'architecture_plan_generated',
           reason: `Generated architecture plan for "${criteria.prdTitle}" — ${plan.criterionPlans.length} criterion plans, est. $${plan.totalEstimatedCost}`,
@@ -587,13 +624,36 @@ export async function runSupervisor(ctx: CycleContext): Promise<void> {
         });
 
         if (!result.workItems || result.workItems.length === 0) {
-          // Decomposition returned 0 work items (repo not found, plan too short, etc.)
-          // Do NOT set dedup guard — allow retry on next cycle after the issue is fixed
+          // Decomposition returned 0 work items — this is a silent failure.
+          // Emit event, create escalation, do NOT transition project to Executing.
+          const failureReason = result.reason ?? 'unknown';
           addDecision(trace, {
             action: 'decomposition_empty',
-            reason: `Decomposition of "${criteria.prdTitle}" produced 0 work items — skipping dedup guard`,
+            reason: `Decomposition of "${criteria.prdTitle}" produced 0 work items (reason: ${failureReason}) — escalating`,
           });
-          console.warn(`[supervisor §22] Decomposition of "${criteria.prdTitle}" produced 0 work items, will retry next cycle`);
+          console.warn(`[supervisor §22] Decomposition of "${criteria.prdTitle}" produced 0 work items (reason: ${failureReason})`);
+
+          // Emit event to Event Bus
+          const { persistEvents } = await import("./events");
+          await persistEvents([makeEvent(
+            'error', 'system', undefined, undefined,
+            `Decomposer returned 0 items for "${criteria.prdTitle}" (PRD ${entry.prdId}). Reason: ${failureReason}. Project NOT advanced to Executing.`
+          )]);
+
+          // Create escalation requiring human attention
+          await escalate(
+            'system',
+            `Decomposition of "${criteria.prdTitle}" (PRD ${entry.prdId}) produced 0 work items. Reason: ${failureReason}. The PRD may need manual review.`,
+            0.3,
+            {
+              prdId: entry.prdId,
+              prdTitle: criteria.prdTitle,
+              targetRepo: plan.targetRepo,
+              failureReason,
+              planVersion: plan.version,
+            },
+            entry.projectId
+          );
           continue;
         }
 

@@ -10,7 +10,7 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const Anthropic = require("@anthropic-ai/sdk");
 import { updateCriterionStatus, findUnverifiedCriteria, getCriteria } from "./intent-criteria";
-import { listWorkItems } from "./work-items";
+import { listWorkItems, getWorkItem, updateWorkItem } from "./work-items";
 import { generateArchitecturePlan, planToDecomposerMarkdown } from "./architecture-planner";
 import type {
   IntentCriteria,
@@ -392,6 +392,25 @@ export async function runIntentValidation(): Promise<{
     gapAnalysisGenerated = gapResult.planGenerated;
     // The gap analysis plan is stored in blob store (architecture-plans/{prdId}-v{N}).
     // The Supervisor's §22 will detect it and trigger decomposition on the next cycle.
+  }
+
+  // Wire verified/partial statuses on associated work items
+  if (toValidate.projectId && passed > 0) {
+    const targetStatus = failed === 0 ? "verified" : "partial";
+    const allItems = await listWorkItems({});
+    const mergedItems = allItems.filter((item) => {
+      const wi = item as { sourceId?: string; source?: { sourceId?: string }; status: string };
+      const sourceId = wi.source?.sourceId || wi.sourceId;
+      return sourceId === toValidate.projectId && wi.status === "merged";
+    });
+
+    for (const entry of mergedItems) {
+      const wi = await getWorkItem(entry.id);
+      if (wi && wi.status === "merged") {
+        await updateWorkItem(entry.id, { status: targetStatus as any });
+        console.log(`[intent-validator] ${entry.id} → ${targetStatus}`);
+      }
+    }
   }
 
   console.log(

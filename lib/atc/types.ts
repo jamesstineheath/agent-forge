@@ -62,6 +62,27 @@ export interface HLOStateEntry {
 
 // --- Model event types ---
 
+// --- Decomposer failure reason classification ---
+
+export type DecomposerFailureReason =
+  | 'empty_plan'
+  | 'no_components'
+  | 'parse_failure'
+  | 'no_target_repo'
+  | 'claude_refusal'
+  | 'empty_context'
+  | 'validation_failure'
+  | 'unknown';
+
+// --- Spec review stall thresholds ---
+
+export const SPEC_REVIEW_STALL_WARN_MINUTES = 30;
+export const SPEC_REVIEW_STALL_FAIL_MINUTES = 45;
+
+// --- Architecture planner empty context threshold ---
+
+export const MIN_REPO_CONTEXT_LENGTH = 200;
+
 export type TaskType =
   | "decomposition"
   | "dispatch"
@@ -104,3 +125,71 @@ export interface ModelEscalationEvent {
 export type ModelEvent = ModelCallEvent | ModelEscalationEvent;
 
 export const MODEL_EVENTS_KEY = "atc/model-events";
+
+// --- Supervisor Phase Prioritization (PRD-50) ---
+
+export interface PhaseConfig {
+  name: string;
+  /** Static priority (higher = more important). Range 0-100. */
+  basePriority: number;
+  /** Budget fraction (0-1) — how much of total budget this phase should get */
+  budgetFraction: number;
+  /** Phase dependencies — names of phases that must run first */
+  dependsOn?: string[];
+}
+
+/**
+ * Phase priority configuration for the Supervisor.
+ * Phases are sorted by priority (descending) before execution.
+ * Higher priority phases run first so they aren't skipped under time pressure.
+ */
+export const SUPERVISOR_PHASES: PhaseConfig[] = [
+  // Critical: human escalations must be handled first
+  { name: "escalation_management", basePriority: 95, budgetFraction: 0.10 },
+  // High: new work intake and plan generation
+  { name: "criteria_import", basePriority: 85, budgetFraction: 0.05 },
+  { name: "architecture_planning", basePriority: 80, budgetFraction: 0.15, dependsOn: ["criteria_import"] },
+  { name: "decomposition_trigger", basePriority: 75, budgetFraction: 0.15, dependsOn: ["architecture_planning"] },
+  // Medium-high: budget safety
+  { name: "spend_monitoring", basePriority: 70, budgetFraction: 0.05 },
+  // Medium: status tracking and verification
+  { name: "hlo_polling", basePriority: 60, budgetFraction: 0.08 },
+  { name: "intent_validation", basePriority: 55, budgetFraction: 0.10 },
+  { name: "agent_trace_health_check", basePriority: 50, budgetFraction: 0.03 },
+  { name: "agent_staleness_check", basePriority: 50, budgetFraction: 0.03 },
+  { name: "drift_detection", basePriority: 45, budgetFraction: 0.05 },
+  // Low: housekeeping
+  { name: "pm_sweep_and_reindex", basePriority: 35, budgetFraction: 0.10 },
+  { name: "branch_cleanup", basePriority: 25, budgetFraction: 0.05 },
+  { name: "blob_reconciliation", basePriority: 20, budgetFraction: 0.05 },
+];
+
+/**
+ * Get phases sorted by priority (highest first).
+ * Respects dependency ordering: a phase won't appear before its dependencies.
+ */
+export function getPrioritizedPhases(): PhaseConfig[] {
+  const sorted = [...SUPERVISOR_PHASES].sort((a, b) => b.basePriority - a.basePriority);
+
+  // Topological adjustment: ensure dependencies come before dependents
+  const result: PhaseConfig[] = [];
+  const placed = new Set<string>();
+
+  function place(phase: PhaseConfig) {
+    if (placed.has(phase.name)) return;
+    for (const dep of phase.dependsOn ?? []) {
+      const depPhase = sorted.find((p) => p.name === dep);
+      if (depPhase && !placed.has(dep)) {
+        place(depPhase);
+      }
+    }
+    result.push(phase);
+    placed.add(phase.name);
+  }
+
+  for (const phase of sorted) {
+    place(phase);
+  }
+
+  return result;
+}
