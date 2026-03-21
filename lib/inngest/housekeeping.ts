@@ -16,6 +16,7 @@ export const housekeeping = inngest.createFunction(
     name: "Housekeeping",
     triggers: [
       { cron: "0 */6 * * *" },
+      { event: "agent/housekeeping.requested" },
     ],
   },
   async ({ step }) => {

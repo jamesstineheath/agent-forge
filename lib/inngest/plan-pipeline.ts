@@ -43,6 +43,7 @@ export const planPipeline = inngest.createFunction(
     triggers: [
       { cron: "*/10 * * * *" },
       { event: "agent/supervisor.requested" },
+      { event: "agent/plan-pipeline.requested" },
     ],
   },
   async ({ step }) => {

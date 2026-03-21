@@ -10,6 +10,7 @@ export const pmSweep = inngest.createFunction(
     name: "PM Sweep",
     triggers: [
       { cron: "0 8 * * *" },
+      { event: "agent/pm-sweep.requested" },
     ],
   },
   async ({ step }) => {

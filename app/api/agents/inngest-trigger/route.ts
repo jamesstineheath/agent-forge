@@ -4,9 +4,6 @@ import { validateAuth } from "@/lib/api-auth";
 
 // Registry mapping functionId -> Inngest event name.
 // Event names must match the trigger.event in each Inngest function definition.
-// pm-sweep and housekeeping are cron-only (no event trigger) and cannot be triggered via this route.
-// Note: plan-pipeline and pipeline-oversight share the same event trigger;
-// sending "agent/supervisor.requested" will invoke both functions.
 const INNGEST_FUNCTION_REGISTRY: Record<string, { eventName: string; label: string }> = {
   "dispatcher-cycle": {
     eventName: "agent/dispatcher.requested",
@@ -21,12 +18,20 @@ const INNGEST_FUNCTION_REGISTRY: Record<string, { eventName: string; label: stri
     label: "PM Cycle",
   },
   "plan-pipeline": {
-    eventName: "agent/supervisor.requested",
+    eventName: "agent/plan-pipeline.requested",
     label: "Plan Pipeline",
   },
   "pipeline-oversight": {
-    eventName: "agent/supervisor.requested",
+    eventName: "agent/pipeline-oversight.requested",
     label: "Pipeline Oversight",
+  },
+  "pm-sweep": {
+    eventName: "agent/pm-sweep.requested",
+    label: "PM Sweep",
+  },
+  "housekeeping": {
+    eventName: "agent/housekeeping.requested",
+    label: "Housekeeping",
   },
 };
 

@@ -23,6 +23,7 @@ export const pipelineOversight = inngest.createFunction(
     triggers: [
       { cron: "*/30 * * * *" },
       { event: "agent/supervisor.requested" },
+      { event: "agent/pipeline-oversight.requested" },
     ],
   },
   async ({ step }) => {
