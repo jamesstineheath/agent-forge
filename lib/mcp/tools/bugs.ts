@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getClient } from "../../notion";
 
-const BUGS_DATABASE_ID = "023f3621-2885-468d-a8cf-2e0bd1458bb3";
+const BUGS_DATABASE_ID = "7f21af359f69490b9370b03c649ee2ed";
 
 export function registerBugTools(server: McpServer) {
   // ── file_bug ──────────────────────────────────────────────────────────────
@@ -54,11 +54,11 @@ export function registerBugTools(server: McpServer) {
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const properties: Record<string, any> = {
-          Title: {
+          "Bug Title": {
             title: [{ text: { content: params.title } }],
           },
           Status: {
-            status: { name: "Triaged" },
+            select: { name: "Triaged" },
           },
           Severity: {
             select: { name: params.severity },
@@ -156,11 +156,11 @@ export function registerBugTools(server: McpServer) {
         const andFilters: any[] = [
           {
             property: "Status",
-            status: { does_not_equal: "Fixed" },
+            select: { does_not_equal: "Fixed" },
           },
           {
             property: "Status",
-            status: { does_not_equal: "Won't Fix" },
+            select: { does_not_equal: "Won't Fix" },
           },
         ];
 
@@ -206,10 +206,10 @@ export function registerBugTools(server: McpServer) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const bugs = (data.results ?? []).map((page: any) => {
           const props = page.properties ?? {};
-          const titleArr = props.Title?.title ?? [];
+          const titleArr = props["Bug Title"]?.title ?? [];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const title = titleArr.map((t: any) => t.plain_text).join("");
-          const status = props.Status?.status?.name ?? null;
+          const status = props.Status?.select?.name ?? null;
           const severity = props.Severity?.select?.name ?? null;
           const repo = props["Target Repo"]?.select?.name ?? null;
           const bugIdProp = props["Bug ID"]?.unique_id;
@@ -296,7 +296,7 @@ export function registerBugTools(server: McpServer) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const properties: Record<string, any> = {
           Status: {
-            status: { name: params.status },
+            select: { name: params.status },
           },
         };
 
