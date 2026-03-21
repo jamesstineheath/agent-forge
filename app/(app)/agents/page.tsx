@@ -8,6 +8,7 @@ import { PAAgentRow } from "@/components/pa-agent-row";
 import { AgentDashboard } from "@/components/agent-dashboard";
 import { AgentTraceViewer } from "@/components/agent-trace-viewer";
 import { EvaluationMetricsPanel } from "@/components/evaluation-metrics-panel";
+import { AgentTriggerButton } from "@/components/agent-trigger-button";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -191,6 +192,19 @@ export default function AgentsPage() {
               <span className="text-[10px] text-muted-foreground/40">(real-time health)</span>
             </div>
             <AgentDashboard />
+            {/* Digest agent trigger (not in heartbeat dashboard but is a cron agent) */}
+            <div className="rounded-xl card-elevated bg-surface-1 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-foreground">Digest</span>
+                    <span className="text-[10px] text-muted-foreground/50">daily cron</span>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground">Daily summary email (8 AM UTC)</span>
+                </div>
+                <AgentTriggerButton agentKey="digest" agentName="Digest" />
+              </div>
+            </div>
           </div>
 
           {/* Agent Traces */}
