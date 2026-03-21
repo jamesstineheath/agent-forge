@@ -10,6 +10,7 @@ import { registerTLMTools } from "./tools/tlm";
 import { registerHandoffTools } from "./tools/handoffs";
 import { registerPMTools } from "./tools/pm";
 import { registerGitHubReadTools } from "./tools/github-read";
+import { registerBugTools } from "./tools/bugs";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -23,6 +24,7 @@ export function createMcpServer(): McpServer {
   registerHandoffTools(server);
   registerPMTools(server);
   registerGitHubReadTools(server);
+  registerBugTools(server);
 
   return server;
 }
