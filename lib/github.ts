@@ -642,6 +642,25 @@ export async function getBranchLastCommitDate(
   return commits[0].commit.committer.date;
 }
 
+export async function listBranchCommits(
+  repo: string,
+  branch: string,
+  perPage = 30
+): Promise<Array<{ sha: string; message: string; timestamp: string }>> {
+  const url = `${GITHUB_API}/repos/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=${perPage}`;
+  const res = await ghFetch(url);
+  if (!res.ok) return [];
+  const commits = (await res.json()) as Array<{
+    sha: string;
+    commit: { message: string; committer: { date: string } };
+  }>;
+  return commits.map((c) => ({
+    sha: c.sha.slice(0, 7),
+    message: c.commit.message.split("\n")[0],
+    timestamp: c.commit.committer.date,
+  }));
+}
+
 export async function createGitHubRepo(options: {
   name: string;
   private?: boolean;

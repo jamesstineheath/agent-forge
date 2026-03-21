@@ -131,6 +131,15 @@ export const plans = pgTable(
     workflowRunId: text("workflow_run_id"),
     retryCount: integer("retry_count").default(0),
     prdRank: integer("prd_rank"),
+    progress: jsonb("progress").$type<{
+      criteriaComplete: number;
+      criteriaTotal: number;
+      currentState: string;
+      issues: string[];
+      decisions: string[];
+      commits: Array<{ sha: string; message: string; timestamp: string }>;
+      lastUpdated: string;
+    } | null>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

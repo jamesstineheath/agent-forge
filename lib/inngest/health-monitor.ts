@@ -86,6 +86,12 @@ export const healthMonitorCycle = inngest.createFunction(
         }
       );
 
+      // Step 2c: Plan progress polling
+      const progressResult = await step.run("plan-progress-polling", async () => {
+        const { pollPlanProgress } = await import("@/lib/atc/plan-progress");
+        return pollPlanProgress();
+      });
+
       // Step 3: HLO Polling (absorbed from Supervisor)
       const hloResult = await step.run("hlo-polling", async () => {
         const start = Date.now();
@@ -118,6 +124,7 @@ export const healthMonitorCycle = inngest.createFunction(
 
         const trace = startTrace("health-monitor");
         addPhase(trace, { name: "health-check-cycle", durationMs: 0 });
+        addPhase(trace, { name: "plan-progress-polling", durationMs: 0 });
         addPhase(trace, { name: "hlo-polling", durationMs: hloResult.durationMs });
         for (const e of hloResult.output.errors) addError(trace, `hlo-polling: ${e}`);
         completeTrace(trace, "success", `Health monitor cycle complete, ${allEvents.length} events`);

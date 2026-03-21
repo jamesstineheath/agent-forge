@@ -104,7 +104,16 @@ export async function POST(req: NextRequest) {
     results.push({ name: "create-plans-indexes", status: "failed", error: message });
   }
 
-  // Migration 7: cost_records plan_id column
+  // Migration 7: plans.progress column (PRD-66)
+  try {
+    await sql`ALTER TABLE plans ADD COLUMN IF NOT EXISTS progress JSONB`;
+    results.push({ name: "add-plans-progress-column", status: "applied" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    results.push({ name: "add-plans-progress-column", status: "failed", error: message });
+  }
+
+  // Migration 8: cost_records plan_id column
   try {
     await sql`ALTER TABLE cost_records ADD COLUMN IF NOT EXISTS plan_id TEXT`;
     results.push({ name: "add-cost-records-plan-id", status: "applied" });

@@ -165,7 +165,7 @@ export function registerPlanTools(server: McpServer) {
 
   server.tool(
     "get_plan_progress",
-    "Fetch PLAN_STATUS.md from a plan's branch to check execution progress.",
+    "Get the focused progress snapshot for a specific plan — criteria completion, current state, issues, decisions, and commits. Returns structured data from the plan record (updated by Health Monitor every 15 minutes).",
     {
       plan_id: z.string().describe("Plan ID"),
     },
@@ -175,27 +175,24 @@ export function registerPlanTools(server: McpServer) {
         return { content: [{ type: "text" as const, text: "Plan not found" }] };
       }
 
-      const { getFileContent } = await import("@/lib/github");
-      const repoFullName = plan.targetRepo.includes("/")
-        ? plan.targetRepo
-        : `jamesstineheath/${plan.targetRepo}`;
-
-      try {
-        const content = await getFileContent(repoFullName, "PLAN_STATUS.md", plan.branchName);
-        return {
-          content: [{
-            type: "text" as const,
-            text: content ?? "PLAN_STATUS.md not found on branch (execution may not have started yet)",
-          }],
-        };
-      } catch {
-        return {
-          content: [{
-            type: "text" as const,
-            text: "PLAN_STATUS.md not found on branch (execution may not have started yet)",
-          }],
-        };
+      if (!plan.progress) {
+        const msg = plan.status === "executing"
+          ? "Executing — waiting for first checkpoint. Progress will appear after the agent commits PLAN_STATUS.md and the Health Monitor polls it."
+          : `Plan is in "${plan.status}" status. No progress data available.`;
+        return { content: [{ type: "text" as const, text: msg }] };
       }
+
+      return {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            planId: plan.id,
+            prdId: plan.prdId,
+            status: plan.status,
+            ...plan.progress,
+          }, null, 2),
+        }],
+      };
     }
   );
 }
