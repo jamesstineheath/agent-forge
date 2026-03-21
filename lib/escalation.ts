@@ -470,6 +470,23 @@ export async function deleteEscalation(id: string): Promise<boolean> {
 /**
  * Escalate a fast-lane work item: transition status to 'escalated' and send email notification.
  */
+/**
+ * Create an escalation record when wave assignment fails and sequential
+ * dispatch (all items at wave 0) is being used as a fallback.
+ */
+export async function createWaveFallbackEscalation(
+  projectId: string,
+  error: string
+): Promise<void> {
+  await escalate(
+    "", // no specific work item — this is a project-level event
+    `Wave assignment failed; using sequential dispatch (wave 0). Error: ${error}`,
+    0.7,
+    { trigger: "wave-fallback", error },
+    projectId
+  );
+}
+
 export async function escalateFastLaneItem(
   workItemId: string,
   reason: EscalationReason,

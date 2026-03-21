@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { assignWaves, detectCircularDependencies, WaveSchedulerInput } from "./wave-scheduler";
+import { assignWaves, assignWavesSafe, detectCircularDependencies, WaveSchedulerInput } from "./wave-scheduler";
 
 // Helper to build a minimal WaveSchedulerInput
 function makeItem(
@@ -335,5 +335,51 @@ describe("detectCircularDependencies", () => {
     const cycle = detectCircularDependencies(items);
     expect(cycle).not.toBeNull();
     expect(cycle).toContain("A");
+  });
+});
+
+describe("assignWaves — undefined/null dependsOn handling", () => {
+  it("treats undefined dependsOn as wave 0 (normal flow)", () => {
+    const item = makeItem("x");
+    (item as unknown as Record<string, unknown>).dependsOn = undefined;
+    const result = assignWaves([item]);
+    expect(result[0].waveNumber).toBe(0);
+  });
+
+  it("treats null dependsOn as wave 0 (normal flow)", () => {
+    const item = makeItem("y");
+    (item as unknown as Record<string, unknown>).dependsOn = null;
+    const result = assignWaves([item]);
+    expect(result[0].waveNumber).toBe(0);
+  });
+});
+
+describe("assignWavesSafe", () => {
+  it("returns fallback=false on successful assignment", () => {
+    const items = [makeItem("a"), makeItem("b", ["a"])];
+    const result = assignWavesSafe(items);
+    expect(result.fallback).toBe(false);
+    expect(result.error).toBeUndefined();
+    expect(result.assignments).toHaveLength(2);
+  });
+
+  it("returns fallback=true with all items at wave 0 on circular dependency", () => {
+    const items = [makeItem("a", ["b"]), makeItem("b", ["a"])];
+    const result = assignWavesSafe(items);
+    expect(result.fallback).toBe(true);
+    expect(result.error).toBeDefined();
+    expect(result.error).toMatch(/[Cc]ircular/);
+    expect(result.assignments).toHaveLength(2);
+    for (const a of result.assignments) {
+      expect(a.waveNumber).toBe(0);
+    }
+  });
+
+  it("includes all item IDs in fallback assignments", () => {
+    const items = [makeItem("x", ["y"]), makeItem("y", ["x"])];
+    const result = assignWavesSafe(items);
+    expect(result.fallback).toBe(true);
+    const ids = result.assignments.map((a) => a.workItemId).sort();
+    expect(ids).toEqual(["x", "y"]);
   });
 });
