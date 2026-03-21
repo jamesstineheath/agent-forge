@@ -11,7 +11,7 @@ import type {
 
 let _client: Client | null = null;
 
-function getClient(): Client | null {
+export function getClient(): Client | null {
   if (_client) return _client;
   const token = process.env.NOTION_API_KEY;
   if (!token) return null;
