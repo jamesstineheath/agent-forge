@@ -23,6 +23,11 @@ You are the last human-like review before an AI agent executes this spec autonom
 - Does it modify files that other work items are also touching?
 - Are there dependency conflicts?
 - Could this be batched with related pending work?
+- Cross-check the handoff's \`Estimated files\` metadata against recently merged PRs in the same repository. If any listed file was modified by a PR merged within the last 24–48 hours, flag it as a potential concurrent modification conflict and note which PR touched the file. This catches cases where the work item was filed against a version of a file that has since changed.
+
+### Type Shape Verification
+- When a handoff includes inline type definitions or references specific field names on types (e.g., \`slot.activity.name\`, \`slot.isLocked\`), verify those field names against the actual type definitions in the codebase. Check \`lib/*/types.ts\`, \`lib/types.ts\`, and any type files relevant to the referenced domain. Flag any field names that do not exist on the declared type.
+- Flag handoffs that paste interface or type definitions inline rather than referencing existing types by import path. For example, if a handoff copies out an \`ItinerarySlot\` interface body, flag it and suggest: "Reference the existing type via \`import { ItinerarySlot } from 'lib/travel/types'\` instead of pasting the definition." Pasted type shapes become stale and cause the executor agent to implement against a diverged contract.
 
 ### Requirement Quality
 - Are the requirements specific enough to verify?
