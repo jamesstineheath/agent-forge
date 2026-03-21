@@ -6,12 +6,95 @@ import { saveJson } from "@/lib/storage";
 import { recordAgentRun } from "@/lib/atc/utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "@/lib/atc/tracing";
 import { ATC_STATE_KEY } from "@/lib/atc/types";
-import { queryProjects, fetchPageContent, updateProjectStatus } from "@/lib/notion";
+import { fetchPageContent, updateProjectStatus } from "@/lib/notion";
 import { createPlan, listPlans, generateBranchName } from "@/lib/plans";
 import { loadGraph } from "@/lib/knowledge-graph/storage";
 import { queryGraph, getBlastRadius, getRelevantSystemMapSections, getRelevantADRs } from "@/lib/knowledge-graph/query";
 
 const PLAN_PIPELINE_LOCK_KEY = "atc/plan-pipeline-lock";
+
+/**
+ * PRD database ID — the PRDs & Acceptance Criteria database in Notion.
+ * This is NOT the old Projects DB (NOTION_PROJECTS_DB_ID env var).
+ */
+const PRD_DATABASE_ID = "2a61cc49-73c5-41bf-981c-37ef1ab2f77b";
+
+interface ApprovedPRD {
+  id: string;
+  projectId: string;
+  title: string;
+  targetRepo: string | null;
+  rank: number | null;
+}
+
+/**
+ * Query the PRD database directly for Approved PRDs.
+ * Uses the correct database ID and property names (PRD Title, Target Repo, etc.)
+ * instead of the old queryProjects() which reads from the wrong database.
+ */
+async function queryApprovedPRDs(): Promise<ApprovedPRD[]> {
+  const apiKey = process.env.NOTION_API_KEY;
+  if (!apiKey) {
+    console.error("[plan-pipeline v2] NOTION_API_KEY not set");
+    return [];
+  }
+
+  try {
+    const res = await fetch(`https://api.notion.com/v1/databases/${PRD_DATABASE_ID}/query`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filter: { property: "Status", select: { equals: "Approved" } },
+        sorts: [{ property: "Rank", direction: "ascending" }],
+        page_size: 50,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      console.error(`[plan-pipeline v2] Notion query failed: ${res.status}`, data.message ?? data);
+      return [];
+    }
+
+    interface NotionPRDPage {
+      id: string;
+      properties: {
+        "PRD Title"?: { title?: Array<{ plain_text?: string }> };
+        Status?: { select?: { name?: string } };
+        "Target Repo"?: { select?: { name?: string } };
+        Rank?: { number?: number | null };
+        "AF Project ID"?: { rich_text?: Array<{ plain_text?: string }> };
+        ID?: { unique_id?: { prefix?: string; number?: number } };
+      };
+    }
+
+    return (data.results as NotionPRDPage[]).map((page) => {
+      // Build project ID: prefer AF Project ID (rich_text), fallback to ID (unique_id)
+      let projectId = page.properties?.["AF Project ID"]?.rich_text?.[0]?.plain_text;
+      if (!projectId) {
+        const uid = page.properties?.ID?.unique_id;
+        if (uid) {
+          projectId = `${uid.prefix ?? "PRD"}-${uid.number}`;
+        }
+      }
+
+      return {
+        id: page.id,
+        projectId: projectId ?? page.id,
+        title: page.properties?.["PRD Title"]?.title?.[0]?.plain_text ?? "Untitled",
+        targetRepo: page.properties?.["Target Repo"]?.select?.name ?? null,
+        rank: page.properties?.Rank?.number ?? null,
+      };
+    });
+  } catch (err) {
+    console.error("[plan-pipeline v2] Failed to query PRD database:", err);
+    return [];
+  }
+}
 
 /** Budget multipliers per criterion type/complexity. */
 const BUDGET_PER_CRITERION = 8; // default $/criterion
@@ -79,9 +162,9 @@ export const planPipeline = inngest.createFunction(
     try {
       const phaseStart = Date.now();
 
-      // Query Notion for Approved PRDs
-      const approvedPRDs = await queryProjects("Approved");
-      console.log(`[plan-pipeline v2] queryProjects("Approved") returned ${approvedPRDs.length} PRD(s)`);
+      // Query PRD database directly for Approved PRDs
+      const approvedPRDs = await queryApprovedPRDs();
+      console.log(`[plan-pipeline v2] queryApprovedPRDs() returned ${approvedPRDs.length} PRD(s)`);
       if (approvedPRDs.length > 0) {
         console.log(`[plan-pipeline v2] PRDs: ${approvedPRDs.map(p => `${p.projectId} "${p.title}" (repo: ${p.targetRepo ?? "none"})`).join(", ")}`);
       }
@@ -182,7 +265,7 @@ export const planPipeline = inngest.createFunction(
               estimatedBudget,
               maxDurationMinutes: maxDuration,
               status,
-              prdRank: prd.rank,
+              prdRank: prd.rank ?? undefined,
             });
 
             // 6. Update PRD status to Executing
