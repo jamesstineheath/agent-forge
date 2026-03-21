@@ -90,6 +90,12 @@ export interface WorkItem {
   reasoningMetrics?: ReasoningQualityAssessment;
 }
 
+export interface WaveProgressData {
+  waveNumber: number;
+  items: WorkItem[];
+  status: 'pending' | 'active' | 'complete';
+}
+
 export interface WorkItemIndexEntry {
   id: string;
   title: string;
