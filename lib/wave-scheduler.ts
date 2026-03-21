@@ -6,6 +6,8 @@
  * wave can be dispatched in parallel.
  */
 
+import { hasFileOverlap } from './atc/utils';
+
 export interface WaveAssignment {
   workItemId: string;
   waveNumber: number;
@@ -147,6 +149,43 @@ export function assignWaves(items: WaveSchedulerInput[]): WaveAssignment[] {
     }
   }
 
+  // --- Post-processing: resolve file-overlap conflicts within waves ---
+  let conflictFound = true;
+  while (conflictFound) {
+    conflictFound = false;
+
+    const maxWave = Math.max(...Array.from(waveNumbers.values()));
+
+    for (let wave = 0; wave <= maxWave; wave++) {
+      const waveItems = items.filter((item) => waveNumbers.get(item.id) === wave);
+
+      for (let i = 0; i < waveItems.length; i++) {
+        for (let j = i + 1; j < waveItems.length; j++) {
+          const a = waveItems[i];
+          const b = waveItems[j];
+
+          if (!hasFileOverlap(a.filesBeingModified, b.filesBeingModified)) {
+            continue;
+          }
+
+          // Bump the item with the later createdAt
+          const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          const toBump = aTime >= bTime ? a : b;
+
+          const currentWave = waveNumbers.get(toBump.id)!;
+          waveNumbers.set(toBump.id, currentWave + 1);
+          conflictFound = true;
+
+          // Cascade dependents
+          cascadeDependents(toBump.id, waveNumbers, items);
+        }
+      }
+
+      if (conflictFound) break;
+    }
+  }
+
   // Build result array, preserving input order
   return items.map((item) => ({
     workItemId: item.id,
@@ -154,4 +193,29 @@ export function assignWaves(items: WaveSchedulerInput[]): WaveAssignment[] {
     dependsOn: (item.dependsOn ?? []).filter((dep) => knownIds.has(dep)),
     filesBeingModified: item.filesBeingModified ?? [],
   }));
+}
+
+/**
+ * After bumping `bumpedId` to a new wave, ensure all items that depend on it
+ * (directly or transitively) are assigned to at least bumpedWave + 1.
+ */
+function cascadeDependents(
+  bumpedId: string,
+  waveNumbers: Map<string, number>,
+  items: WaveSchedulerInput[]
+): void {
+  const bumpedWave = waveNumbers.get(bumpedId)!;
+
+  const directDependents = items.filter(
+    (item) => item.dependsOn?.includes(bumpedId)
+  );
+
+  for (const dep of directDependents) {
+    const depWave = waveNumbers.get(dep.id) ?? 0;
+    const requiredWave = bumpedWave + 1;
+    if (depWave < requiredWave) {
+      waveNumbers.set(dep.id, requiredWave);
+      cascadeDependents(dep.id, waveNumbers, items);
+    }
+  }
 }

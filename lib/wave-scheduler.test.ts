@@ -233,6 +233,74 @@ describe("assignWaves", () => {
   });
 });
 
+describe("assignWaves — file-overlap conflict detection", () => {
+  function makeOverlapItem(
+    id: string,
+    deps: string[],
+    files: string[],
+    createdAt: string
+  ): WaveSchedulerInput {
+    return {
+      id,
+      dependsOn: deps,
+      filesBeingModified: files,
+      createdAt: new Date(createdAt),
+    };
+  }
+
+  it("does not bump items when no file overlap exists", () => {
+    const items = [
+      makeOverlapItem("a", [], ["src/foo.ts"], "2024-01-01T00:00:00Z"),
+      makeOverlapItem("b", [], ["src/bar.ts"], "2024-01-01T00:01:00Z"),
+    ];
+    const result = waveMap(items);
+    expect(result.a).toBe(0);
+    expect(result.b).toBe(0);
+  });
+
+  it("bumps the later item (by createdAt) when file overlap is detected", () => {
+    const items = [
+      makeOverlapItem("a", [], ["src/shared.ts"], "2024-01-01T00:00:00Z"),
+      makeOverlapItem("b", [], ["src/shared.ts"], "2024-01-01T00:01:00Z"),
+    ];
+    const result = waveMap(items);
+    expect(result.a).toBe(0);
+    expect(result.b).toBe(1);
+  });
+
+  it("cascades dependents of a bumped item to a later wave", () => {
+    const items = [
+      makeOverlapItem("a", [], ["src/shared.ts"], "2024-01-01T00:00:00Z"),
+      makeOverlapItem("b", [], ["src/shared.ts"], "2024-01-01T00:01:00Z"),
+      makeOverlapItem("c", ["b"], ["src/other.ts"], "2024-01-01T00:02:00Z"),
+    ];
+    const result = waveMap(items);
+    expect(result.a).toBe(0);
+    expect(result.b).toBe(1);
+    expect(result.c).toBe(2);
+  });
+
+  it("never triggers conflict for items with empty filesBeingModified", () => {
+    const items = [
+      makeOverlapItem("a", [], [], "2024-01-01T00:00:00Z"),
+      makeOverlapItem("b", [], [], "2024-01-01T00:01:00Z"),
+    ];
+    const result = waveMap(items);
+    expect(result.a).toBe(0);
+    expect(result.b).toBe(0);
+  });
+
+  it("never triggers conflict for items with undefined filesBeingModified", () => {
+    const items = [
+      { id: "a", dependsOn: [], createdAt: new Date("2024-01-01T00:00:00Z") },
+      { id: "b", dependsOn: [], createdAt: new Date("2024-01-01T00:01:00Z") },
+    ];
+    const result = waveMap(items as unknown as WaveSchedulerInput[]);
+    expect(result.a).toBe(0);
+    expect(result.b).toBe(0);
+  });
+});
+
 describe("detectCircularDependencies", () => {
   it("returns null for an empty list", () => {
     expect(detectCircularDependencies([])).toBeNull();
