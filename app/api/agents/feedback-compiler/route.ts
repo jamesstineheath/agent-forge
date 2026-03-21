@@ -3,11 +3,23 @@ import { auth } from "@/lib/auth";
 
 export const revalidate = 300;
 
+const GITHUB_REPO = "jamesstineheath/agent-forge";
+const WORKFLOW_FILE = "tlm-feedback-compiler.yml";
+
 export interface FeedbackCompilerData {
   status: "active" | "idle";
   lastRun: string | null;
   patternsDetected: number;
   changesProposed: number;
+  lastRunDetails: {
+    id: number;
+    status: string;
+    conclusion: string | null;
+    createdAt: string;
+    updatedAt: string;
+    htmlUrl: string;
+  } | null;
+  source: "github-actions";
 }
 
 export async function GET(_req: NextRequest) {
@@ -25,16 +37,16 @@ export async function GET(_req: NextRequest) {
   }
 
   try {
-    const response = await fetch(
-      "https://api.github.com/repos/jamesstineheath/personal-assistant/contents/docs/feedback-compiler-history.json",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/vnd.github.v3.raw",
-        },
-        next: { revalidate: 300 },
-      }
-    );
+    // Fetch the latest run of the feedback compiler workflow from GitHub Actions
+    const runsUrl = `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${WORKFLOW_FILE}/runs?per_page=1`;
+    const response = await fetch(runsUrl, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      next: { revalidate: 300 },
+    });
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -43,27 +55,21 @@ export async function GET(_req: NextRequest) {
           lastRun: null,
           patternsDetected: 0,
           changesProposed: 0,
+          lastRunDetails: null,
+          source: "github-actions",
         };
         return NextResponse.json(fallback);
       }
       return NextResponse.json(
-        { error: "Failed to fetch feedback compiler history" },
-        { status: response.status }
+        { error: `GitHub API error: ${response.status}` },
+        { status: 502 }
       );
     }
 
-    const history = (await response.json()) as {
-      lastRun?: string;
-      runs?: Array<{
-        date?: string;
-        patternsDetected?: number;
-        changesProposed?: number;
-      }>;
-    };
+    const data = await response.json();
+    const latestRun = data.workflow_runs?.[0] ?? null;
 
-    const lastRun = history.lastRun ?? null;
-    const runs = history.runs ?? [];
-    const mostRecent = runs[runs.length - 1] ?? null;
+    const lastRun = latestRun?.created_at ?? null;
 
     let status: "active" | "idle" = "idle";
     if (lastRun) {
@@ -72,16 +78,27 @@ export async function GET(_req: NextRequest) {
       status = daysSinceRun <= 8 ? "active" : "idle";
     }
 
-    const data: FeedbackCompilerData = {
+    const result: FeedbackCompilerData = {
       status,
       lastRun,
-      patternsDetected: mostRecent?.patternsDetected ?? 0,
-      changesProposed: mostRecent?.changesProposed ?? 0,
+      patternsDetected: 0,
+      changesProposed: 0,
+      lastRunDetails: latestRun
+        ? {
+            id: latestRun.id,
+            status: latestRun.status,
+            conclusion: latestRun.conclusion,
+            createdAt: latestRun.created_at,
+            updatedAt: latestRun.updated_at,
+            htmlUrl: latestRun.html_url,
+          }
+        : null,
+      source: "github-actions",
     };
 
-    return NextResponse.json(data);
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("[feedback-compiler] Failed to fetch/parse:", error);
+    console.error("[feedback-compiler] Failed to fetch:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
