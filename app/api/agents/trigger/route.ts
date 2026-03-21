@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 
-// Allow long-running supervisor cycles (up to ~10 min)
-export const maxDuration = 700;
+// Cron routes are now thin Inngest event triggers, so this is fast
+export const maxDuration = 30;
 
 const AGENT_ROUTES: Record<string, string> = {
   dispatcher: "/api/agents/dispatcher/cron",

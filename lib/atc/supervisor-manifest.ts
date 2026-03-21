@@ -46,11 +46,11 @@ export const PHASE_MANIFEST: PhaseDefinition[] = [
   { name: 'intent-validation',     tier: 'standard', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§20: Post-project criteria verification' },
   { name: 'spend-monitoring',      tier: 'standard', maxDurationSeconds: 15, timeoutMs: 12_000, description: '§5: Vercel spend threshold checks' },
   { name: 'agent-health',          tier: 'standard', maxDurationSeconds: 15, timeoutMs: 12_000, description: 'Agent trace health + staleness checks' },
-  { name: 'hlo-polling',           tier: 'standard', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§15: HLO lifecycle state from open PRs' },
+  // hlo-polling moved to Health Monitor Inngest function
 
   // HOUSEKEEPING — run last, deferred if time budget exceeded
   { name: 'branch-cleanup',        tier: 'housekeeping', maxDurationSeconds: 60, timeoutMs: 55_000, description: 'Stale branch deletion' },
-  { name: 'blob-reconciliation',   tier: 'housekeeping', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§9.5: Work item blob-index reconciliation' },
+  // blob-reconciliation removed — no-op since Neon migration
   { name: 'drift-detection',       tier: 'housekeeping', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§18: Statistical drift detection' },
   { name: 'pm-sweep',              tier: 'housekeeping', maxDurationSeconds: 300, timeoutMs: 300_000, description: '§14: PM Agent daily sweep + digest' },
   { name: 'repo-reindex',          tier: 'housekeeping', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§16: Full re-index for stale repos' },
