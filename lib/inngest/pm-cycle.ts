@@ -3,7 +3,7 @@ import { writeExecutionLog } from "./execution-log";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { saveJson } from "@/lib/storage";
-import { listWorkItems } from "@/lib/work-items";
+import { listPlans } from "@/lib/plans";
 import { persistEvents } from "@/lib/atc/events";
 import { runProjectManager } from "@/lib/atc/project-manager";
 import { recordAgentRun } from "@/lib/atc/utils";
@@ -65,12 +65,12 @@ export const pmCycle = inngest.createFunction(
       await step.run("persist", async () => {
         await persistEvents(pmResult.events);
 
-        const queuedEntries = await listWorkItems({ status: "queued" });
-        const readyEntries = await listWorkItems({ status: "ready" });
+        // Pipeline v2: plan counts for ATC state
+        const readyPlans = await listPlans({ status: "ready" });
         await saveJson(ATC_STATE_KEY, {
           lastRunAt: new Date().toISOString(),
           activeExecutions: [],
-          queuedItems: queuedEntries.length + readyEntries.length,
+          queuedItems: readyPlans.length,
           recentEvents: pmResult.events.slice(-20),
         });
 

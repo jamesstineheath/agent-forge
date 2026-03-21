@@ -2,7 +2,7 @@ import { inngest } from "./client";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { writeExecutionLog } from "./execution-log";
 import { saveJson } from "@/lib/storage";
-import { listWorkItems } from "@/lib/work-items";
+import { listPlans } from "@/lib/plans";
 import { recordAgentRun } from "@/lib/atc/utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "@/lib/atc/tracing";
 import { persistEvents } from "@/lib/atc/events";
@@ -105,13 +105,21 @@ export const pipelineOversight = inngest.createFunction(
       completeTrace(trace, "success", `Oversight cycle: ${allEvents.length} events`);
       await persistTrace(trace);
 
-      // Update ATC state
-      const queuedEntries = await listWorkItems({ status: "queued" });
-      const readyEntries = await listWorkItems({ status: "ready" });
+      // Update ATC state (Pipeline v2: plan counts)
+      const readyPlans = await listPlans({ status: "ready" });
+      const executingPlans = await listPlans({ status: "executing" });
       await saveJson(ATC_STATE_KEY, {
         lastRunAt: new Date().toISOString(),
-        activeExecutions: [],
-        queuedItems: queuedEntries.length + readyEntries.length,
+        activeExecutions: executingPlans.map(p => ({
+          workItemId: p.id,
+          targetRepo: p.targetRepo,
+          branch: p.branchName,
+          status: p.status,
+          startedAt: p.startedAt ?? p.createdAt,
+          elapsedMinutes: p.startedAt ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000) : 0,
+          filesBeingModified: p.affectedFiles ?? [],
+        })),
+        queuedItems: readyPlans.length,
         recentEvents: allEvents.slice(-20),
       });
 

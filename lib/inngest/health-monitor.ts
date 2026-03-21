@@ -3,7 +3,7 @@ import { writeExecutionLog } from "./execution-log";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { saveJson } from "@/lib/storage";
-import { listWorkItems } from "@/lib/work-items";
+import { listPlans } from "@/lib/plans";
 import { persistEvents } from "@/lib/atc/events";
 import { runHealthMonitor } from "@/lib/atc/health-monitor";
 import { runHloPolling, type SupervisorPhaseOutput } from "@/lib/atc/supervisor";
@@ -98,12 +98,21 @@ export const healthMonitorCycle = inngest.createFunction(
         const allEvents = [...healthResult.events, ...hloResult.output.events];
         await persistEvents(allEvents);
 
-        const queuedEntries = await listWorkItems({ status: "queued" });
-        const readyEntries = await listWorkItems({ status: "ready" });
+        // Pipeline v2: plan counts for ATC state
+        const readyPlans = await listPlans({ status: "ready" });
+        const executingPlans = await listPlans({ status: "executing" });
         await saveJson(ATC_STATE_KEY, {
           lastRunAt: new Date().toISOString(),
-          activeExecutions: healthResult.activeExecutions,
-          queuedItems: queuedEntries.length + readyEntries.length,
+          activeExecutions: executingPlans.map(p => ({
+            workItemId: p.id,
+            targetRepo: p.targetRepo,
+            branch: p.branchName,
+            status: p.status,
+            startedAt: p.startedAt ?? p.createdAt,
+            elapsedMinutes: p.startedAt ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000) : 0,
+            filesBeingModified: p.affectedFiles ?? [],
+          })),
+          queuedItems: readyPlans.length,
           recentEvents: allEvents.slice(-20),
         });
 
