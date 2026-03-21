@@ -7,7 +7,8 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { listWorkItems, getWorkItem } from "@/lib/work-items";
-import type { WorkItem } from "@/lib/types";
+import { listPlans } from "@/lib/plans";
+import type { WorkItem, PlanStatus } from "@/lib/types";
 import { loadJson } from "@/lib/storage";
 
 // Notion page IDs for PM memory
@@ -213,12 +214,20 @@ export function registerPMTools(server: McpServer) {
         }
       }
 
-      // Count work items by status
+      // Count work items by status (legacy)
       const statuses = ["executing", "failed", "ready", "queued", "merged"] as const;
-      const counts: Record<string, number> = {};
+      const workItemCounts: Record<string, number> = {};
       for (const status of statuses) {
         const items = await listWorkItems({ status });
-        counts[status] = items.length;
+        workItemCounts[status] = items.length;
+      }
+
+      // Pipeline v2: count plans by status
+      const planStatuses: PlanStatus[] = ["ready", "dispatching", "executing", "reviewing", "complete", "failed", "timed_out", "budget_exceeded", "needs_review"];
+      const planCounts: Record<string, number> = {};
+      for (const status of planStatuses) {
+        const plans = await listPlans({ status });
+        planCounts[status] = plans.length;
       }
 
       // Pipeline metrics (7-day window)
@@ -292,7 +301,8 @@ export function registerPMTools(server: McpServer) {
           text: JSON.stringify({
             atcState,
             agentHealth,
-            workItemCounts: counts,
+            planCounts,
+            workItemCounts,
             pipelineMetrics,
             costSummary7d: costSummary,
             supervisorPhaseLog,

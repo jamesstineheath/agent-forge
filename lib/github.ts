@@ -1047,3 +1047,22 @@ export async function readFileContent(
 
   return Buffer.from(data.content, "base64").toString("utf-8");
 }
+
+/**
+ * Convenience wrapper for readFileContent that accepts "owner/repo" format.
+ * Returns null instead of throwing if file not found.
+ */
+export async function getFileContent(
+  repo: string,
+  path: string,
+  ref?: string,
+): Promise<string | null> {
+  const [owner, repoName] = repo.includes("/")
+    ? repo.split("/")
+    : ["jamesstineheath", repo];
+  try {
+    return await readFileContent(owner, repoName, path, ref);
+  } catch {
+    return null;
+  }
+}
