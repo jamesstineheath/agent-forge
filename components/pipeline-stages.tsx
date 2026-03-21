@@ -49,6 +49,20 @@ const STAGES: StageConfig[] = [
     filter: (i) => i.status === "merged",
   },
   {
+    key: "verified",
+    label: "Verified",
+    countColor: "text-emerald-600",
+    barColor: "bg-emerald-500",
+    filter: (i) => i.status === "verified",
+  },
+  {
+    key: "partial",
+    label: "Partial",
+    countColor: "text-amber-600",
+    barColor: "bg-amber-500",
+    filter: (i) => i.status === "partial",
+  },
+  {
     key: "failed",
     label: "Failed",
     countColor: "text-status-blocked",
@@ -72,7 +86,7 @@ export function PipelineStages({ workItems }: PipelineStagesProps) {
   return (
     <div>
       {/* Stage columns */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+      <div className="grid grid-cols-4 md:grid-cols-8 gap-2">
         {stageCounts.map((stage) => (
           <button
             key={stage.key}
