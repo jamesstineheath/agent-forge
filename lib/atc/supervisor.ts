@@ -431,11 +431,8 @@ export async function runDecomposition(): Promise<SupervisorPhaseOutput> {
         break;
       } catch (decompErr) {
         const errMsg = decompErr instanceof Error ? decompErr.message : String(decompErr);
-        const errStack = decompErr instanceof Error ? decompErr.stack : undefined;
-        console.error(`[supervisor §22] Decomposition failed for "${criteria.prdTitle}":`, errStack ?? errMsg);
-        // Include stack in error output so it surfaces in Inngest step output
-        const stackSuffix = errStack ? ` | STACK: ${errStack.split('\n').slice(0, 5).join(' -> ')}` : '';
-        out.errors.push(`Decomposition for "${criteria.prdTitle}": ${errMsg}${stackSuffix}`);
+        console.error(`[supervisor §22] Decomposition failed for "${criteria.prdTitle}":`, decompErr);
+        out.errors.push(`Decomposition for "${criteria.prdTitle}": ${errMsg}`);
       }
     }
   } catch (err) {
