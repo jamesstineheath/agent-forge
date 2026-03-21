@@ -1,4 +1,5 @@
 import { inngest } from "./client";
+import { writeExecutionLog } from "./execution-log";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { saveJson } from "@/lib/storage";
@@ -22,6 +23,20 @@ export const dispatcherCycle = inngest.createFunction(
     ],
   },
   async ({ step }) => {
+    const startTime = Date.now();
+    const startedAt = new Date().toISOString();
+    try {
+      await writeExecutionLog({
+        functionId: 'dispatcher-cycle',
+        status: 'running',
+        startedAt,
+        completedAt: null,
+        durationMs: null,
+      });
+    } catch (_logErr) {
+      // non-fatal
+    }
+
     // Step 1: Preflight
     const preflight = await step.run("preflight", async () => {
       if (await isPipelineKilled()) {
@@ -70,11 +85,37 @@ export const dispatcherCycle = inngest.createFunction(
         await releaseLock(DISPATCHER_LOCK_KEY);
       });
 
+      try {
+        await writeExecutionLog({
+          functionId: 'dispatcher-cycle',
+          status: 'success',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startTime,
+        });
+      } catch (_logErr) {
+        // non-fatal
+      }
+
       return { success: true, events: dispatchResult.events.length };
     } catch (err) {
       await step.run("release-lock-on-error", async () => {
         await releaseLock(DISPATCHER_LOCK_KEY);
       });
+
+      try {
+        await writeExecutionLog({
+          functionId: 'dispatcher-cycle',
+          status: 'error',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startTime,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch (_logErr) {
+        // non-fatal
+      }
+
       throw err;
     }
   },
