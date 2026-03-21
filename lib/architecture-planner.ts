@@ -92,7 +92,13 @@ Each CriterionPlan must include:
 - dataModels: new types/interfaces needed (e.g., "TravelProfile in lib/types.ts")
 - dependencies: array of criterionIds that must be completed first
 - complexity: "simple" | "moderate" | "complex"
-- estimatedCost: dollar amount ($3-5 simple, $5-8 moderate, $8-15 complex)
+- estimatedCost: pipeline work item cost using the convention below (NOT raw API/token costs)
+
+COST CONVENTION (mandatory — do NOT estimate raw Anthropic API token costs):
+- Simple criterion (UI tweak, config change, single function): $3–5
+- Moderate criterion (new component, API integration, multi-file change): $5–8
+- Complex criterion (new subsystem, significant refactor, cross-cutting concern): $8–15
+These are pipeline work item costs. A project with 8 criteria should total $30–80, never hundreds.
 
 CRITICAL RULES:
 1. Be SPECIFIC about file paths. Use the SYSTEM_MAP and existing code structure to name exact files.
@@ -263,10 +269,13 @@ export async function generateArchitecturePlan(
       ...plan,
       criterionId: targetCriteria[i]?.id ?? `criterion-${i}`,
       criterionDescription: targetCriteria[i]?.description ?? "",
-      // Sanitize cost — Claude sometimes returns "$12" instead of 12
-      estimatedCost: typeof plan.estimatedCost === "string"
-        ? parseFloat(String(plan.estimatedCost).replace(/[^0-9.]/g, "")) || 5
-        : (plan.estimatedCost ?? 5),
+      // Sanitize cost — Claude sometimes returns "$12" instead of 12.
+      // Clamp to pipeline convention range ($3-15) to prevent inflated API cost estimates.
+      estimatedCost: Math.min(15, Math.max(3,
+        typeof plan.estimatedCost === "string"
+          ? parseFloat(String(plan.estimatedCost).replace(/[^0-9.]/g, "")) || 5
+          : (plan.estimatedCost ?? 5)
+      )),
     }),
   );
 
@@ -284,12 +293,8 @@ export async function generateArchitecturePlan(
     prerequisites: parsed.prerequisites ?? [],
     riskAssessment: parsed.riskAssessment ?? "",
     estimatedWorkItems: parsed.estimatedWorkItems ?? criterionPlans.length,
-    totalEstimatedCost: criterionPlans.reduce((sum, p) => {
-      const cost = typeof p.estimatedCost === "string"
-        ? parseFloat(String(p.estimatedCost).replace(/[^0-9.]/g, "")) || 5
-        : (p.estimatedCost ?? 5);
-      return sum + cost;
-    }, 0),
+    // Cost convention: $3-15 per criterion. Values already clamped above.
+    totalEstimatedCost: criterionPlans.reduce((sum, p) => sum + p.estimatedCost, 0),
     generatedAt: new Date().toISOString(),
     generatedBy: mode === "gap-analysis" ? "gap-analysis" : "architecture-planner",
   };
