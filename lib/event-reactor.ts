@@ -172,6 +172,18 @@ async function handlePRMerged(event: WebhookEvent): Promise<void> {
     },
   });
 
+  // Auto-close associated Notion bug if this work item originated from a bug report
+  if (item.source?.type === "bug") {
+    try {
+      const prUrl = `https://github.com/${event.repo}/pull/${prNumber}`;
+      const { findAndCloseBug } = await import("./bug-closer");
+      await findAndCloseBug(item.id, prUrl);
+      console.log(`${LOG_PREFIX} closed Notion bug for work item ${item.id}`);
+    } catch (err) {
+      console.error(`${LOG_PREFIX} failed to close Notion bug for work item ${item.id}:`, err);
+    }
+  }
+
   // Immediately dispatch any items that were blocked on this one
   try {
     const result = await dispatchUnblockedItems(item.id, item.targetRepo);
