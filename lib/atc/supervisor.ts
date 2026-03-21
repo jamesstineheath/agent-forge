@@ -645,11 +645,7 @@ export async function runBranchCleanup(): Promise<SupervisorPhaseOutput> {
  * No-op after Neon Postgres migration — Postgres is the single source of truth,
  * so there's no index/blob drift to reconcile.
  */
-export async function runBlobReconciliation(): Promise<SupervisorPhaseOutput> {
-  const out = emptyOutput();
-  out.decisions.push("Blob reconciliation: skipped (work items now in Postgres)");
-  return out;
-}
+// runBlobReconciliation removed — no-op since Neon migration
 
 /**
  * §18: Drift Detection (at most once per 24h).
