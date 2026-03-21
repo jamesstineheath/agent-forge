@@ -39,8 +39,8 @@ export const PHASE_MANIFEST: PhaseDefinition[] = [
   // CRITICAL — always run first, in this order
   { name: 'escalation-management', tier: 'critical', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§10-12: Timeout monitoring, Gmail polling, reminders' },
   { name: 'criteria-import',       tier: 'critical', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§19: Import approved criteria from Notion' },
-  { name: 'architecture-planning', tier: 'critical', maxDurationSeconds: 780, timeoutMs: 750_000, description: '§21: Generate architecture plans' },
-  { name: 'decomposition',         tier: 'critical', maxDurationSeconds: 780, timeoutMs: 750_000, description: '§22: Trigger decomposition from plans' },
+  { name: 'architecture-planning', tier: 'critical', maxDurationSeconds: 800, timeoutMs: 800_000, description: '§21: Generate architecture plans' },
+  { name: 'decomposition',         tier: 'critical', maxDurationSeconds: 800, timeoutMs: 800_000, description: '§22: Trigger decomposition from plans' },
 
   // STANDARD — run after critical, skipped if time exhausted
   { name: 'intent-validation',     tier: 'standard', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§20: Post-project criteria verification' },
@@ -52,7 +52,7 @@ export const PHASE_MANIFEST: PhaseDefinition[] = [
   { name: 'branch-cleanup',        tier: 'housekeeping', maxDurationSeconds: 60, timeoutMs: 55_000, description: 'Stale branch deletion' },
   { name: 'blob-reconciliation',   tier: 'housekeeping', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§9.5: Work item blob-index reconciliation' },
   { name: 'drift-detection',       tier: 'housekeeping', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§18: Statistical drift detection' },
-  { name: 'pm-sweep',              tier: 'housekeeping', maxDurationSeconds: 120, timeoutMs: 115_000, description: '§14: PM Agent daily sweep + digest' },
+  { name: 'pm-sweep',              tier: 'housekeeping', maxDurationSeconds: 120, timeoutMs: 120_000, description: '§14: PM Agent daily sweep + digest' },
   { name: 'repo-reindex',          tier: 'housekeeping', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§16: Full re-index for stale repos' },
   { name: 'cache-metrics',         tier: 'housekeeping', maxDurationSeconds: 10, timeoutMs: 8_000, description: 'Daily cache metrics summary' },
 ];
