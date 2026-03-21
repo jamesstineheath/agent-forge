@@ -63,14 +63,18 @@ export const dispatcherCycle = inngest.createFunction(
     }
 
     // Step 1: Preflight
-    const preflight = await step.run("preflight", async () => {
+    const preflight = await step.run("v2-preflight", async () => {
+      console.log("[dispatcher v2] Starting preflight");
       if (await isPipelineKilled()) {
+        console.log("[dispatcher v2] Kill switch is ON — skipping");
         return { skipped: true, reason: "kill-switch" } as const;
       }
       const locked = await acquireLock(DISPATCHER_LOCK_KEY);
       if (!locked) {
+        console.log("[dispatcher v2] Lock held — skipping");
         return { skipped: true, reason: "lock held" } as const;
       }
+      console.log("[dispatcher v2] Preflight passed");
       return { skipped: false } as const;
     });
 
@@ -83,7 +87,7 @@ export const dispatcherCycle = inngest.createFunction(
 
     try {
       // Step 2: Dispatch ready plans
-      const dispatchResult = await step.run("dispatch-plans", async () => {
+      const dispatchResult = await step.run("v2-dispatch-plans", async () => {
         const readyPlans = await listPlans({ status: "ready" });
         if (readyPlans.length === 0) {
           return { dispatched: 0, skipped: 0, decisions: ["No ready plans"] };
@@ -151,7 +155,7 @@ export const dispatcherCycle = inngest.createFunction(
       decisions.push(...dispatchResult.decisions);
 
       // Step 3: Persist
-      await step.run("persist", async () => {
+      await step.run("v2-persist", async () => {
         const readyPlans = await listPlans({ status: "ready" });
         const executingPlans = await listPlans({ status: "executing" });
         const dispatchingPlans = await listPlans({ status: "dispatching" });
@@ -200,7 +204,7 @@ export const dispatcherCycle = inngest.createFunction(
 
       return { success: true, dispatched: dispatchResult.dispatched };
     } catch (err) {
-      await step.run("release-lock-on-error", async () => {
+      await step.run("v2-release-lock-on-error", async () => {
         await releaseLock(DISPATCHER_LOCK_KEY);
       });
 

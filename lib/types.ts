@@ -336,7 +336,7 @@ export interface TLMMemory {
 
 // --- Project (Notion) ---
 
-export type ProjectStatus = "Draft" | "Ready" | "Execute" | "Executing" | "Complete" | "Failed" | "Not Feasible";
+export type ProjectStatus = "Draft" | "Ready" | "Approved" | "Execute" | "Executing" | "Complete" | "Failed" | "Not Feasible";
 export type ProjectPriority = "P0" | "P1" | "P2";
 export type ProjectComplexity = "Simple" | "Moderate" | "Complex";
 export type ProjectRiskLevel = "Low" | "Medium" | "High";

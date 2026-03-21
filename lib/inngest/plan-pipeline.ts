@@ -10,9 +10,8 @@ import { queryProjects, fetchPageContent, updateProjectStatus } from "@/lib/noti
 import { createPlan, listPlans, generateBranchName } from "@/lib/plans";
 import { loadGraph } from "@/lib/knowledge-graph/storage";
 import { queryGraph, getBlastRadius, getRelevantSystemMapSections, getRelevantADRs } from "@/lib/knowledge-graph/query";
-import type { Project } from "@/lib/types";
 
-const SUPERVISOR_LOCK_KEY = "atc/supervisor-lock";
+const PLAN_PIPELINE_LOCK_KEY = "atc/plan-pipeline-lock";
 
 /** Budget multipliers per criterion type/complexity. */
 const BUDGET_PER_CRITERION = 8; // default $/criterion
@@ -58,14 +57,18 @@ export const planPipeline = inngest.createFunction(
     }
 
     // Step 1: Preflight — kill switch + lock
-    const preflight = await step.run("preflight", async () => {
+    const preflight = await step.run("v2-preflight", async () => {
+      console.log("[plan-pipeline v2] Starting preflight check");
       if (await isPipelineKilled()) {
+        console.log("[plan-pipeline v2] Kill switch is ON — skipping");
         return { skipped: true, reason: "kill-switch" } as const;
       }
-      const locked = await acquireLock(SUPERVISOR_LOCK_KEY);
+      const locked = await acquireLock(PLAN_PIPELINE_LOCK_KEY);
       if (!locked) {
+        console.log("[plan-pipeline v2] Lock held — skipping");
         return { skipped: true, reason: "lock held" } as const;
       }
+      console.log("[plan-pipeline v2] Preflight passed, lock acquired");
       return { skipped: false } as const;
     });
 
@@ -80,11 +83,16 @@ export const planPipeline = inngest.createFunction(
 
     try {
       // Step 2: Create plans for Approved PRDs
-      const result = await step.run("create-plans", async () => {
+      const result = await step.run("v2-create-plans", async () => {
         const phaseStart = Date.now();
+        console.log("[plan-pipeline v2] Starting create-plans step");
 
         // Query Notion for Approved PRDs
-        const approvedPRDs = await queryProjects("Approved" as Project["status"]);
+        const approvedPRDs = await queryProjects("Approved");
+        console.log(`[plan-pipeline v2] queryProjects("Approved") returned ${approvedPRDs.length} PRD(s)`);
+        if (approvedPRDs.length > 0) {
+          console.log(`[plan-pipeline v2] PRDs: ${approvedPRDs.map(p => `${p.projectId} "${p.title}" (repo: ${p.targetRepo ?? "none"})`).join(", ")}`);
+        }
         if (approvedPRDs.length === 0) {
           return { plansCreated: 0, decisions: ["No Approved PRDs found"], errors: [], durationMs: Date.now() - phaseStart };
         }
@@ -92,6 +100,7 @@ export const planPipeline = inngest.createFunction(
         // Get existing plans to avoid duplicates
         const existingPlans = await listPlans();
         const existingPrdIds = new Set(existingPlans.map(p => p.prdId));
+        console.log(`[plan-pipeline v2] Existing plans: ${existingPlans.length} (prdIds: ${[...existingPrdIds].join(", ") || "none"})`);
 
         const localDecisions: string[] = [];
         const localErrors: string[] = [];
@@ -232,7 +241,7 @@ export const planPipeline = inngest.createFunction(
       for (const e of result.errors) addError(trace, `create-plans: ${e}`);
 
       // Step 3: Persist results + release lock
-      await step.run("persist-results", async () => {
+      await step.run("v2-persist-results", async () => {
         // Update ATC state with plan counts
         const readyPlans = await listPlans({ status: "ready" });
         const executingPlans = await listPlans({ status: "executing" });
@@ -262,7 +271,7 @@ export const planPipeline = inngest.createFunction(
         await persistTrace(trace);
         await cleanupOldTraces("plan-pipeline", 7);
         await recordAgentRun("supervisor");
-        await releaseLock(SUPERVISOR_LOCK_KEY);
+        await releaseLock(PLAN_PIPELINE_LOCK_KEY);
       });
 
       try {
@@ -292,8 +301,8 @@ export const planPipeline = inngest.createFunction(
         console.error('[plan-pipeline] Failed to write error log:', logErr);
       }
 
-      await step.run("release-lock-on-error", async () => {
-        await releaseLock(SUPERVISOR_LOCK_KEY);
+      await step.run("v2-release-lock-on-error", async () => {
+        await releaseLock(PLAN_PIPELINE_LOCK_KEY);
       });
       throw err;
     }
