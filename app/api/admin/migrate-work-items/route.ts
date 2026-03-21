@@ -6,16 +6,23 @@ import { loadJson } from "@/lib/storage";
 import type { WorkItem, WorkItemIndexEntry } from "@/lib/types";
 import { sql } from "drizzle-orm";
 
+function isAuthorized(request: NextRequest): boolean {
+  const authHeader = request.headers.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return false;
+  const token = authHeader.slice(7);
+  return token === process.env.AGENT_FORGE_API_SECRET;
+}
+
 /**
  * One-time migration: copies all work items from Vercel Blob to Neon Postgres.
  * POST /api/admin/migrate-work-items
  *
- * Requires session auth (Google OAuth).
+ * Requires session auth or AGENT_FORGE_API_SECRET bearer token.
  * Idempotent: uses ON CONFLICT DO NOTHING so re-runs are safe.
  */
 export async function POST(request: NextRequest) {
   const session = await auth();
-  if (!session) {
+  if (!session && !isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
