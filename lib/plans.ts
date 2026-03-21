@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { plans } from "./db/schema";
-import type { Plan, PlanStatus, CreatePlanInput } from "./types";
+import type { Plan, PlanStatus, PlanProgress, CreatePlanInput } from "./types";
 
 /**
  * Convert a database row to a Plan object.
@@ -29,6 +29,7 @@ function rowToPlan(row: typeof plans.$inferSelect): Plan {
     workflowRunId: row.workflowRunId,
     retryCount: row.retryCount ?? 0,
     prdRank: row.prdRank ?? null,
+    progress: (row.progress ?? null) as PlanProgress | null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -213,6 +214,23 @@ export async function findPlanByPR(repo: string, prNumber: number): Promise<Plan
       )
     )
     .limit(1);
+
+  if (rows.length === 0) return null;
+  return rowToPlan(rows[0]);
+}
+
+/**
+ * Update the progress snapshot on a plan record.
+ */
+export async function updatePlanProgress(
+  planId: string,
+  progress: PlanProgress
+): Promise<Plan | null> {
+  const rows = await db
+    .update(plans)
+    .set({ progress, updatedAt: new Date() })
+    .where(eq(plans.id, planId))
+    .returning();
 
   if (rows.length === 0) return null;
   return rowToPlan(rows[0]);

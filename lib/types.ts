@@ -954,8 +954,19 @@ export interface Plan {
   workflowRunId: string | null;
   retryCount: number;
   prdRank: number | null;
+  progress: PlanProgress | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PlanProgress {
+  criteriaComplete: number;
+  criteriaTotal: number;
+  currentState: string;
+  issues: string[];
+  decisions: string[];
+  commits: Array<{ sha: string; message: string; timestamp: string }>;
+  lastUpdated: string;
 }
 
 export interface CreatePlanInput {
