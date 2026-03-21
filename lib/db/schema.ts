@@ -5,8 +5,10 @@ import {
   integer,
   timestamp,
   jsonb,
+  json,
   index,
 } from "drizzle-orm/pg-core";
+import type { SpikeMetadata } from "../types";
 
 /**
  * Work items table — replaces the Vercel Blob two-layer store.
@@ -76,6 +78,7 @@ export const workItems = pgTable(
       overallScore: number;
       assessedAt: string;
     } | null>(),
+    spikeMetadata: json("spike_metadata").$type<SpikeMetadata>(),
     waveNumber: integer("wave_number"),
     prdId: text("prd_id"),
     notes: text("notes"),

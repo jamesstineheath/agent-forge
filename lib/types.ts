@@ -151,7 +151,22 @@ export const createWorkItemSchema = z.object({
   expedite: z.boolean().optional(),
   triagePriority: z.enum(["P0", "P1", "P2"]).optional(),
   rank: z.number().optional(),
-});
+  type: z.enum(["feature", "bugfix", "refactor", "test", "docs", "chore", "spike"]).optional(),
+  spikeMetadata: z.object({
+    parentPrdId: z.string().min(1),
+    technicalQuestion: z.string().min(1),
+    scope: z.string().min(1),
+    recommendedBy: z.enum(["pm-agent", "manual"]),
+  }).optional(),
+}).refine(
+  (data) => {
+    if (data.type === "spike") {
+      return !!data.spikeMetadata;
+    }
+    return true;
+  },
+  { message: "Spike work items require spikeMetadata with parentPrdId and technicalQuestion", path: ["spikeMetadata"] }
+);
 
 export const updateWorkItemSchema = z.object({
   title: z.string().min(1).optional(),

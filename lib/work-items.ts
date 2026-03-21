@@ -63,6 +63,7 @@ export function rowToWorkItem(row: typeof workItems.$inferSelect): WorkItem {
     escalation: (row.escalation ?? undefined) as WorkItem["escalation"],
     failureCategory: row.failureCategory as WorkItem["failureCategory"],
     attribution: (row.attribution ?? undefined) as WorkItem["attribution"],
+    spikeMetadata: (row.spikeMetadata ?? undefined) as WorkItem["spikeMetadata"],
     reasoningMetrics: (row.reasoningMetrics ??
       undefined) as WorkItem["reasoningMetrics"],
     createdAt: row.createdAt.toISOString(),
@@ -171,6 +172,19 @@ export async function getWorkItem(id: string): Promise<WorkItem | null> {
 export async function createWorkItem(
   data: CreateWorkItemInput
 ): Promise<WorkItem> {
+  // Spike-specific validation
+  if (data.type === "spike") {
+    if (!data.spikeMetadata) {
+      throw new Error("Spike work items must include spikeMetadata");
+    }
+    if (!data.spikeMetadata.parentPrdId) {
+      throw new Error("Spike work items must have spikeMetadata.parentPrdId");
+    }
+    if (!data.spikeMetadata.technicalQuestion) {
+      throw new Error("Spike work items must have spikeMetadata.technicalQuestion");
+    }
+  }
+
   const now = new Date();
   const id = randomUUID();
 
@@ -185,6 +199,7 @@ export async function createWorkItem(
       priority: data.priority,
       riskLevel: data.riskLevel,
       complexity: data.complexity,
+      type: data.type ?? null,
       status: "filed",
       dependencies: data.dependencies,
       triggeredBy: data.triggeredBy,
@@ -192,6 +207,7 @@ export async function createWorkItem(
       expedite: data.expedite,
       triagePriority: data.triagePriority,
       rank: data.rank,
+      spikeMetadata: data.spikeMetadata ?? null,
       handoff: null,
       execution: null,
       prdId:
