@@ -26,7 +26,7 @@ export const workItems = pgTable(
     complexity: text("complexity").notNull().default("moderate"),
     type: text("type"),
     source: jsonb("source").notNull().$type<{
-      type: "pa-improvement" | "github-issue" | "manual" | "project" | "direct" | "pm-agent";
+      type: "pa-improvement" | "github-issue" | "manual" | "project" | "direct" | "pm-agent" | "bug";
       sourceId?: string;
       sourceUrl?: string;
     }>(),
