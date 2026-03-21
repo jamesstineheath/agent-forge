@@ -12,6 +12,15 @@ import {
   Loader2,
 } from "lucide-react";
 import type { AgentHealthInfo, HealthStatus } from "@/lib/agent-dashboard";
+import { AgentTriggerButton } from "@/components/agent-trigger-button";
+
+// Map agent names to their trigger keys (only cron agents with routes)
+const TRIGGERABLE_AGENTS: Record<string, string> = {
+  dispatcher: "dispatcher",
+  "health-monitor": "health-monitor",
+  "project-manager": "project-manager",
+  supervisor: "supervisor",
+};
 
 const healthColor: Record<HealthStatus, string> = {
   healthy: "text-status-merged bg-status-merged/10 border-status-merged/30",
@@ -74,6 +83,8 @@ function timeAgo(isoString: string): string {
 }
 
 function AgentRow({ agent }: { agent: AgentHealthInfo }) {
+  const triggerKey = TRIGGERABLE_AGENTS[agent.name];
+
   return (
     <div className="flex items-center gap-4 px-4 py-3">
       <div className="flex-1 min-w-0">
@@ -104,7 +115,10 @@ function AgentRow({ agent }: { agent: AgentHealthInfo }) {
           )}
         </div>
       </div>
-      <div className="flex-shrink-0">
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {triggerKey && (
+          <AgentTriggerButton agentKey={triggerKey} agentName={agent.displayName} />
+        )}
         <RunHistoryDots history={agent.runHistory} />
       </div>
     </div>
