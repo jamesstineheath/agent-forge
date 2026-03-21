@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import type { Plan } from "@/lib/types";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -38,12 +39,18 @@ export default function PlansPage() {
   const [filter, setFilter] = useState<string>("");
 
   useEffect(() => {
-    const url = filter ? `/api/plans?status=${filter}` : "/api/plans";
-    fetch(url)
-      .then((r) => r.json())
-      .then((data) => setPlans(data.plans ?? []))
-      .catch(() => setPlans([]))
-      .finally(() => setLoading(false));
+    const fetchPlans = () => {
+      const url = filter ? `/api/plans?status=${filter}` : "/api/plans";
+      fetch(url)
+        .then((r) => r.json())
+        .then((data) => setPlans(data.plans ?? []))
+        .catch(() => setPlans([]))
+        .finally(() => setLoading(false));
+    };
+
+    fetchPlans();
+    const interval = setInterval(fetchPlans, 30000);
+    return () => clearInterval(interval);
   }, [filter]);
 
   const handleRetrigger = async (planId: string) => {
@@ -106,6 +113,7 @@ export default function PlansPage() {
               <tr className="border-b bg-muted/50">
                 <th className="text-left p-3 font-medium">PRD</th>
                 <th className="text-left p-3 font-medium">Status</th>
+                <th className="text-left p-3 font-medium">Progress</th>
                 <th className="text-left p-3 font-medium">Repo</th>
                 <th className="text-left p-3 font-medium">Branch</th>
                 <th className="text-left p-3 font-medium">PR</th>
@@ -120,10 +128,23 @@ export default function PlansPage() {
               {plans.map((plan) => (
                 <tr key={plan.id} className="border-b hover:bg-muted/30">
                   <td className="p-3">
-                    <div className="font-medium">{plan.prdId}</div>
+                    <Link href={`/plans/${plan.id}`} className="font-medium hover:underline">{plan.prdId}</Link>
                     <div className="text-xs text-muted-foreground truncate max-w-[200px]">{plan.prdTitle}</div>
                   </td>
                   <td className="p-3"><StatusBadge status={plan.status} /></td>
+                  <td className="p-3 text-xs">
+                    {plan.status === "executing" && plan.progress ? (
+                      <Link href={`/plans/${plan.id}`} className="text-purple-600 font-medium hover:underline">
+                        {plan.progress.criteriaComplete}/{plan.progress.criteriaTotal}
+                      </Link>
+                    ) : plan.status === "executing" ? (
+                      <span className="text-muted-foreground italic">waiting...</span>
+                    ) : plan.progress ? (
+                      <Link href={`/plans/${plan.id}`} className="text-muted-foreground hover:underline">
+                        {plan.progress.criteriaComplete}/{plan.progress.criteriaTotal}
+                      </Link>
+                    ) : "-"}
+                  </td>
                   <td className="p-3 text-xs">{plan.targetRepo.split("/")[1] ?? plan.targetRepo}</td>
                   <td className="p-3 text-xs font-mono truncate max-w-[150px]">{plan.branchName}</td>
                   <td className="p-3">
