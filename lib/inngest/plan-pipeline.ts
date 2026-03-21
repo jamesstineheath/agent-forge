@@ -96,8 +96,8 @@ async function queryApprovedPRDs(): Promise<ApprovedPRD[]> {
 }
 
 /** Budget multipliers per criterion type/complexity. */
-const BUDGET_PER_CRITERION = 8; // default $/criterion
-const MAX_AUTO_BUDGET = 30; // above this → needs_review
+const BUDGET_PER_CRITERION = 3; // default $/criterion (historical actuals run 5-10x below estimates at $8)
+const MAX_AUTO_BUDGET = 100; // above this → needs_review
 
 /** Duration estimates based on criteria count. */
 function estimateMaxDuration(criteriaCount: number): number {
