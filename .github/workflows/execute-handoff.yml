@@ -235,6 +235,9 @@ jobs:
           # Extract KG context if available
           KG_FILES=$(jq -r '.kgContext.affectedFiles // [] | .[]' /tmp/plan.json 2>/dev/null | head -30 | sed 's/^/- `/' | sed 's/$/`/')
 
+          # Extract review feedback if this is a retry with feedback
+          REVIEW_FEEDBACK=$(jq -r '.reviewFeedback // empty' /tmp/plan.json 2>/dev/null || echo "")
+
           cat > /tmp/execute-prompt.txt <<PLANEOF
           # PRD Execution: ${PRD_TITLE}
 
@@ -269,6 +272,20 @@ jobs:
           - After each criterion, update it with progress, decisions, and issues.
           - Before opening the PR, remove it in a cleanup commit.
           PLANEOF
+
+          # Append review feedback for retry runs
+          if [ -n "$REVIEW_FEEDBACK" ]; then
+            cat >> /tmp/execute-prompt.txt <<FEEDBACK_EOF
+
+          ## IMPORTANT — REVIEW FEEDBACK (RETRY)
+
+          A previous attempt on this branch was reviewed. The following feedback
+          MUST be addressed in this run. Fix all issues mentioned below:
+
+          ${REVIEW_FEEDBACK}
+          FEEDBACK_EOF
+            echo "Review feedback appended to prompt (${#REVIEW_FEEDBACK} chars)"
+          fi
 
           echo "Plan prompt written ($(wc -c < /tmp/execute-prompt.txt) bytes)"
 

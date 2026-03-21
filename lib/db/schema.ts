@@ -140,6 +140,7 @@ export const plans = pgTable(
       commits: Array<{ sha: string; message: string; timestamp: string }>;
       lastUpdated: string;
     } | null>(),
+    reviewFeedback: text("review_feedback"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

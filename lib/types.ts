@@ -955,6 +955,7 @@ export interface Plan {
   retryCount: number;
   prdRank: number | null;
   progress: PlanProgress | null;
+  reviewFeedback: string | null;
   createdAt: string;
   updatedAt: string;
 }

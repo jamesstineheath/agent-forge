@@ -130,9 +130,10 @@ export function registerPlanTools(server: McpServer) {
 
   server.tool(
     "retrigger_plan",
-    "Reset a failed, timed_out, or budget_exceeded plan to ready for re-dispatch.",
+    "Reset a failed, timed_out, budget_exceeded, or reviewing plan to ready for re-dispatch. Optionally include review feedback that will be appended to the execution prompt.",
     {
       plan_id: z.string().describe("Plan ID to retrigger"),
+      review_feedback: z.string().optional().describe("Review feedback to include in the next execution prompt. Use this when a human reviewer or TLM flagged issues that need fixing."),
     },
     async (params) => {
       const plan = await getPlan(params.plan_id);
@@ -140,24 +141,26 @@ export function registerPlanTools(server: McpServer) {
         return { content: [{ type: "text" as const, text: "Plan not found" }] };
       }
 
-      const retriggerable = new Set(["failed", "timed_out", "budget_exceeded"]);
+      const retriggerable = new Set(["failed", "timed_out", "budget_exceeded", "reviewing"]);
       if (!retriggerable.has(plan.status)) {
         return {
           content: [{
             type: "text" as const,
-            text: `Plan is in "${plan.status}" status, not retriggerable. Must be: failed, timed_out, or budget_exceeded.`,
+            text: `Plan is in "${plan.status}" status, not retriggerable. Must be: failed, timed_out, budget_exceeded, or reviewing.`,
           }],
         };
       }
 
       const updated = await updatePlanStatus(params.plan_id, "ready", {
         retryCount: plan.retryCount + 1,
+        reviewFeedback: params.review_feedback,
       });
 
+      const feedbackNote = params.review_feedback ? ` with review feedback (${params.review_feedback.length} chars)` : "";
       return {
         content: [{
           type: "text" as const,
-          text: `Plan ${plan.id} reset to "ready" (retry #${(updated?.retryCount ?? 0)}). Next dispatcher cycle will pick it up.`,
+          text: `Plan ${plan.id} reset to "ready" (retry #${(updated?.retryCount ?? 0)})${feedbackNote}. Next dispatcher cycle will pick it up.`,
         }],
       };
     }
