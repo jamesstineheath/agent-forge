@@ -403,6 +403,162 @@ export async function appendPageContent(
   }
 }
 
+// --- Notion Bugs DB ---
+
+const BUGS_DB_ID = "023f3621-2885-468d-a8cf-2e0bd1458bb3";
+
+export interface NotionBug {
+  pageId: string;
+  title: string;
+  severity: "Critical" | "High" | "Medium" | "Low";
+  context: string;
+  affectedFiles: string[];
+  targetRepo: string | null;
+  createdTime: string; // ISO 8601
+  workItemId: string | null; // existing Work Item ID if any
+}
+
+/**
+ * Query the Bugs database for pages with status "Triaged".
+ */
+export async function queryTriagedBugs(): Promise<NotionBug[]> {
+  if (!process.env.NOTION_API_KEY) return [];
+
+  const response = await fetch(
+    `https://api.notion.com/v1/databases/${BUGS_DB_ID}/query`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.NOTION_API_KEY}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filter: {
+          property: "Status",
+          status: { equals: "Triaged" },
+        },
+        sorts: [{ timestamp: "created_time", direction: "ascending" }],
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Notion bugs query failed: ${response.status} ${await response.text()}`);
+  }
+
+  const data = await response.json();
+
+  return (data.results ?? []).map((page: PageObjectResponse) => {
+    const props = page.properties;
+
+    const titleArr =
+      (props["Name"]?.type === "title" ? props["Name"].title : undefined) ??
+      (props["Title"]?.type === "title" ? props["Title"].title : undefined) ??
+      [];
+    const title = titleArr.map((t) => t.plain_text).join("");
+
+    const severity = (extractSelect<NotionBug["severity"]>(page, "Severity") ?? "Low");
+
+    const contextProp = props["Context"];
+    const context =
+      contextProp?.type === "rich_text"
+        ? contextProp.rich_text.map((t) => t.plain_text).join("")
+        : "";
+
+    const affectedFilesProp = props["Affected Files"];
+    let affectedFiles: string[] = [];
+    if (affectedFilesProp?.type === "rich_text") {
+      const raw = affectedFilesProp.rich_text.map((t) => t.plain_text).join("");
+      affectedFiles = raw
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (affectedFilesProp?.type === "multi_select") {
+      affectedFiles = affectedFilesProp.multi_select.map((s) => s.name);
+    }
+
+    const targetRepo = extractSelect<string>(page, "Target Repo");
+
+    const workItemIdProp = props["Work Item ID"];
+    const workItemId =
+      workItemIdProp?.type === "rich_text"
+        ? workItemIdProp.rich_text.map((t) => t.plain_text).join("") || null
+        : null;
+
+    return {
+      pageId: page.id,
+      title,
+      severity,
+      context,
+      affectedFiles,
+      targetRepo,
+      createdTime: page.created_time,
+      workItemId,
+    };
+  });
+}
+
+/**
+ * Write a work item ID to the bug page's "Work Item ID" property.
+ */
+export async function updateBugWorkItemId(
+  pageId: string,
+  workItemId: string,
+): Promise<void> {
+  const response = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${process.env.NOTION_API_KEY}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      properties: {
+        "Work Item ID": {
+          rich_text: [{ type: "text", text: { content: workItemId } }],
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to update bug work item ID: ${response.status} ${await response.text()}`,
+    );
+  }
+}
+
+/**
+ * Update the Status property of a bug page.
+ */
+export async function updateBugStatus(
+  pageId: string,
+  status: string,
+): Promise<void> {
+  const response = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${process.env.NOTION_API_KEY}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      properties: {
+        Status: {
+          status: { name: status },
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to update bug status: ${response.status} ${await response.text()}`,
+    );
+  }
+}
+
 export async function updateProjectStatus(
   pageId: string,
   status: ProjectStatus,

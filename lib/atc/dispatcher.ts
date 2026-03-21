@@ -1,11 +1,12 @@
-import { listWorkItems, getWorkItem, updateWorkItem, getAllDispatchable, reconcileWorkItemIndex } from "../work-items";
+import { listWorkItems, listWorkItemsFull, getWorkItem, updateWorkItem, createWorkItem, getAllDispatchable, reconcileWorkItemIndex } from "../work-items";
 import { listRepos, getRepo } from "../repos";
 import { dispatchWorkItem } from "../orchestrator";
-import type { ATCState, WorkItem } from "../types";
+import type { ATCState, WorkItem, Priority } from "../types";
 import type { CycleContext } from "./types";
 import { GLOBAL_CONCURRENCY_LIMIT } from "./types";
 import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent, dispatchSortComparator } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
+import { queryTriagedBugs, updateBugWorkItemId, updateBugStatus, type NotionBug } from "../notion";
 
 /**
  * Dispatch items that were blocked on a dependency that just resolved.
@@ -126,6 +127,132 @@ function computePrioritySkipped(
   };
 }
 
+// --- Notion Bug Ingestion ---
+
+/** Map Notion severity to WorkItem priority. */
+function severityToPriority(severity: NotionBug["severity"]): WorkItem["priority"] {
+  switch (severity) {
+    case "Critical":
+    case "High":
+      return "high";
+    case "Medium":
+      return "medium";
+    case "Low":
+      return "low";
+    default:
+      return "low";
+  }
+}
+
+/** Map Notion severity to triage priority for dispatch ordering. */
+function severityToTriagePriority(severity: NotionBug["severity"]): Priority {
+  switch (severity) {
+    case "Critical":
+      return "P0";
+    case "High":
+      return "P1";
+    case "Medium":
+    case "Low":
+      return "P2";
+    default:
+      return "P2";
+  }
+}
+
+/**
+ * Poll Notion Bugs DB for "Triaged" bugs, create work items for new ones,
+ * and update the Notion bug page with the work item ID + status.
+ * Returns the newly created work items.
+ */
+async function ingestTriagedBugs(): Promise<WorkItem[]> {
+  let bugs: NotionBug[];
+  try {
+    bugs = await queryTriagedBugs();
+  } catch (err) {
+    console.error("[dispatcher] Failed to query Notion bugs:", err);
+    return [];
+  }
+
+  if (bugs.length === 0) return [];
+
+  // Load all work items to check for duplicates via source.sourceId
+  const allItems = await listWorkItemsFull();
+  const existingBugSourceIds = new Set(
+    allItems
+      .filter((wi) => wi.triggeredBy === "notion-bug" && wi.source.sourceId)
+      .map((wi) => wi.source.sourceId)
+  );
+
+  const newWorkItems: WorkItem[] = [];
+
+  for (const bug of bugs) {
+    // Duplicate guard 1: Notion page already has a Work Item ID
+    if (bug.workItemId) {
+      continue;
+    }
+
+    // Duplicate guard 2: work item with this sourceId already exists in Postgres
+    if (existingBugSourceIds.has(bug.pageId)) {
+      continue;
+    }
+
+    try {
+      const targetRepo = bug.targetRepo ?? "agent-forge";
+      const description = [
+        bug.context,
+        bug.affectedFiles.length > 0
+          ? `\n\nAffected files: ${bug.affectedFiles.join(", ")}`
+          : "",
+      ].join("");
+
+      const workItem = await createWorkItem({
+        title: bug.title || `Bug: ${bug.pageId.slice(0, 8)}`,
+        description: description || `Bug from Notion: ${bug.pageId}`,
+        targetRepo,
+        source: {
+          type: "direct",
+          sourceId: bug.pageId,
+        },
+        priority: severityToPriority(bug.severity),
+        riskLevel: "medium",
+        complexity: "moderate",
+        dependencies: [],
+        triggeredBy: "notion-bug",
+        triagePriority: severityToTriagePriority(bug.severity),
+      });
+
+      // createWorkItem sets status to "filed" — move to "ready"
+      const readyItem = await updateWorkItem(workItem.id, {
+        status: "ready",
+        type: "bugfix",
+      });
+
+      try {
+        await updateBugWorkItemId(bug.pageId, workItem.id);
+        await updateBugStatus(bug.pageId, "In Progress");
+      } catch (notionErr) {
+        console.error(
+          `[dispatcher] Created work item ${workItem.id} but failed to update Notion bug ${bug.pageId}:`,
+          notionErr,
+        );
+      }
+
+      newWorkItems.push(readyItem ?? workItem);
+      console.log(
+        `[dispatcher] Created work item ${workItem.id} for bug ${bug.pageId} (${bug.severity})`,
+      );
+    } catch (err) {
+      console.error(
+        `[dispatcher] Failed to create work item for bug ${bug.pageId}:`,
+        err,
+      );
+      // Continue processing remaining bugs
+    }
+  }
+
+  return newWorkItems;
+}
+
 /**
  * Dispatcher agent: maximizes throughput within concurrency limits.
  *
@@ -136,6 +263,14 @@ function computePrioritySkipped(
  */
 export async function runDispatcher(ctx: CycleContext): Promise<ATCState["activeExecutions"]> {
   const { now, events } = ctx;
+
+  // === NOTION BUG INGESTION ===
+  // Ingest triaged bugs before checking for ready items, since ingestion
+  // creates new ready items that should be included in this dispatch cycle.
+  const bugItems = await ingestTriagedBugs();
+  if (bugItems.length > 0) {
+    console.log(`[dispatcher] Ingested ${bugItems.length} bug(s) from Notion`);
+  }
 
   // === EARLY EXIT: no ready items ===
   const readyEntries = await listWorkItems({ status: "ready" });
