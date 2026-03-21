@@ -79,6 +79,56 @@ export async function emitRoutingThresholdEvent(payload: {
   await persistEvents([event]);
 }
 
+// -- Wave event emit helpers --------------------------------------------------
+
+export async function emitWaveAssigned(
+  projectId: string,
+  waveNumber: number,
+  itemIds: string[],
+  totalWaves: number
+): Promise<void> {
+  const event: ATCEvent = {
+    id: `wave-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    type: "wave_assigned",
+    workItemId: "system",
+    details: `Wave ${waveNumber}/${totalWaves} assigned for project ${projectId}: ${itemIds.length} items [${itemIds.join(", ")}]`,
+  };
+  await persistEvents([event]);
+}
+
+export async function emitWaveDispatched(
+  projectId: string,
+  waveNumber: number,
+  waveSize: number,
+  concurrentDispatches: number
+): Promise<void> {
+  const event: ATCEvent = {
+    id: `wave-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    type: "wave_dispatched",
+    workItemId: "system",
+    details: `Wave ${waveNumber} dispatched for project ${projectId}: ${waveSize} items, ${concurrentDispatches} concurrent dispatches`,
+  };
+  await persistEvents([event]);
+}
+
+export async function emitWaveCompleted(
+  projectId: string,
+  waveNumber: number,
+  successCount: number,
+  failCount: number
+): Promise<void> {
+  const event: ATCEvent = {
+    id: `wave-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    type: "wave_completed",
+    workItemId: "system",
+    details: `Wave ${waveNumber} completed for project ${projectId}: ${successCount} succeeded, ${failCount} failed`,
+  };
+  await persistEvents([event]);
+}
+
 // -- Model event emit helpers -------------------------------------------------
 
 async function appendModelEvent(event: ModelEvent): Promise<void> {

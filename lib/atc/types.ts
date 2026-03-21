@@ -60,6 +60,16 @@ export interface HLOStateEntry {
   prInfo: PR | null;
 }
 
+// --- Wave dispatch types ---
+
+export interface WaveDispatchState {
+  projectId: string;
+  currentWave: number;
+  waveSize: number;
+  dispatchedAt: string; // ISO 8601 timestamp
+  globalConcurrencyBudget: number;
+}
+
 // --- Model event types ---
 
 // --- Decomposer failure reason classification ---

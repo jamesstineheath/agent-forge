@@ -325,7 +325,7 @@ export type SilentFailureEventType =
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved" | "ci_code_retry_triggered" | "ci_code_retry_exhausted" | "routing_threshold_tightened" | "decomposer_empty_output" | "spec_review_stall" | "empty_context_guard" | "escalation_dedup";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved" | "ci_code_retry_triggered" | "ci_code_retry_exhausted" | "routing_threshold_tightened" | "decomposer_empty_output" | "spec_review_stall" | "empty_context_guard" | "escalation_dedup" | "wave_assigned" | "wave_dispatched" | "wave_completed";
   workItemId: string;
   details: string;
   previousStatus?: string;
