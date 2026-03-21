@@ -914,3 +914,60 @@ export type InngestFunctionStatus = {
   status: 'idle' | 'running' | 'success' | 'error';
   lastRunAt: string | null;
 };
+
+// ── Pipeline v2: Plans ──────────────────────────────────────────────────────
+
+export type PlanStatus =
+  | "ready"
+  | "dispatching"
+  | "executing"
+  | "reviewing"
+  | "complete"
+  | "failed"
+  | "timed_out"
+  | "budget_exceeded"
+  | "needs_review";
+
+export interface Plan {
+  id: string;
+  prdId: string;
+  prdTitle: string;
+  targetRepo: string;
+  branchName: string;
+  status: PlanStatus;
+  acceptanceCriteria: string;
+  kgContext: {
+    affectedFiles: string[];
+    systemMapSections: string;
+    relevantADRs: Array<{ title: string; status: string; decision: string }>;
+    entityCount: number;
+  } | null;
+  affectedFiles: string[] | null;
+  estimatedBudget: number | null;
+  actualCost: number | null;
+  maxDurationMinutes: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorLog: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  workflowRunId: string | null;
+  retryCount: number;
+  prdRank: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePlanInput {
+  prdId: string;
+  prdTitle: string;
+  targetRepo: string;
+  branchName: string;
+  acceptanceCriteria: string;
+  kgContext?: Plan["kgContext"];
+  affectedFiles?: string[];
+  estimatedBudget?: number;
+  maxDurationMinutes?: number;
+  status?: PlanStatus;
+  prdRank?: number;
+}

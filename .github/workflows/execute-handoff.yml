@@ -6,20 +6,33 @@ on:
     types: [completed]
   workflow_dispatch:
     inputs:
+      # Legacy handoff inputs (kept for backward compatibility)
       branch:
-        description: 'Branch containing the handoff file'
-        required: true
+        description: 'Branch containing the handoff file (legacy mode)'
+        required: false
       handoff_file:
-        description: 'Path to handoff file (e.g. handoffs/awaiting_handoff/my-handoff.md)'
-        required: true
+        description: 'Path to handoff file (legacy mode)'
+        required: false
       review_feedback:
-        description: 'Feedback from Code Review or CI failures to address on retry (optional)'
+        description: 'Feedback from Code Review or CI failures (optional)'
         required: false
         default: ''
+      # Pipeline v2 plan inputs
+      plan_id:
+        description: 'Plan ID from Agent Forge (v2 mode)'
+        required: false
+      max_budget:
+        description: 'Max budget in USD'
+        required: false
+        default: '10'
+      max_duration_minutes:
+        description: 'Max execution duration in minutes'
+        required: false
+        default: '60'
 
-# Per-branch concurrency so parallel handoffs don't cancel each other
+# Per-branch concurrency so parallel executions don't cancel each other
 concurrency:
-  group: execute-handoff-${{ github.event.workflow_run.head_branch || github.event.inputs.branch || github.ref_name }}
+  group: execute-handoff-${{ github.event.workflow_run.head_branch || github.event.inputs.branch || github.event.inputs.plan_id || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -30,7 +43,7 @@ permissions:
 jobs:
   execute:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ fromJSON(github.event.inputs.max_duration_minutes || '30') }}
     # For workflow_run: only run if spec review succeeded AND not on main/master
     if: >-
       github.event_name == 'workflow_dispatch' ||
@@ -39,73 +52,99 @@ jobs:
        github.event.workflow_run.head_branch != 'main' &&
        github.event.workflow_run.head_branch != 'master')
     steps:
-      - name: Determine branch and handoff file
-        id: params
+      - name: Determine execution mode
+        id: mode
+        env:
+          PLAN_ID: ${{ github.event.inputs.plan_id }}
+          BRANCH_INPUT: ${{ github.event.inputs.branch }}
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
-            echo "handoff_file=${{ github.event.inputs.handoff_file }}" >> $GITHUB_OUTPUT
+          if [ -n "$PLAN_ID" ]; then
+            echo "mode=plan" >> $GITHUB_OUTPUT
+            echo "plan_id=$PLAN_ID" >> $GITHUB_OUTPUT
+            echo "Running in Pipeline v2 plan mode (plan: $PLAN_ID)"
           else
-            BRANCH="${{ github.event.workflow_run.head_branch }}"
-            echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-            # Will be resolved after checkout
-            echo "handoff_file=auto" >> $GITHUB_OUTPUT
+            echo "mode=handoff" >> $GITHUB_OUTPUT
+            echo "Running in legacy handoff mode"
           fi
 
-      - name: Checkout branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.params.outputs.branch }}
-          fetch-depth: 0
-
-      - name: Find handoff file
-        id: handoff
+      # ═══════════════════════════════════════════════════════════════
+      # PLAN MODE (Pipeline v2): Fetch plan from AF API, execute with plan prompt
+      # ═══════════════════════════════════════════════════════════════
+      - name: Fetch plan from Agent Forge
+        if: steps.mode.outputs.mode == 'plan'
+        id: plan
+        env:
+          AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
+          AGENT_FORGE_URL: ${{ vars.AGENT_FORGE_URL || 'https://agent-forge-phi.vercel.app' }}
         run: |
-          if [ "${{ steps.params.outputs.handoff_file }}" != "auto" ]; then
-            echo "file=${{ steps.params.outputs.handoff_file }}" >> $GITHUB_OUTPUT
-          else
-            # Strategy: find handoff .md files that were added or modified on this
-            # branch compared to main. This avoids picking up stale handoff files
-            # from previous PRs that were already merged.
-            # git diff --diff-filter=AM only shows Added or Modified files.
-            HANDOFF=$(git diff --name-only --diff-filter=AM origin/main...HEAD -- 'handoffs/**/*.md' 'handoffs/*.md' | grep -v README | head -1)
+          echo "Fetching plan ${{ steps.mode.outputs.plan_id }}..."
+          HTTP_STATUS=$(curl -s -o /tmp/plan.json -w "%{http_code}" \
+            -X GET "${AGENT_FORGE_URL}/api/plans/${{ steps.mode.outputs.plan_id }}" \
+            -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}")
 
-            # Fallback: if git diff finds nothing (e.g. branch is behind main),
-            # try the filesystem search but prefer awaiting_handoff/ files
-            if [ -z "$HANDOFF" ]; then
-              echo "git diff found no new handoff files, trying filesystem fallback..."
-              HANDOFF=$(find handoffs/awaiting_handoff -name '*.md' -not -name 'README*' 2>/dev/null | head -1)
-            fi
-
-            if [ -z "$HANDOFF" ]; then
-              echo "No handoff files found on this branch"
-              exit 1
-            fi
-            echo "Auto-detected handoff: $HANDOFF"
-            echo "file=$HANDOFF" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Verify handoff file exists
-        run: |
-          if [ ! -f "${{ steps.handoff.outputs.file }}" ]; then
-            echo "Handoff file not found: ${{ steps.handoff.outputs.file }}"
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Failed to fetch plan: HTTP $HTTP_STATUS"
+            cat /tmp/plan.json 2>/dev/null
             exit 1
           fi
-          echo "Executing handoff: ${{ steps.handoff.outputs.file }}"
-          head -20 "${{ steps.handoff.outputs.file }}"
 
-      - name: Parse budget from handoff metadata
-        id: budget
+          BRANCH_NAME=$(jq -r '.branchName' /tmp/plan.json)
+          BUDGET=$(jq -r '.estimatedBudget // 10' /tmp/plan.json)
+          CRITERIA=$(jq -r '.acceptanceCriteria' /tmp/plan.json)
+          PRD_TITLE=$(jq -r '.prdTitle' /tmp/plan.json)
+
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "budget=$BUDGET" >> $GITHUB_OUTPUT
+          echo "prd_title=$PRD_TITLE" >> $GITHUB_OUTPUT
+
+          # Save criteria for prompt generation
+          jq -r '.acceptanceCriteria' /tmp/plan.json > /tmp/criteria.txt
+          echo "Plan fetched: $PRD_TITLE (branch: $BRANCH_NAME, budget: \$$BUDGET)"
+
+      - name: Report executing status
+        if: steps.mode.outputs.mode == 'plan'
+        env:
+          AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
+          AGENT_FORGE_URL: ${{ vars.AGENT_FORGE_URL || 'https://agent-forge-phi.vercel.app' }}
         run: |
-          # Look for "Max Budget: $X" or "Max Budget: $X.XX" in the metadata section
-          BUDGET=$(grep -i 'max budget' "${{ steps.handoff.outputs.file }}" | head -1 | grep -oP '\$\K[0-9]+(\.[0-9]+)?' || echo "")
-          if [ -z "$BUDGET" ]; then
-            echo "No budget found in handoff metadata, using default: \$5"
-            BUDGET="5"
+          curl -s -X POST "${AGENT_FORGE_URL}/api/plans/${{ steps.mode.outputs.plan_id }}/status" \
+            -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\": \"executing\", \"startedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"workflowRunId\": \"${{ github.run_id }}\"}" \
+            || echo "::warning::Failed to report executing status"
+
+      # ═══════════════════════════════════════════════════════════════
+      # SHARED STEPS: Checkout, setup, execute
+      # ═══════════════════════════════════════════════════════════════
+      - name: Determine branch
+        id: params
+        run: |
+          if [ "${{ steps.mode.outputs.mode }}" == "plan" ]; then
+            echo "branch=${{ steps.plan.outputs.branch }}" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
           else
-            echo "Budget from handoff: \$$BUDGET"
+            echo "branch=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
           fi
-          echo "amount=$BUDGET" >> $GITHUB_OUTPUT
+
+      - name: Checkout (create branch if needed for plan mode)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Create or checkout branch
+        run: |
+          BRANCH="${{ steps.params.outputs.branch }}"
+          # Check if branch exists on remote
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Branch $BRANCH exists, checking out..."
+            git checkout "$BRANCH"
+            git pull origin "$BRANCH" --rebase || true
+          else
+            echo "Branch $BRANCH does not exist, creating from main..."
+            git checkout -b "$BRANCH"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -124,59 +163,132 @@ jobs:
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: Write execution prompt
+      # ═══════════════════════════════════════════════════════════════
+      # HANDOFF MODE: Legacy handoff file execution
+      # ═══════════════════════════════════════════════════════════════
+      - name: Find handoff file (legacy mode)
+        if: steps.mode.outputs.mode == 'handoff'
+        id: handoff
+        run: |
+          if [ -n "${{ github.event.inputs.handoff_file }}" ]; then
+            echo "file=${{ github.event.inputs.handoff_file }}" >> $GITHUB_OUTPUT
+          else
+            HANDOFF=$(git diff --name-only --diff-filter=AM origin/main...HEAD -- 'handoffs/**/*.md' 'handoffs/*.md' | grep -v README | head -1)
+            if [ -z "$HANDOFF" ]; then
+              HANDOFF=$(find handoffs/awaiting_handoff -name '*.md' -not -name 'README*' 2>/dev/null | head -1)
+            fi
+            if [ -z "$HANDOFF" ]; then
+              echo "No handoff files found on this branch"
+              exit 1
+            fi
+            echo "file=$HANDOFF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Parse budget from handoff (legacy mode)
+        if: steps.mode.outputs.mode == 'handoff'
+        id: handoff_budget
+        run: |
+          BUDGET=$(grep -i 'max budget' "${{ steps.handoff.outputs.file }}" | head -1 | grep -oP '\$\K[0-9]+(\.[0-9]+)?' || echo "5")
+          echo "amount=${BUDGET:-5}" >> $GITHUB_OUTPUT
+
+      - name: Write handoff prompt (legacy mode)
+        if: steps.mode.outputs.mode == 'handoff'
         run: |
           REVIEW_FEEDBACK="${{ github.event.inputs.review_feedback }}"
-
           cat > /tmp/execute-prompt.txt <<'ENDPROMPT'
           You are executing a handoff file for the agent-forge project.
-
           Read and execute the handoff file at `${{ steps.handoff.outputs.file }}`.
-
-          Follow the handoff file's own step numbering exactly. The handoff file is the
-          single source of truth for what needs to happen. Do not assume any steps exist
-          that are not written in the file.
-
+          Follow the handoff file's own step numbering exactly.
           Important context:
-          - Step 0 (branch setup) is already complete. The branch is checked out and
-            dependencies are installed via npm ci. Skip Step 0 entirely.
-          - Start from the Pre-flight Self-Check, then execute each numbered
-            implementation step in order.
-          - Do NOT skip verification steps (tsc, build, lint, test). Run `npm test` before pushing — CI will reject code with failing tests.
-          - If build fails after 3 attempts, follow the Session Abort Protocol in the
-            handoff file.
-          - After implementation and verification pass, commit all changes and push to
-            this branch.
-          - Open a PR against main using `gh pr create`. GITHUB_TOKEN is available in
-            the environment for gh CLI operations.
+          - Step 0 (branch setup) is already complete. Skip Step 0 entirely.
+          - Start from the Pre-flight Self-Check, then execute each numbered implementation step in order.
+          - Do NOT skip verification steps (tsc, build, lint, test). Run `npm test` before pushing.
+          - If build fails after 3 attempts, follow the Session Abort Protocol.
+          - After implementation and verification pass, commit all changes and push to this branch.
+          - Open a PR against main using `gh pr create`. GITHUB_TOKEN is available.
           - Git is already configured. Use `gh pr create` for PRs.
-          - If the handoff specifies auto-merge for low-risk items, run:
-            gh pr merge --auto --squash
           ENDPROMPT
-
-          # Append review/CI feedback for retry runs
           if [ -n "$REVIEW_FEEDBACK" ]; then
             cat >> /tmp/execute-prompt.txt <<FEEDBACK_EOF
 
           IMPORTANT — RETRY CONTEXT:
-          A previous attempt on this branch produced code that was reviewed or tested.
-          The following feedback MUST be addressed in this run. Fix all issues mentioned
-          below before committing and pushing:
-
           $REVIEW_FEEDBACK
           FEEDBACK_EOF
-            echo "Review feedback appended to execution prompt (${#REVIEW_FEEDBACK} chars)"
           fi
 
-      - name: Execute handoff with Claude Code
+      # ═══════════════════════════════════════════════════════════════
+      # PLAN MODE: Generate plan prompt
+      # ═══════════════════════════════════════════════════════════════
+      - name: Write plan prompt (v2 mode)
+        if: steps.mode.outputs.mode == 'plan'
+        env:
+          AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
+          AGENT_FORGE_URL: ${{ vars.AGENT_FORGE_URL || 'https://agent-forge-phi.vercel.app' }}
+        run: |
+          # Build the plan prompt from the fetched plan data
+          PRD_TITLE="${{ steps.plan.outputs.prd_title }}"
+          BRANCH="${{ steps.params.outputs.branch }}"
+          BUDGET="${{ steps.plan.outputs.budget }}"
+          MAX_DURATION="${{ github.event.inputs.max_duration_minutes }}"
+          CRITERIA=$(cat /tmp/criteria.txt)
+
+          # Extract KG context if available
+          KG_FILES=$(jq -r '.kgContext.affectedFiles // [] | .[]' /tmp/plan.json 2>/dev/null | head -30 | sed 's/^/- `/' | sed 's/$/`/')
+
+          cat > /tmp/execute-prompt.txt <<PLANEOF
+          # PRD Execution: ${PRD_TITLE}
+
+          **Branch:** \`${BRANCH}\`
+          **Budget:** \$${BUDGET}
+          **Max Duration:** ${MAX_DURATION} minutes
+
+          ## Acceptance Criteria
+
+          ${CRITERIA}
+
+          ## Codebase Context (from Knowledge Graph)
+
+          ${KG_FILES:+### Affected Files
+          These files are likely relevant:
+          ${KG_FILES}
+          }
+
+          ## Execution Constraints
+
+          1. **Commit incrementally** — after each acceptance criterion or significant change.
+          2. **Run type checks** — \`tsc --noEmit\` after each major change. Fix type errors before proceeding.
+          3. **Run tests** — \`npm test\` before the final push. CI will reject failing tests.
+          4. **Push to branch** — push all commits when done.
+          5. **Open a PR** — \`gh pr create\` against main. GITHUB_TOKEN is available.
+          6. **Do not skip verification.** If build fails after 3 attempts, stop and push what you have.
+
+          ## Session Memory (PLAN_STATUS.md)
+
+          Maintain a \`PLAN_STATUS.md\` file at the repo root:
+          - Check if it exists (from a previous attempt). If so, read it and continue from where it left off.
+          - After each criterion, update it with progress, decisions, and issues.
+          - Before opening the PR, remove it in a cleanup commit.
+          PLANEOF
+
+          echo "Plan prompt written ($(wc -c < /tmp/execute-prompt.txt) bytes)"
+
+      # ═══════════════════════════════════════════════════════════════
+      # EXECUTE: Run Claude Code
+      # ═══════════════════════════════════════════════════════════════
+      - name: Determine budget
+        id: budget
+        run: |
+          if [ "${{ steps.mode.outputs.mode }}" == "plan" ]; then
+            echo "amount=${{ steps.plan.outputs.budget }}" >> $GITHUB_OUTPUT
+          else
+            echo "amount=${{ steps.handoff_budget.outputs.amount || '5' }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Execute with Claude Code
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # GH_PAT is a fine-grained PAT that triggers downstream workflows.
-          # The default GITHUB_TOKEN suppresses workflow triggers (GitHub's
-          # infinite-loop prevention). Without GH_PAT, TLM Code Review won't
-          # run on pipeline-generated PRs.
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-        timeout-minutes: 25
+        timeout-minutes: ${{ fromJSON(github.event.inputs.max_duration_minutes || '25') }}
         run: |
           set -o pipefail
           echo "Using budget: \$${{ steps.budget.outputs.amount }}"
@@ -193,51 +305,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           BRANCH="${{ steps.params.outputs.branch }}"
-
-          # Check if Claude Code already created a PR (open)
           PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-
           if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
             echo "PR #$PR_NUMBER already exists for branch $BRANCH"
             exit 0
           fi
-
-          # Check if a PR was already merged for this branch (fast auto-merge case).
-          # If a PR was created and merged before this fallback runs, creating
-          # another PR produces an orphan that blocks the pipeline.
           MERGED_COUNT=$(gh pr list --head "$BRANCH" --state merged --json number --jq 'length' 2>/dev/null || echo "0")
           if [ "$MERGED_COUNT" -gt 0 ]; then
-            echo "A PR for branch $BRANCH was already merged. Skipping fallback PR creation."
+            echo "PR already merged for branch $BRANCH. Skipping."
             exit 0
           fi
-
-          # Check if there are actually implementation commits ahead of main
-          # (more than just the handoff commit)
           COMMITS_AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "0")
-          if [ "$COMMITS_AHEAD" -le 1 ]; then
-            echo "::warning::No implementation commits found (only handoff commit). Claude Code may have failed to produce changes."
+          if [ "$COMMITS_AHEAD" -le 0 ]; then
+            echo "::warning::No commits ahead of main."
             exit 0
           fi
-
-          echo "No PR found for branch $BRANCH ($COMMITS_AHEAD commits ahead). Creating fallback PR..."
-
-          # Use the last commit message as PR title
-          LAST_COMMIT=$(git log -1 --format="%s" 2>/dev/null || echo "Handoff execution on $BRANCH")
-
-          gh pr create \
-            --head "$BRANCH" \
-            --base main \
-            --title "$LAST_COMMIT" \
-            --body "## Summary
-
-          Automated PR created by execute-handoff workflow fallback.
-
-          **Handoff:** \`${{ steps.handoff.outputs.file }}\`
-          **Branch:** \`$BRANCH\`
-          **Commits ahead of main:** $COMMITS_AHEAD
-
-          > This PR was created because the Claude Code executor did not create one during handoff execution. The code changes were committed successfully but PR creation was skipped (likely due to budget exhaustion or execution error)." \
-            || echo "::warning::Failed to create fallback PR for branch $BRANCH"
+          LAST_COMMIT=$(git log -1 --format="%s" 2>/dev/null || echo "Execution on $BRANCH")
+          gh pr create --head "$BRANCH" --base main --title "$LAST_COMMIT" \
+            --body "Automated PR from execute-handoff workflow. Branch: \`$BRANCH\`, Commits: $COMMITS_AHEAD" \
+            || echo "::warning::Failed to create fallback PR"
 
       - name: Trigger CI on bot-created PR
         if: success()
@@ -245,54 +331,31 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           BRANCH="${{ steps.params.outputs.branch }}"
-          # Wait briefly for PR to be indexed
           sleep 5
           PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
           if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
-            echo "Closing and reopening PR #$PR_NUMBER to trigger CI..."
             gh pr close "$PR_NUMBER" --repo "${{ github.repository }}"
             sleep 2
             gh pr reopen "$PR_NUMBER" --repo "${{ github.repository }}"
-            echo "CI should now be triggered for PR #$PR_NUMBER"
-          else
-            echo "No open PR found for branch $BRANCH, skipping CI trigger"
           fi
 
-      - name: Wait for CI and report failures
+      - name: Wait for CI
         if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
           BRANCH="${{ steps.params.outputs.branch }}"
           PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-
           if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
-            echo "No open PR found for branch $BRANCH, skipping CI wait."
             exit 0
           fi
-
-          echo "Found PR #$PR_NUMBER, waiting for CI checks (10 min timeout)..."
-
           if timeout 600 gh pr checks "$PR_NUMBER" --watch; then
             echo "All CI checks passed."
           else
-            echo "CI checks failed for PR #$PR_NUMBER"
-
-            # Fetch failed check logs
+            echo "CI checks failed"
             FAILED_CHECKS=$(gh pr checks "$PR_NUMBER" --json name,state,description --jq '.[] | select(.state == "FAILURE") | "- **\(.name)**: \(.description // "No description")"')
-
-            COMMENT_BODY=$(cat <<CIEOF
-          ## CI Failure Detected
-
-          The code pushed by this handoff execution has failing CI checks:
-
-          ${FAILED_CHECKS}
-
-          The execute-handoff workflow is marking this run as failed. Please inspect the CI logs and fix the issues.
-          CIEOF
-          )
-
-            gh pr comment "$PR_NUMBER" --body "$COMMENT_BODY"
+            gh pr comment "$PR_NUMBER" --body "## CI Failure Detected
+          ${FAILED_CHECKS}"
             exit 1
           fi
 
@@ -301,93 +364,76 @@ jobs:
         if: always()
         run: |
           COST=""
-          TOKENS=""
-
           if [ -f /tmp/claude-output.log ]; then
-            # JSON output from --output-format json: top-level total_cost_usd field
             COST=$(jq -r '.total_cost_usd // empty' /tmp/claude-output.log 2>/dev/null || echo "")
-
             if [ -z "$COST" ]; then
-              # Fallback: search for cost pattern in raw output
               COST=$(grep -oP '"total_cost_usd"\s*:\s*\K[0-9.]+' /tmp/claude-output.log | tail -1 || echo "")
             fi
-
-            # Extract token counts from JSON usage object
-            INPUT_TOKENS=$(jq -r '.usage.input_tokens // empty' /tmp/claude-output.log 2>/dev/null || echo "0")
-            OUTPUT_TOKENS=$(jq -r '.usage.output_tokens // empty' /tmp/claude-output.log 2>/dev/null || echo "0")
-            TOKENS="${INPUT_TOKENS:-0} in / ${OUTPUT_TOKENS:-0} out"
           fi
-
           echo "cost=${COST:-unknown}" >> $GITHUB_OUTPUT
-          echo "tokens=${TOKENS:-unknown}" >> $GITHUB_OUTPUT
 
-          # Write a multi-line summary for the PR comment
-          cat > /tmp/cost-summary.md <<EOF
-          ### Execution Cost
-          - **Budget:** \$${{ steps.budget.outputs.amount }}
-          - **Actual cost:** ${COST:+\$${COST}}${COST:-unknown}
-          - **Tokens:** ${TOKENS:-unknown}
-          - **Model:** claude-opus-4-6
-          EOF
-
-      - name: Comment cost on PR
-        if: always()
+      - name: Report plan completion to Agent Forge
+        if: always() && steps.mode.outputs.mode == 'plan'
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
+          AGENT_FORGE_URL: ${{ vars.AGENT_FORGE_URL || 'https://agent-forge-phi.vercel.app' }}
         run: |
-          # Find open PR for this branch
-          PR_NUMBER=$(gh pr list --head "${{ steps.params.outputs.branch }}" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-
+          BRANCH="${{ steps.params.outputs.branch }}"
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
+          PR_URL=""
           if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
-            gh pr comment "$PR_NUMBER" --body "$(cat /tmp/cost-summary.md)"
-            echo "Cost summary posted to PR #$PR_NUMBER"
-          else
-            echo "No open PR found for branch ${{ steps.params.outputs.branch }}, skipping cost comment"
+            PR_URL="https://github.com/${{ github.repository }}/pull/$PR_NUMBER"
           fi
 
-      - name: Report cost to Agent Forge
-        if: always()
+          COST_VALUE="${{ steps.cost.outputs.cost }}"
+          COST_VALUE="${COST_VALUE#\$}"
+
+          if [ "${{ job.status }}" == "success" ]; then
+            STATUS="reviewing"
+          elif [ "${{ job.status }}" == "cancelled" ]; then
+            STATUS="timed_out"
+          else
+            STATUS="failed"
+          fi
+
+          PAYLOAD="{\"status\": \"${STATUS}\", \"completedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\""
+          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
+            PAYLOAD="${PAYLOAD}, \"prNumber\": ${PR_NUMBER}, \"prUrl\": \"${PR_URL}\""
+          fi
+          if [ "$COST_VALUE" != "unknown" ] && [ -n "$COST_VALUE" ]; then
+            PAYLOAD="${PAYLOAD}, \"actualCost\": ${COST_VALUE}"
+          fi
+          PAYLOAD="${PAYLOAD}}"
+
+          curl -s -X POST "${AGENT_FORGE_URL}/api/plans/${{ steps.mode.outputs.plan_id }}/status" \
+            -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            || echo "::warning::Failed to report plan completion"
+
+      - name: Report cost to Agent Forge (legacy)
+        if: always() && steps.mode.outputs.mode == 'handoff'
         env:
           AGENT_FORGE_API_SECRET: ${{ secrets.AGENT_FORGE_API_SECRET }}
           AGENT_FORGE_URL: ${{ vars.AGENT_FORGE_URL || 'https://agent-forge-phi.vercel.app' }}
         run: |
           COST_VALUE="${{ steps.cost.outputs.cost }}"
-          # Strip $ prefix if present
           COST_VALUE="${COST_VALUE#\$}"
-
           if [ "$COST_VALUE" != "unknown" ] && [ -n "$COST_VALUE" ]; then
-            echo "Reporting cost $COST_VALUE to Agent Forge..."
-            HTTP_STATUS=$(curl -s -o /tmp/cost-response.json -w "%{http_code}" \
-              -X POST "${AGENT_FORGE_URL}/api/costs/record" \
+            curl -s -X POST "${AGENT_FORGE_URL}/api/costs/record" \
               -H "Authorization: Bearer ${AGENT_FORGE_API_SECRET}" \
               -H "Content-Type: application/json" \
-              -d "{
-                \"branch\": \"${{ steps.params.outputs.branch }}\",
-                \"repo\": \"${{ github.repository }}\",
-                \"agentType\": \"executor\",
-                \"costUsd\": ${COST_VALUE}
-              }")
-            echo "Agent Forge response: $HTTP_STATUS"
-            cat /tmp/cost-response.json 2>/dev/null || true
-          else
-            echo "Cost unknown — skipping Agent Forge cost report"
+              -d "{\"branch\": \"${{ steps.params.outputs.branch }}\", \"repo\": \"${{ github.repository }}\", \"agentType\": \"executor\", \"costUsd\": ${COST_VALUE}}" \
+              || echo "::warning::Failed to report cost"
           fi
 
       - name: Report results
         if: always()
         run: |
           echo "=== Post-execution status ==="
+          echo "Mode: ${{ steps.mode.outputs.mode }}"
           echo "Branch: ${{ steps.params.outputs.branch }}"
-          echo "Handoff: ${{ steps.handoff.outputs.file }}"
           echo "Budget: \$${{ steps.budget.outputs.amount }}"
           echo "Actual cost: ${{ steps.cost.outputs.cost }}"
-          echo "Tokens: ${{ steps.cost.outputs.tokens }}"
-          echo ""
-          echo "Git log (last 3 commits):"
           git log --oneline -3
-          echo ""
-          echo "Git status:"
           git status --short
-          echo ""
-          echo "Open PRs from this branch:"
-          gh pr list --head "${{ steps.params.outputs.branch }}" --state open || echo "No PRs found"

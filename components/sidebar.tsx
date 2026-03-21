@@ -48,6 +48,7 @@ const navSections: NavSection[] = [
     items: [
       { label: "Dashboard", href: "/", icon: LayoutDashboard },
       { label: "Projects", href: "/projects", icon: ClipboardCheck },
+      { label: "Plans", href: "/plans", icon: GitBranch },
       { label: "Work Items", href: "/work-items", icon: FolderKanban },
       { label: "Pipeline", href: "/pipeline", icon: GitBranch },
       { label: "Cost", href: "/cost", icon: DollarSign },
