@@ -76,6 +76,7 @@ export const workItems = pgTable(
       overallScore: number;
       assessedAt: string;
     } | null>(),
+    waveNumber: integer("wave_number"),
     prdId: text("prd_id"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
