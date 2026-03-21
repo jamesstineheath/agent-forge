@@ -535,8 +535,17 @@ function splitIntoSubPhases(items: DecomposedItem[]): DecomposedItem[][] {
 
 // --- Main ---
 
+// Debug wrapper: tags async calls so we can identify which one throws .length error
+async function tagged<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`[${label}] ${msg}`, { cause: err });
+  }
+}
+
 export async function decomposeProject(project: Project): Promise<DecompositionResult> {
-  console.log(`[decomposer-debug] START decomposeProject for "${project.title}" (${project.projectId})`);
   try {
   // 1. Extract page ID and fetch plan content
   // If planUrl is set, extract its page ID; otherwise fall back to reading the project page body
@@ -546,8 +555,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
 
   // Check for plan content override (from decomposeFromPlan)
   const override = _getPlanContentOverride(pageId);
-  const planContent = override ?? await fetchPageContent(pageId);
-  console.log(`[decomposer-debug] CP1: planContent fetched (${planContent?.length ?? 0} chars)`);
+  const planContent = override ?? await tagged('fetchPageContent', () => fetchPageContent(pageId));
 
   console.log(
     `[Decomposer] Fetched plan content for project "${project.title}" (${project.projectId}). ` +
@@ -590,11 +598,9 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     return { workItems: [], phases: null, reason: 'no_target_repo' };
   }
 
-  console.log(`[decomposer-debug] CP2: primaryRepo=${primaryRepo}`);
   let stepStart = Date.now();
-  const referencedRepos = await findReferencedRepos(planContent, primaryRepo);
+  const referencedRepos = await tagged('findReferencedRepos', () => findReferencedRepos(planContent, primaryRepo));
   console.log(`[decomposer] Step 1: findReferencedRepos took ${Date.now() - stepStart}ms (${referencedRepos.length} repos found)`);
-  console.log(`[decomposer-debug] CP3: repos found`);
 
   if (referencedRepos.length === 0) {
     await escalate(
@@ -611,7 +617,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   const repoContexts = new Map<string, RepoContext>();
   for (const repo of referencedRepos) {
     stepStart = Date.now();
-    const ctx = await fetchRepoContext(repo);
+    const ctx = await tagged(`fetchRepoContext(${repo.fullName})`, () => fetchRepoContext(repo));
     repoContexts.set(repo.fullName, ctx);
     console.log(
       `[decomposer] Step 2: fetchRepoContext(${repo.fullName}) took ${Date.now() - stepStart}ms ` +
@@ -626,7 +632,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   // Use knowledge graph for targeted context if available
   let repoContext: string;
   if (fileHints && primaryRepo) {
-    const graph = await loadGraph(primaryRepo);
+    const graph = await tagged('loadGraph', () => loadGraph(primaryRepo));
     if (graph) {
       const primaryCtx = repoContexts.get(primaryRepo);
       if (primaryCtx) {
@@ -665,7 +671,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     repoContext = buildRepoContext(project, repoContexts);
   }
 
-  console.log(`[decomposer-debug] CP4: repoContext built (${repoContext.length} chars)`);
+
   // 4. Call Claude Opus for decomposition
   const planPrompt = buildPlanPrompt(planContent);
   console.log(`[decomposer] Step 3: Built prompt — repoContext: ${repoContext.length} chars, planPrompt: ${planPrompt.length} chars`);
@@ -685,7 +691,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
         : `${planPrompt}\n\n---\nPREVIOUS ATTEMPT FAILED VALIDATION:\n${lastError}\n\nPlease fix the issues and return a valid JSON array.`;
 
     const opusStart = Date.now();
-    const { text } = await routedAnthropicCall({
+    const { text } = await tagged('routedAnthropicCall', () => routedAnthropicCall({
       model: "claude-opus-4-6",
       taskType: "decomposition",
       workItemId: project.projectId,
@@ -710,7 +716,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
           ],
         },
       ],
-    });
+    }));
     console.log(
       `[decomposer] Step 4: routedAnthropicCall attempt ${attempt + 1} took ${Date.now() - opusStart}ms ` +
       `(response: ${text.length} chars)`
@@ -750,7 +756,6 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     }
   }
 
-  console.log(`[decomposer-debug] CP5: Opus call done, decomposedItems=${decomposedItems ? decomposedItems.length + ' items' : 'null'}`);
 
   if (!decomposedItems) {
     console.error(
@@ -836,14 +841,14 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     const projectId = project.projectId || "phase";
 
     try {
-      subPhaseResult = await decomposeSubPhases(
+      subPhaseResult = await tagged('decomposeSubPhases', () => decomposeSubPhases(
         tempWorkItems,
         targetPhaseCount,
         projectId,
         softLimit,
         maxRecursionDepth,
         0,
-      );
+      ));
 
       // Convert back: build DecomposedItem phases from SubPhase results
       phases = subPhaseResult.phases.map((sp) =>
@@ -876,7 +881,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     }
   }
 
-  console.log(`[decomposer-debug] CP6: past sub-phase splitting, about to create work items`);
+
   // 7. Create work items, mapping original indices to actual IDs
   const indexToId = new Map<number, string>();
   const createdItems: WorkItem[] = [];
@@ -898,7 +903,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       ? item.targetRepo
       : `jamesstineheath/${item.targetRepo}`;
 
-    const workItem = await createWorkItem({
+    const workItem = await tagged(`createWorkItem(${i}/${decomposedItems.length})`, () => createWorkItem({
       title: item.title,
       description: descriptionWithCriteria,
       targetRepo: normalizedRepo,
@@ -912,7 +917,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       dependencies: resolvedDeps,
       triagePriority: (project.priority as Priority) ?? 'P1',
       rank: project.rank ?? 999,
-    });
+    }));
 
     indexToId.set(i, workItem.id);
     createdItems.push(workItem);
@@ -961,11 +966,10 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     };
   }
 
-  console.log(`[decomposer-debug] CP7: SUCCESS — ${createdItems.length} work items created`);
+
   return { workItems: createdItems, phases: workItemPhases, phaseBreakdown };
-  } catch (debugErr) {
-    console.error(`[decomposer-debug] CRASH in decomposeProject for "${project.title}":`, debugErr instanceof Error ? debugErr.stack : String(debugErr));
-    throw debugErr;
+  } catch (err) {
+    throw err;
   }
 }
 
