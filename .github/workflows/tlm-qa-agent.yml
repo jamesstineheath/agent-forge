@@ -28,6 +28,13 @@ jobs:
     continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Skip production deployments — only run for branch preview deploys
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.environment != 'Production' &&
+       github.event.deployment.ref != 'main' &&
+       github.event.deployment.ref != 'master')
 
     steps:
       - name: Checkout

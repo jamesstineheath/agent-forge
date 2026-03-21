@@ -35,6 +35,11 @@ jobs:
   orchestrate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Skip runner allocation when the triggering workflow ran on main/master
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.head_branch != 'main' &&
+       github.event.workflow_run.head_branch != 'master')
     steps:
       - name: Checkout
         uses: actions/checkout@v4

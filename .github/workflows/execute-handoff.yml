@@ -325,20 +325,6 @@ jobs:
             --body "Automated PR from execute-handoff workflow. Branch: \`$BRANCH\`, Commits: $COMMITS_AHEAD" \
             || echo "::warning::Failed to create fallback PR"
 
-      - name: Trigger CI on bot-created PR
-        if: success()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          BRANCH="${{ steps.params.outputs.branch }}"
-          sleep 5
-          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
-            gh pr close "$PR_NUMBER" --repo "${{ github.repository }}"
-            sleep 2
-            gh pr reopen "$PR_NUMBER" --repo "${{ github.repository }}"
-          fi
-
       - name: Wait for CI
         if: success()
         env:

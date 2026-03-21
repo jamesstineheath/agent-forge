@@ -1,8 +1,6 @@
 name: TLM Code Review
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   check_suite:
     types: [completed]
   workflow_dispatch:
@@ -12,11 +10,10 @@ on:
         required: true
         type: string
 
-# Only run one review at a time per PR — do NOT cancel in progress,
-# the check_suite re-review must not be killed by the pull_request run
+# One review at a time per PR; cancel stale runs when new commits arrive
 concurrency:
-  group: tlm-review-pr-${{ github.event.pull_request.number || github.event.check_suite.pull_requests[0].number || github.event.check_suite.head_sha || 'unknown' }}
-  cancel-in-progress: false
+  group: tlm-review-pr-${{ github.event.check_suite.pull_requests[0].number || github.event.check_suite.head_sha || 'unknown' }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -27,13 +24,13 @@ jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Run on PR events, or on check_suite completion ONLY if it's from GitHub Actions (CI)
+    # Run only on check_suite completion from GitHub Actions (CI) or manual dispatch
     # Skip check_suite events from other apps (Vercel, etc.) to avoid redundant runs
     if: >-
-      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'check_suite' &&
-       github.event.check_suite.app.slug == 'github-actions')
+       github.event.check_suite.app.slug == 'github-actions' &&
+       github.event.check_suite.conclusion == 'success')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
