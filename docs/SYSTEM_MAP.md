@@ -32,10 +32,11 @@
 │  └──────────────────────┼───────────────────────────────┘   │
 │                         │                                    │
 │  ┌──────────┐  ┌────────┴───┐  ┌──────────┐  ┌──────────┐  │
-│  │Work Item │  │Orchestrator│  │Decomposer│  │Escalation│  │
-│  │  Store   │  │(handoff gen│  │(plan →   │  │(state    │  │
-│  │(Postgres)│  │ + dispatch)│  │ work items│  │ machine) │  │
-│  └──────────┘  └────────────┘  └──────────┘  └──────────┘  │
+│  │Plan Store│  │Plan Prompt │  │  Legacy  │  │Escalation│  │
+│  │+ Work    │  │ Generator  │  │Orchestr. │  │(state    │  │
+│  │Items (PG)│  │(lib/plan-  │  │(read-only│  │ machine) │  │
+│  └──────────┘  │prompt.ts)  │  │ history) │  └──────────┘  │
+│                └────────────┘  └──────────┘                │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │     Event Bus (lib/event-bus.ts)                      │   │
@@ -85,27 +86,34 @@
 
 ## Data Flow
 
-### Work Item Lifecycle
+### Pipeline v2: Plan Lifecycle (PRD-65, ADR-013)
+
+```
+Ready → Dispatching → Executing → Reviewing → Complete
+  │                       │            │
+  │                       │            └── needs_review (scope guardrail)
+  ├── failed ←────────────┘
+  ├── timed_out ←─────────┘
+  └── budget_exceeded ←───┘
+```
+
+1 PRD = 1 Plan = 1 Branch = 1 PR. No decomposition into work items.
+
+1. **Ready**: Plan created from Approved PRD with acceptance criteria + KG context
+2. **Dispatching**: Dispatcher triggered execute-handoff workflow
+3. **Executing**: Claude Code CLI running with plan prompt on the branch
+4. **Reviewing**: PR opened, TLM Code Review in progress
+5. **Complete**: PR merged
+6. **Failed/timed_out/budget_exceeded**: Execution failed, retriggerable
+7. **needs_review**: Estimated budget > $30, requires human approval before dispatch
+
+### Legacy: Work Item Lifecycle (preserved for historical data)
 
 ```
 Filed → Ready → Queued → Generating → Executing → Reviewing → Merged → Verified
-                  │           │                        │           │
-                  │           └── Retrying ────────────┘           └── Partial
-                  ├── Blocked (escalated) ←────────────┤
-                  └── Parked (conflict/failed) ←───────┘
 ```
 
-1. **Filed**: Work item created from PA `file_work_item` bridge, GitHub issue, Plan Decomposer, or manual entry
-2. **Ready**: Triaged and prioritized, ready for dispatch
-3. **Queued**: Dispatched but waiting for pipeline capacity
-4. **Generating**: Orchestrator reading repo context and generating handoff
-5. **Executing**: Handoff pushed to target repo, Execute Handoff workflow running
-6. **Reviewing**: PR opened, TLM Code Review in progress
-7. **Merged**: PR merged (auto or manual), outcome tracked. Also set by Health Monitor reconciliation when a "failed" item's PR is actually merged.
-8. **Verified**: All acceptance criteria passed post-merge validation (set by Intent Validator).
-9. **Partial**: Some acceptance criteria failed post-merge validation; gap analysis filed (set by Intent Validator).
-10. **Blocked**: Escalation created, awaiting human resolution via email
-11. **Parked**: File conflict detected or execution failed, waiting for retry
+Work items table is preserved read-only. New executions use Plans.
 
 ### Autonomous Agent Architecture (ADR-010) — Inngest Migration (PR #415)
 
@@ -115,11 +123,11 @@ Old cron routes (`/api/agents/*/cron`) are kept as thin Inngest event triggers f
 
 | Inngest Function | Cron | Steps | Source |
 |-----------------|------|-------|--------|
-| **plan-pipeline** | */10 | criteria-import, architecture-planning (800s), decomposition (800s) | Supervisor (core) |
+| **plan-pipeline** | */10 | create-plans (data-gathering, no LLM calls) | Supervisor (core) |
 | **pipeline-oversight** | */30 | escalation-management, intent-validation, spend-monitoring, agent-health | Supervisor (monitoring) |
 | **pm-sweep** | daily 08:00 UTC | PM sweep (backlog review, health, digest) | Supervisor (extracted) |
 | **housekeeping** | */6h | branch-cleanup, drift-detection, repo-reindex + cache-metrics | Supervisor (maintenance) |
-| **dispatcher-cycle** | */15 | index-reconciliation, dispatch | Dispatcher |
+| **dispatcher-cycle** | */15 | dispatch-plans (KG overlap detection) | Dispatcher |
 | **pm-cycle** | */30 | retry-processing, decomposition, lifecycle-management | Project Manager |
 | **health-monitor-cycle** | */15 | health-monitoring, dashboard-health-check, hlo-polling | Health Monitor |
 
@@ -138,28 +146,28 @@ Old cron routes (`/api/agents/*/cron`) are kept as thin Inngest event triggers f
 - **Project Manager §13a — Stuck Executing Recovery**: Detects projects where decomposition never ran, resets for re-decomposition.
 - **Project Manager §13b — Completion Detection**: When all work items reach terminal state, auto-transitions project.
 
-### Execution Flow (per work item)
+### Execution Flow (Pipeline v2: per plan)
 
 ```
-Orchestrator → Push handoff to branch
+Plan-Pipeline creates Plan from Approved PRD (no LLM calls)
                     ↓
-            TLM Spec Review (improve handoff)
+Dispatcher detects ready Plan, triggers execute-handoff
                     ↓
-            Execute Handoff (Claude Code runs handoff)
+Execute Handoff (Claude Code runs plan prompt, creates branch)
                     ↓
-            CI wait (execute-handoff waits for checks)
+Claude Code commits incrementally, maintains PLAN_STATUS.md
                     ↓
-            PR opened with execution results
+PR opened with all implementation
                     ↓
-            TLM Code Review (defers if CI red)
+CI wait (execute-handoff waits for checks)
                     ↓
-            Auto-merge (if low-risk + CI passes)
+TLM Code Review (defers if CI red)
                     ↓
-            Handoff Lifecycle Orchestrator tracks state
+Auto-merge (if low-risk + CI passes)
                     ↓
-            TLM Outcome Tracker (daily assessment)
+TLM Outcome Tracker (daily assessment)
                     ↓
-            Feedback Compiler (weekly analysis → prompt improvement PRs)
+Feedback Compiler (weekly analysis → prompt improvement PRs)
 ```
 
 ### TLM Self-Improvement Loop
@@ -196,9 +204,11 @@ Outcome Tracker (daily)
 | PM Prompts | `lib/pm-prompts.ts` | Structured prompt builders for PM agent |
 | ATC (DEPRECATED) | `lib/atc.ts` | **Deprecated 2026-03-18.** Cron disabled. All responsibilities now handled by Dispatcher, Health Monitor, Project Manager, and Supervisor agents. File kept for utility re-exports only. |
 | **Core** | | |
-| Orchestrator | `lib/orchestrator.ts` | Handoff generation + dispatch to target repos |
-| Work Items | `lib/work-items.ts` | CRUD + dependency-aware dispatch (Neon Postgres via Drizzle) |
-| Decomposer | `lib/decomposer.ts` | Plan page → ordered work items with dependency DAG |
+| Plans | `lib/plans.ts` | Plan CRUD (Neon Postgres via Drizzle) — Pipeline v2 |
+| Plan Prompt | `lib/plan-prompt.ts` | Generate execution prompt from plan record |
+| Work Items | `lib/work-items.ts` | CRUD (legacy, read-only for historical data) |
+| Orchestrator | `lib/orchestrator.ts` | Legacy handoff generation (preserved for type exports) |
+| Decomposer | `lib/decomposer.ts` | Legacy decomposer (preserved for type exports) |
 | Escalation | `lib/escalation.ts` | State machine: pending/resolved/expired, SLA timers |
 | Gmail | `lib/gmail.ts` | OAuth2, escalation emails, decomposition summaries |
 | Notion | `lib/notion.ts` | Notion API client, project status reads |
@@ -226,11 +236,11 @@ Outcome Tracker (daily)
 | Admin Migrate | `app/api/admin/migrate/route.ts` | Idempotent schema migrations (ALTER TABLE) against Neon |
 | **Inngest** | | |
 | Inngest Client | `lib/inngest/client.ts` | Inngest instance (`id: "agent-forge"`) |
-| Plan Pipeline | `lib/inngest/plan-pipeline.ts` | Criteria import → architecture planning → decomposition |
+| Plan Pipeline | `lib/inngest/plan-pipeline.ts` | Data-gathering: import criteria, query KG, create plans (no LLM) |
 | Pipeline Oversight | `lib/inngest/pipeline-oversight.ts` | Escalation, intent validation, spend, agent health |
 | PM Sweep | `lib/inngest/pm-sweep.ts` | Daily PM sweep (backlog, health, digest) |
 | Housekeeping | `lib/inngest/housekeeping.ts` | Branch cleanup, drift detection, repo reindex |
-| Dispatcher Cycle | `lib/inngest/dispatcher.ts` | Index reconciliation + dispatch |
+| Dispatcher Cycle | `lib/inngest/dispatcher.ts` | Plan dispatch with KG overlap detection |
 | PM Cycle | `lib/inngest/pm-cycle.ts` | Project retry + decomposition + lifecycle |
 | Health Monitor Cycle | `lib/inngest/health-monitor.ts` | Health monitoring + dashboard self-health + HLO polling |
 | Serve Handler | `app/api/inngest/route.ts` | Inngest serve endpoint (registers all 7 functions) |
@@ -265,7 +275,8 @@ Outcome Tracker (daily)
 
 | Store | Location | Purpose |
 |-------|----------|---------|
-| Work Items | Neon Postgres `work_items` table | Work item CRUD (migrated from Vercel Blob 2026-03-21) |
+| Plans | Neon Postgres `plans` table | Plan lifecycle (Pipeline v2, 1 plan per PRD) |
+| Work Items | Neon Postgres `work_items` table | Legacy work items (read-only historical data) |
 | ATC State | Vercel Blob `af-data/atc/*` | Active executions, queue, dedup guards |
 | Repo Config | Vercel Blob `af-data/repos/*` | Registered repo metadata |
 | Escalations | Vercel Blob `escalations/*` | Escalation records + index |
