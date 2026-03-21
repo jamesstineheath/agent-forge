@@ -1,4 +1,5 @@
 import { inngest } from "./client";
+import { writeExecutionLog } from "./execution-log";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { saveJson } from "@/lib/storage";
@@ -22,6 +23,20 @@ export const pmCycle = inngest.createFunction(
     ],
   },
   async ({ step }) => {
+    const startTime = Date.now();
+    const startedAt = new Date().toISOString();
+    try {
+      await writeExecutionLog({
+        functionId: 'pm-cycle',
+        status: 'running',
+        startedAt,
+        completedAt: null,
+        durationMs: null,
+      });
+    } catch (_logErr) {
+      // non-fatal
+    }
+
     // Step 1: Preflight
     const preflight = await step.run("preflight", async () => {
       if (await isPipelineKilled()) {
@@ -69,11 +84,37 @@ export const pmCycle = inngest.createFunction(
         await releaseLock(PROJECT_MANAGER_LOCK_KEY);
       });
 
+      try {
+        await writeExecutionLog({
+          functionId: 'pm-cycle',
+          status: 'success',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startTime,
+        });
+      } catch (_logErr) {
+        // non-fatal
+      }
+
       return { success: true, events: pmResult.events.length };
     } catch (err) {
       await step.run("release-lock-on-error", async () => {
         await releaseLock(PROJECT_MANAGER_LOCK_KEY);
       });
+
+      try {
+        await writeExecutionLog({
+          functionId: 'pm-cycle',
+          status: 'error',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startTime,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch (_logErr) {
+        // non-fatal
+      }
+
       throw err;
     }
   },
