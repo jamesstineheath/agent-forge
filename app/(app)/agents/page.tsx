@@ -2,14 +2,14 @@
 
 import { cn } from "@/lib/utils";
 import { RefreshCw, Bot } from "lucide-react";
-import { useWorkItems, useTlmAgents } from "@/lib/hooks";
+import { useTlmAgents, useInngestStatus, useTriggerInngestFunction } from "@/lib/hooks";
 import type { TlmWorkflowStatus } from "@/lib/hooks";
 import { PAAgentRow } from "@/components/pa-agent-row";
-import { AgentDashboard } from "@/components/agent-dashboard";
+import InngestFunctionCard from "@/components/inngest-function-card";
 import { AgentTraceViewer } from "@/components/agent-trace-viewer";
 import { EvaluationMetricsPanel } from "@/components/evaluation-metrics-panel";
-import { AgentTriggerButton } from "@/components/agent-trigger-button";
 import { SupervisorPhaseLog } from "@/components/supervisor-phase-log";
+import { INNGEST_FUNCTION_REGISTRY } from "@/lib/inngest/execution-log";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -126,6 +126,55 @@ function TlmAgentRow({ wf }: { wf: TlmWorkflowStatus }) {
   );
 }
 
+// --- Inngest Function Cards ---
+
+function SkeletonCard() {
+  return (
+    <div className="rounded-lg border border-border bg-surface-1 p-6 animate-pulse h-[140px] w-full" />
+  );
+}
+
+function InngestFunctionCardsSection() {
+  const { statuses, isLoading, error } = useInngestStatus();
+  const { trigger, triggeringId } = useTriggerInngestFunction();
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+          Inngest Functions
+        </p>
+        <span className="text-[10px] text-muted-foreground/40">(durable step functions)</span>
+      </div>
+
+      {error && (
+        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+          Failed to load agent status: {error.message ?? "Unknown error"}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {isLoading
+          ? Array.from({ length: 7 }).map((_, i) => <SkeletonCard key={i} />)
+          : INNGEST_FUNCTION_REGISTRY.map((fn) => {
+              const status = statuses.find((s) => s.functionId === fn.id);
+              return (
+                <InngestFunctionCard
+                  key={fn.id}
+                  functionId={fn.id}
+                  functionName={status?.functionName ?? fn.displayName}
+                  status={status?.status ?? "idle"}
+                  lastRunAt={status?.lastRunAt ?? null}
+                  onTrigger={trigger}
+                  isTriggering={triggeringId === fn.id}
+                />
+              );
+            })}
+      </div>
+    </div>
+  );
+}
+
 function TlmAgentsSection() {
   const { data, error, isLoading } = useTlmAgents();
 
@@ -176,7 +225,7 @@ export default function AgentsPage() {
           <div className="flex items-center gap-2 text-[11px]">
             <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1 font-medium text-muted-foreground ring-1 ring-border">
               <Bot className="h-3 w-3" />
-              {PA_AGENTS.filter(a => a.status === "active").length + 5} agents
+              {PA_AGENTS.filter(a => a.status === "active").length + INNGEST_FUNCTION_REGISTRY.length} agents
             </span>
           </div>
         </div>
@@ -184,29 +233,8 @@ export default function AgentsPage() {
 
       <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
         <div className="max-w-5xl space-y-6">
-          {/* Agent Heartbeat Dashboard */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                Agent Heartbeat
-              </p>
-              <span className="text-[10px] text-muted-foreground/40">(real-time health)</span>
-            </div>
-            <AgentDashboard />
-            {/* Digest agent trigger (not in heartbeat dashboard but is a cron agent) */}
-            <div className="rounded-xl card-elevated bg-surface-1 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">Digest</span>
-                    <span className="text-[10px] text-muted-foreground/50">daily cron</span>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground">Daily summary email (8 AM UTC)</span>
-                </div>
-                <AgentTriggerButton agentKey="digest" agentName="Digest" />
-              </div>
-            </div>
-          </div>
+          {/* Inngest Function Cards */}
+          <InngestFunctionCardsSection />
 
           {/* Agent Traces */}
           <AgentTraceViewer />
