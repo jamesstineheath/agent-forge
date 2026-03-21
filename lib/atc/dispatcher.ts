@@ -6,7 +6,7 @@ import type { CycleContext } from "./types";
 import { GLOBAL_CONCURRENCY_LIMIT } from "./types";
 import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent, dispatchSortComparator } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
-import { queryTriagedBugs, updateBugWorkItemId, updateBugStatus, type NotionBug } from "../notion";
+import { queryTriagedBugs, updateBugPage, type TriagedBug, type BugSeverity } from "../bugs";
 
 /**
  * Dispatch items that were blocked on a dependency that just resolved.
@@ -130,7 +130,7 @@ function computePrioritySkipped(
 // --- Notion Bug Ingestion ---
 
 /** Map Notion severity to WorkItem priority. */
-function severityToPriority(severity: NotionBug["severity"]): WorkItem["priority"] {
+function severityToPriority(severity: BugSeverity): WorkItem["priority"] {
   switch (severity) {
     case "Critical":
     case "High":
@@ -145,7 +145,7 @@ function severityToPriority(severity: NotionBug["severity"]): WorkItem["priority
 }
 
 /** Map Notion severity to triage priority for dispatch ordering. */
-function severityToTriagePriority(severity: NotionBug["severity"]): Priority {
+function severityToTriagePriority(severity: BugSeverity): Priority {
   switch (severity) {
     case "Critical":
       return "P0";
@@ -160,44 +160,80 @@ function severityToTriagePriority(severity: NotionBug["severity"]): Priority {
 }
 
 /**
- * Poll Notion Bugs DB for "Triaged" bugs, create work items for new ones,
- * and update the Notion bug page with the work item ID + status.
- * Returns the newly created work items.
+ * Ingest triaged bugs from Notion, filtered by severity, creating work items
+ * and counting them against available dispatch slots.
+ *
+ * @param ctx          Cycle context for event emission
+ * @param slotsRemaining  Mutable object so mutations are visible to caller
+ * @param concurrencyMap  Per-repo active execution counts
+ * @param activeExecutions  Active execution list (appended to)
+ * @param severityFilter   Which severities to process in this call
  */
-async function ingestTriagedBugs(): Promise<WorkItem[]> {
-  let bugs: NotionBug[];
+async function dispatchTriagedBugs(
+  ctx: CycleContext,
+  slotsRemaining: { count: number },
+  concurrencyMap: Map<string, number>,
+  activeExecutions: ATCState["activeExecutions"],
+  severityFilter: BugSeverity[],
+): Promise<void> {
+  if (slotsRemaining.count <= 0) return;
+
+  let bugs: TriagedBug[];
   try {
     bugs = await queryTriagedBugs();
   } catch (err) {
     console.error("[dispatcher] Failed to query Notion bugs:", err);
-    return [];
+    return;
   }
 
-  if (bugs.length === 0) return [];
+  // Filter to requested severities
+  const filtered = bugs.filter((b) => severityFilter.includes(b.severity));
+  if (filtered.length === 0) return;
 
   // Load all work items to check for duplicates via source.sourceId
   const allItems = await listWorkItemsFull();
   const existingBugSourceIds = new Set(
     allItems
       .filter((wi) => wi.triggeredBy === "notion-bug" && wi.source.sourceId)
-      .map((wi) => wi.source.sourceId)
+      .map((wi) => wi.source.sourceId),
   );
 
-  const newWorkItems: WorkItem[] = [];
+  // Load repo configs for per-repo concurrency limits
+  const repoIndex = await listRepos();
+  const repoConfigByName = new Map<string, { concurrencyLimit: number }>();
+  for (const repoEntry of repoIndex) {
+    const repo = await getRepo(repoEntry.id);
+    if (repo) repoConfigByName.set(repo.fullName, repo);
+  }
 
-  for (const bug of bugs) {
+  for (const bug of filtered) {
+    if (slotsRemaining.count <= 0) break;
+
     // Duplicate guard 1: Notion page already has a Work Item ID
-    if (bug.workItemId) {
-      continue;
-    }
+    if (bug.workItemId) continue;
 
     // Duplicate guard 2: work item with this sourceId already exists in Postgres
-    if (existingBugSourceIds.has(bug.pageId)) {
+    if (existingBugSourceIds.has(bug.id)) continue;
+
+    // Check per-repo concurrency
+    const repoKey = bug.targetRepo;
+    const repoActive = concurrencyMap.get(repoKey) ?? 0;
+    const repoConfig = repoConfigByName.get(repoKey);
+    const perRepoCap = repoConfig?.concurrencyLimit ?? 3;
+    if (repoActive >= perRepoCap) {
+      ctx.events.push(
+        makeEvent(
+          "concurrency_block",
+          "system",
+          undefined,
+          undefined,
+          `Bug ${bug.title}: repo ${repoKey} at concurrency limit (${repoActive}/${perRepoCap})`,
+        ),
+      );
       continue;
     }
 
     try {
-      const targetRepo = bug.targetRepo ?? "agent-forge";
       const description = [
         bug.context,
         bug.affectedFiles.length > 0
@@ -206,12 +242,12 @@ async function ingestTriagedBugs(): Promise<WorkItem[]> {
       ].join("");
 
       const workItem = await createWorkItem({
-        title: bug.title || `Bug: ${bug.pageId.slice(0, 8)}`,
-        description: description || `Bug from Notion: ${bug.pageId}`,
-        targetRepo,
+        title: bug.title || `Bug: ${bug.id.slice(0, 8)}`,
+        description: description || `Bug from Notion: ${bug.id}`,
+        targetRepo: bug.targetRepo,
         source: {
           type: "direct",
-          sourceId: bug.pageId,
+          sourceId: bug.id,
         },
         priority: severityToPriority(bug.severity),
         riskLevel: "medium",
@@ -222,35 +258,55 @@ async function ingestTriagedBugs(): Promise<WorkItem[]> {
       });
 
       // createWorkItem sets status to "filed" — move to "ready"
-      const readyItem = await updateWorkItem(workItem.id, {
+      await updateWorkItem(workItem.id, {
         status: "ready",
         type: "bugfix",
       });
 
+      // Update Notion bug page with work item ID + status
       try {
-        await updateBugWorkItemId(bug.pageId, workItem.id);
-        await updateBugStatus(bug.pageId, "In Progress");
+        await updateBugPage(bug.id, workItem.id);
       } catch (notionErr) {
         console.error(
-          `[dispatcher] Created work item ${workItem.id} but failed to update Notion bug ${bug.pageId}:`,
+          `[dispatcher] Created work item ${workItem.id} but failed to update Notion bug ${bug.id}:`,
           notionErr,
         );
       }
 
-      newWorkItems.push(readyItem ?? workItem);
+      // Track concurrency
+      concurrencyMap.set(repoKey, repoActive + 1);
+      activeExecutions.push({
+        workItemId: workItem.id,
+        targetRepo: bug.targetRepo,
+        branch: "",
+        status: "ready",
+        startedAt: new Date().toISOString(),
+        elapsedMinutes: 0,
+        filesBeingModified: bug.affectedFiles,
+      });
+      slotsRemaining.count--;
+
+      ctx.events.push(
+        makeEvent(
+          "auto_dispatch",
+          workItem.id,
+          "filed",
+          "ready",
+          `Bug ingested from Notion: ${bug.title} (${bug.severity})`,
+          { priority: workItem.priority, rank: 1 },
+        ),
+      );
+
       console.log(
-        `[dispatcher] Created work item ${workItem.id} for bug ${bug.pageId} (${bug.severity})`,
+        `[dispatcher] Created work item ${workItem.id} for bug ${bug.id} (${bug.severity})`,
       );
     } catch (err) {
       console.error(
-        `[dispatcher] Failed to create work item for bug ${bug.pageId}:`,
+        `[dispatcher] Failed to create work item for bug ${bug.id}:`,
         err,
       );
-      // Continue processing remaining bugs
     }
   }
-
-  return newWorkItems;
 }
 
 /**
@@ -264,15 +320,7 @@ async function ingestTriagedBugs(): Promise<WorkItem[]> {
 export async function runDispatcher(ctx: CycleContext): Promise<ATCState["activeExecutions"]> {
   const { now, events } = ctx;
 
-  // === NOTION BUG INGESTION ===
-  // Ingest triaged bugs before checking for ready items, since ingestion
-  // creates new ready items that should be included in this dispatch cycle.
-  const bugItems = await ingestTriagedBugs();
-  if (bugItems.length > 0) {
-    console.log(`[dispatcher] Ingested ${bugItems.length} bug(s) from Notion`);
-  }
-
-  // === EARLY EXIT: no ready items ===
+  // === EARLY EXIT: no ready items and no triaged bugs ===
   const readyEntries = await listWorkItems({ status: "ready" });
   if (readyEntries.length === 0) {
     console.log("[Dispatcher] No ready items — skipping cycle");
@@ -423,6 +471,11 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
   ).length;
 
   let slotsRemaining = GLOBAL_CONCURRENCY_LIMIT - totalActive;
+
+  // --- Critical bugs BEFORE PRD work items ---
+  const slotsObj = { count: slotsRemaining };
+  await dispatchTriagedBugs(ctx, slotsObj, concurrencyMap, activeExecutions, ["Critical"]);
+  slotsRemaining = slotsObj.count;
 
   if (totalActive < GLOBAL_CONCURRENCY_LIMIT) {
     for (const repoEntry of repoIndex) {
@@ -600,6 +653,11 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
       `[dispatcher] Global concurrency limit reached (${totalActive}/${GLOBAL_CONCURRENCY_LIMIT}), skipping dispatch`
     );
   }
+
+  // --- High/Medium/Low bugs AFTER PRD work items ---
+  slotsObj.count = slotsRemaining;
+  await dispatchTriagedBugs(ctx, slotsObj, concurrencyMap, activeExecutions, ["High", "Medium", "Low"]);
+  slotsRemaining = slotsObj.count;
 
   addPhase(trace, { name: 'dispatch', durationMs: Date.now() - phaseStart, decisions: trace.decisions.length });
 
