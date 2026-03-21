@@ -8,24 +8,11 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// In-memory storage mock
-const store = new Map<string, string>();
+// Mock work-items with in-memory implementation (replaces Postgres dependency)
+vi.mock("@/lib/work-items", async () => import("./helpers/mock-work-items"));
 
-vi.mock("@/lib/storage", () => ({
-  loadJson: async <T>(key: string): Promise<T | null> => {
-    const raw = store.get(key);
-    if (!raw) return null;
-    return JSON.parse(raw) as T;
-  },
-  saveJson: async <T>(key: string, data: T): Promise<void> => {
-    store.set(key, JSON.stringify(data));
-  },
-  deleteJson: async (key: string): Promise<void> => {
-    store.delete(key);
-  },
-}));
-
-import { createWorkItem, updateWorkItem, getWorkItem } from "@/lib/work-items";
+import { createWorkItem, updateWorkItem } from "@/lib/work-items";
+import { resetStore } from "./helpers/mock-work-items";
 
 function makeItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -43,9 +30,7 @@ function makeItem(overrides: Record<string, unknown> = {}) {
 
 describe("updateWorkItem — terminal status guards", () => {
   beforeEach(() => {
-    store.clear();
-    // Initialize the index as empty array
-    store.set("work-items/index", JSON.stringify([]));
+    resetStore();
   });
 
   it("blocks transition from cancelled → failed", async () => {

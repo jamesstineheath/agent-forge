@@ -11,7 +11,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// In-memory storage mock — replaces lib/storage.ts so no disk/blob I/O occurs
+// In-memory storage mock — for escalation records (still blob-based)
 const store = new Map<string, string>();
 
 vi.mock("@/lib/storage", () => ({
@@ -27,6 +27,9 @@ vi.mock("@/lib/storage", () => ({
     store.delete(key);
   },
 }));
+
+// Mock work-items with in-memory implementation (replaces Postgres dependency)
+vi.mock("@/lib/work-items", async () => import("./helpers/mock-work-items"));
 
 // Mock gmail to avoid real email sends
 vi.mock("@/lib/gmail", () => ({
@@ -47,6 +50,7 @@ import {
   updateWorkItem,
   getNextDispatchable,
 } from "@/lib/work-items";
+import { resetStore as resetWorkItemStore } from "./helpers/mock-work-items";
 import { checkDailyCap, incrementDailyCount } from "@/lib/daily-cap";
 import { handleCreateFastLaneItem } from "@/lib/mcp-tools";
 import { escalateFastLaneItem } from "@/lib/escalation";
@@ -85,6 +89,7 @@ async function createDirectItem(overrides: {
 
 beforeEach(() => {
   store.clear();
+  resetWorkItemStore();
 });
 
 // ---------------------------------------------------------------------------

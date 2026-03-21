@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// In-memory storage mock
+// In-memory storage mock — for escalation records (still blob-based)
 const store = new Map<string, string>();
 
 vi.mock("@/lib/storage", () => ({
@@ -23,6 +23,9 @@ vi.mock("@/lib/storage", () => ({
     store.delete(key);
   },
 }));
+
+// Mock work-items with in-memory implementation (replaces Postgres dependency)
+vi.mock("@/lib/work-items", async () => import("./helpers/mock-work-items"));
 
 // Mock gmail to avoid real email sends
 vi.mock("@/lib/gmail", async (importOriginal) => {
@@ -40,10 +43,12 @@ import {
   sendProjectEscalationEmail,
 } from "@/lib/gmail";
 import { escalate, findPendingProjectEscalation, listEscalations } from "@/lib/escalation";
+import { resetStore as resetWorkItemStore } from "./helpers/mock-work-items";
 
 describe("Escalation email dedup", () => {
   beforeEach(() => {
     store.clear();
+    resetWorkItemStore();
   });
 
   it("returns false when no prior email exists", async () => {
@@ -96,6 +101,7 @@ describe("Escalation email dedup", () => {
 describe("Escalation rate limiter", () => {
   beforeEach(() => {
     store.clear();
+    resetWorkItemStore();
   });
 
   it("returns false for a fresh project", async () => {
@@ -168,6 +174,7 @@ describe("Escalation rate limiter", () => {
 describe("Project escalation records", () => {
   beforeEach(() => {
     store.clear();
+    resetWorkItemStore();
   });
 
   it("creates a project escalation record with projectId", async () => {
