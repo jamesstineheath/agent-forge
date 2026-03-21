@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { appendEvents } from "@/lib/event-bus";
 import { reactToEvents } from "@/lib/event-reactor";
 import type { WebhookEvent, GitHubEventType, WebhookEventPayload } from "@/lib/event-bus-types";
+import { fileSpikeWorkItem } from "@/lib/spike-filing";
 
 /**
  * Verify GitHub webhook signature using HMAC-SHA256.
@@ -54,6 +55,109 @@ function isApprovalComment(body: string): boolean {
   return APPROVAL_PATTERNS.some((p) => p.test(body.trim()));
 }
 
+// --- Spike approval detection helpers ---
+
+const SPIKE_RECOMMENDATION_MARKER = "<!-- spike-recommendation -->";
+
+const SPIKE_APPROVAL_KEYWORDS = ["approve spike", "yes", "go ahead", "+1"];
+
+function isSpikeApprovalComment(body: string): boolean {
+  const lower = body.toLowerCase().trim();
+  return SPIKE_APPROVAL_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+function isSpikeRecommendationComment(body: string): boolean {
+  return body.includes(SPIKE_RECOMMENDATION_MARKER);
+}
+
+function parseSpikeRecommendation(
+  body: string
+): { technicalQuestion: string; scope: string } | null {
+  const tqMatch = body.match(/\*\*Technical Question:\*\*\s*(.+)/i);
+  const scopeMatch = body.match(/\*\*Scope:\*\*\s*(.+)/i);
+
+  if (!tqMatch || !scopeMatch) return null;
+
+  return {
+    technicalQuestion: tqMatch[1].trim(),
+    scope: scopeMatch[1].trim(),
+  };
+}
+
+async function handleSpikeApproval(params: {
+  issueNumber: number;
+  repoFullName: string;
+  recommendationCommentBody: string;
+}): Promise<void> {
+  const { issueNumber, repoFullName, recommendationCommentBody } = params;
+
+  const parsed = parseSpikeRecommendation(recommendationCommentBody);
+  if (!parsed) {
+    console.warn(
+      "[webhook] Could not parse spike recommendation comment, skipping filing"
+    );
+    return;
+  }
+
+  const parentPrdId = `gh-issue-${issueNumber}`;
+
+  try {
+    const workItem = await fileSpikeWorkItem({
+      parentPrdId,
+      technicalQuestion: parsed.technicalQuestion,
+      scope: parsed.scope,
+      recommendedBy: "manual",
+      targetRepo: repoFullName,
+    });
+    console.log(
+      `[webhook] Spike work item filed: ${workItem.id} for issue #${issueNumber} in ${repoFullName}`
+    );
+  } catch (err) {
+    console.error("[webhook] Failed to file spike work item:", err);
+  }
+}
+
+/**
+ * Fetch issue/PR comments from GitHub API to find a spike recommendation.
+ * Uses raw fetch with GH_PAT (same pattern as lib/github.ts).
+ */
+async function findSpikeRecommendationInThread(
+  repoFullName: string,
+  issueNumber: number
+): Promise<string | null> {
+  const token = process.env.GH_PAT;
+  if (!token) return null;
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${repoFullName}/issues/${issueNumber}/comments?per_page=100`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      }
+    );
+
+    if (!res.ok) return null;
+
+    const comments = (await res.json()) as Array<{ body?: string }>;
+    const spikeComment = comments.find((c) =>
+      isSpikeRecommendationComment(c.body ?? "")
+    );
+    return spikeComment?.body ?? null;
+  } catch (err) {
+    console.error(
+      "[webhook] Error fetching issue comments for spike detection:",
+      err
+    );
+    return null;
+  }
+}
+
+// --- End spike helpers ---
+
 interface GitHubPayload {
   action?: string;
   pull_request?: {
@@ -89,10 +193,15 @@ interface GitHubPayload {
     body: string | null;
     user?: { login: string };
   };
+  reaction?: {
+    content: string;
+    user?: { login: string };
+  };
 }
 
 /**
  * Map a GitHub webhook event to our internal event type(s).
+ * This is a synchronous function — spike approval detection runs separately.
  */
 function mapToWebhookEvents(
   eventType: string,
@@ -223,7 +332,7 @@ function mapToWebhookEvents(
     }
 
     case "issue_comment": {
-      // issue_comment fires for both issues and PRs — only care about PR comments
+      // issue_comment fires for both issues and PRs — only care about PR comments for approval events
       if (!body.issue?.pull_request) break;
       if (body.action !== "created") break;
 
@@ -255,6 +364,67 @@ function mapToWebhookEvents(
   }
 
   return events;
+}
+
+/**
+ * Detect and handle spike approval from issue_comment or reaction events.
+ * Runs asynchronously outside mapToWebhookEvents.
+ */
+async function detectSpikeApproval(
+  eventType: string,
+  body: GitHubPayload
+): Promise<void> {
+  // Path 1: Approval via reply comment with keywords
+  if (eventType === "issue_comment" && body.action === "created") {
+    const commenter = body.comment?.user;
+    const commentBody = body.comment?.body ?? "";
+
+    // Filter out bots
+    if (commenter?.type === "Bot") return;
+
+    const issueNumber = body.issue?.number;
+    const repoFullName = body.repository?.full_name;
+
+    if (issueNumber && repoFullName && isSpikeApprovalComment(commentBody)) {
+      const spikeCommentBody = await findSpikeRecommendationInThread(
+        repoFullName,
+        issueNumber
+      );
+      if (spikeCommentBody) {
+        await handleSpikeApproval({
+          issueNumber,
+          repoFullName,
+          recommendationCommentBody: spikeCommentBody,
+        });
+      }
+    }
+    return;
+  }
+
+  // Path 2: Reaction-based approval (thumbs_up or heart on spike recommendation comment)
+  // GitHub may send this as "issue_comment" with a reaction field, or as a dedicated event type
+  if (
+    (eventType === "issue_comment_reaction" || eventType === "issue_comment") &&
+    body.action === "created" &&
+    body.reaction &&
+    (body.reaction.content === "+1" || body.reaction.content === "heart")
+  ) {
+    const reactedCommentBody = body.comment?.body ?? "";
+    const issueNumber = body.issue?.number;
+    const repoFullName = body.repository?.full_name;
+
+    if (
+      isSpikeRecommendationComment(reactedCommentBody) &&
+      issueNumber &&
+      repoFullName
+    ) {
+      await handleSpikeApproval({
+        issueNumber,
+        repoFullName,
+        recommendationCommentBody: reactedCommentBody,
+      });
+    }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -307,6 +477,17 @@ export async function POST(req: NextRequest) {
       }
       // If waitUntil isn't available, the promise runs in the background.
       // The response returns immediately either way.
+    }
+
+    // Spike approval detection runs asynchronously — fire and forget
+    const spikePromise = detectSpikeApproval(eventType, body).catch((err) => {
+      console.error("[webhook] spike detection error (non-fatal):", err);
+    });
+
+    // @ts-expect-error — waitUntil is available in Vercel edge runtime but not in Next.js types
+    if (typeof globalThis.waitUntil === "function") {
+      // @ts-expect-error — see above
+      globalThis.waitUntil(spikePromise);
     }
 
     return NextResponse.json({ ok: true, events: events.length });

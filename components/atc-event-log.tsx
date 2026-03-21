@@ -34,6 +34,7 @@ const EVENT_COLORS: Record<ATCEvent["type"], string> = {
   wave_assigned: "bg-primary/10 text-primary",
   wave_dispatched: "bg-status-executing/10 text-status-executing",
   wave_completed: "bg-status-merged/10 text-status-merged",
+  spike_filed: "bg-primary/10 text-primary",
 };
 
 const ALL_TYPES = Object.keys(EVENT_COLORS) as ATCEvent["type"][];
