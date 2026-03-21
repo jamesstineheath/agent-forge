@@ -1,5 +1,6 @@
 import { loadJson, saveJson, deleteJson } from "./storage";
 import { getWorkItem, updateWorkItem, createWorkItem } from "./work-items";
+import type { SilentFailureEventType } from "./types";
 
 // --- Three-tier escalation routing types ---
 
@@ -40,6 +41,7 @@ export interface Escalation {
   resolution?: string; // Human-provided resolution or outcome
   threadId?: string; // For Gmail integration (Handoff 12)
   reminderSentAt?: string; // When reminder email was sent
+  silentFailureType?: SilentFailureEventType | string; // Structured silent failure type from event bus
 }
 
 const ESCALATIONS_INDEX_KEY = "escalations/index";
@@ -247,7 +249,8 @@ export async function escalate(
   reason: string,
   confidenceScore: number,
   contextSnapshot: Record<string, unknown>,
-  projectId?: string
+  projectId?: string,
+  silentFailureType?: SilentFailureEventType | string
 ): Promise<Escalation> {
   // Dedup check: skip creation if an active escalation already exists for this workItemId + reason
   const existing = await findActiveEscalation(workItemId, reason);
@@ -268,6 +271,7 @@ export async function escalate(
     contextSnapshot,
     status: "pending",
     createdAt: now,
+    ...(silentFailureType && { silentFailureType }),
   };
 
   // Save the escalation record (audit trail — always created regardless of tier)

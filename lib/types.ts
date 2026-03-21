@@ -307,6 +307,13 @@ export interface Project {
   createdAt: string;
 }
 
+// Known silent failure event types (mirrors event bus event types from PR #385)
+export type SilentFailureEventType =
+  | 'decomposer_empty_output'
+  | 'spec_review_stall'
+  | 'empty_context_guard'
+  | 'escalation_dedup';
+
 // --- ATC ---
 
 export interface ATCEvent {
