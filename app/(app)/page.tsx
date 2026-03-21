@@ -4,6 +4,7 @@ import { CheckCircle2, AlertTriangle, Play, Clock, XCircle, Inbox } from "lucide
 import { QuickStats } from "@/components/quick-stats";
 import { EscalationCard } from "@/components/escalation-card";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { BugSummary } from "@/components/bug-summary";
 
 import { ActivityFeed } from "@/components/activity-feed";
 import { WebhookEventFeed } from "@/components/webhook-event-feed";
@@ -12,6 +13,7 @@ import { ForceOpusToggle } from "@/app/components/force-opus-toggle";
 import {
   useWorkItems,
   useEscalations,
+  useBugs,
 } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
 import { dispatchSortComparator } from "@/lib/atc/sort";
@@ -34,6 +36,7 @@ export default function DashboardPage() {
     isLoading: escalationsLoading,
     mutate: mutateEscalations,
   } = useEscalations("pending");
+  const { bugs, isLoading: bugsLoading } = useBugs();
 
   const handleDismiss = async (escalationId: string) => {
     try {
@@ -148,6 +151,31 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+          </ErrorBoundary>
+
+          {/* Bugs */}
+          <ErrorBoundary section="Bugs">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Bugs
+              </h2>
+              {!bugsLoading && (
+                <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/15 text-[10px] font-bold tabular-nums text-primary">
+                  {bugs.filter(b => !["Fixed", "Won't Fix", "Wont Fix"].includes(b.status)).length}
+                </span>
+              )}
+            </div>
+            {bugsLoading ? (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[...Array(4)].map((_, i) => (
+                  <div key={i} className="rounded-xl card-elevated bg-surface-1 p-4 h-16 animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <BugSummary bugs={bugs} />
+            )}
+          </div>
           </ErrorBoundary>
 
           {/* Queue */}

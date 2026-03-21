@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode, Bug } from "@/lib/types";
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
@@ -317,6 +317,21 @@ export function useCostAnalytics(period: string = "30d") {
     { refreshInterval: 60000 }
   );
   return { data, error, isLoading, mutate };
+}
+
+// ── Bug Tracking ────────────────────────────────────────────────────────────
+
+export function useBugs() {
+  const { data, error, isLoading } = useSWR<{ bugs: Bug[] }>(
+    "/api/bugs",
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return {
+    bugs: data?.bugs ?? [],
+    isLoading,
+    error,
+  };
 }
 
 // ── Intent Criteria ──────────────────────────────────────────────────────────

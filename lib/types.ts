@@ -824,6 +824,19 @@ export interface ValidationResult {
   durationMs?: number;
 }
 
+// ── Bug Tracking (Dashboard) ─────────────────────────────────────────────────
+
+export interface Bug {
+  bug_id: string;
+  title: string;
+  status: string;
+  severity: string;
+  target_repo: string;
+  created_time: string;
+  work_item_id?: string;
+  fix_pr_url?: string;
+}
+
 // ── Episodes (time-travel debugging) ─────────────────────────────────────────
 
 export interface Episode {
