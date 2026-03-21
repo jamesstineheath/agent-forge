@@ -1,6 +1,6 @@
 "use client";
 
-import { useIntentCriteriaList, useProjects, useWorkItems } from "@/lib/hooks";
+import { useIntentCriteriaList, useWorkItems } from "@/lib/hooks";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -22,7 +22,6 @@ const repoColors: Record<string, string> = {
 
 export default function ProjectsPage() {
   const { data: criteria, isLoading, mutate } = useIntentCriteriaList();
-  const { data: projects } = useProjects();
   const { data: workItems } = useWorkItems();
   const [importing, setImporting] = useState(false);
 
@@ -33,6 +32,19 @@ export default function ProjectsPage() {
         (wi) => wi.source?.type === "project" && wi.source?.sourceId === entry.projectId
       ) ?? []
     );
+  };
+
+  /** Derive execution status from work item pipeline state */
+  const deriveStatus = (pWI: WorkItem[]): string => {
+    if (pWI.length === 0) return "No items";
+    const merged = pWI.filter((w) => w.status === "merged" || w.status === "verified").length;
+    const active = pWI.filter((w) => ["generating", "executing", "reviewing", "queued", "ready", "retrying"].includes(w.status)).length;
+    const failed = pWI.filter((w) => w.status === "failed" || w.status === "blocked" || w.status === "escalated").length;
+    if (merged === pWI.length) return "Complete";
+    if (active > 0) return "Executing";
+    if (failed > 0 && merged > 0) return "Partial";
+    if (failed > 0) return "Failed";
+    return "Queued";
   };
 
   const handleImportAll = async () => {
@@ -78,15 +90,13 @@ export default function ProjectsPage() {
             const progress = entry.criteriaCount > 0
               ? Math.round((entry.passedCount / entry.criteriaCount) * 100)
               : 0;
-            const project = projects?.find(
-              (p) => entry.projectId && p.projectId === entry.projectId
-            );
             const pWI = getProjectWorkItems(entry);
             const wiMerged = pWI.filter((w) => w.status === "merged" || w.status === "verified").length;
             const wiActive = pWI.filter((w) => ["generating", "executing", "reviewing", "queued", "ready", "retrying"].includes(w.status)).length;
             const wiFailed = pWI.filter((w) => w.status === "failed" || w.status === "blocked" || w.status === "escalated").length;
             const wiTotal = pWI.length;
             const wiProgress = wiTotal > 0 ? Math.round((wiMerged / wiTotal) * 100) : 0;
+            const derivedStatus = deriveStatus(pWI);
 
             return (
               <Link
@@ -110,13 +120,14 @@ export default function ProjectsPage() {
                           {entry.targetRepo}
                         </span>
                       )}
-                      {project?.status && (
-                        <span className="text-xs text-muted-foreground">
-                          {project.status}
-                        </span>
-                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {derivedStatus}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         Est. ${entry.totalEstimatedCost.toFixed(0)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {entry.criteriaCount} criteria
                       </span>
                     </div>
                   </div>

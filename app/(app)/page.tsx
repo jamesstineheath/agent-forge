@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, ArrowRight, AlertTriangle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Play, Clock, XCircle, Inbox } from "lucide-react";
 import { QuickStats } from "@/components/quick-stats";
-import { ProjectCard } from "@/components/project-card";
 import { EscalationCard } from "@/components/escalation-card";
 import { ErrorBoundary } from "@/components/error-boundary";
 
@@ -13,9 +11,6 @@ import { QADashboard } from "@/components/qa-dashboard";
 import { ForceOpusToggle } from "@/app/components/force-opus-toggle";
 import {
   useWorkItems,
-  useRepos,
-
-  useProjects,
   useEscalations,
 } from "@/lib/hooks";
 import type { WorkItem } from "@/lib/types";
@@ -34,42 +29,11 @@ function formatRelativeTime(ts?: string): string {
 
 export default function DashboardPage() {
   const { data: workItems, isLoading: itemsLoading } = useWorkItems();
-  const { data: repos, isLoading: reposLoading } = useRepos();
-
-  const { data: projects, isLoading: projectsLoading } = useProjects();
   const {
     data: escalations,
     isLoading: escalationsLoading,
     mutate: mutateEscalations,
   } = useEscalations("pending");
-
-  const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
-    new Set()
-  );
-  const [hideCompleteProjects, setHideCompleteProjects] = useState(true);
-  const [projectSearch, setProjectSearch] = useState("");
-
-  const toggleProject = (id: string) => {
-    setExpandedProjects((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  const getProjectWorkItems = (project: { projectId: string; targetRepo: string | null }): WorkItem[] => {
-    return (
-      workItems?.filter(
-        (wi) =>
-          (wi.source?.type === "project" && wi.source?.sourceId === project.projectId) ||
-          (project.targetRepo && wi.targetRepo === `jamesstineheath/${project.targetRepo}`)
-      ) ?? []
-    );
-  };
 
   const handleDismiss = async (escalationId: string) => {
     try {
@@ -88,9 +52,19 @@ export default function DashboardPage() {
     .slice()
     .sort(dispatchSortComparator);
 
+  // Work item summary counts
+  const allItems = workItems ?? [];
+  const activeCount = allItems.filter((wi) =>
+    wi.status === "executing" || wi.status === "reviewing"
+  ).length;
+  const queuedCount = allItems.filter((wi) =>
+    wi.status === "ready" || wi.status === "filed"
+  ).length;
+  const failedCount = allItems.filter((wi) => wi.status === "failed").length;
+
   const now = new Date();
   const mergedToday =
-    workItems?.filter((wi) => {
+    allItems.filter((wi) => {
       if (wi.status !== "merged") return false;
       const ts = wi.execution?.completedAt ?? wi.updatedAt;
       const completed = new Date(ts);
@@ -99,7 +73,13 @@ export default function DashboardPage() {
         completed.getUTCMonth() === now.getUTCMonth() &&
         completed.getUTCDate() === now.getUTCDate()
       );
-    }) ?? [];
+    });
+
+  const mergedLast24h = allItems.filter((wi) => {
+    if (wi.status !== "merged") return false;
+    const ts = wi.execution?.completedAt ?? wi.updatedAt;
+    return Date.now() - new Date(ts).getTime() < 24 * 60 * 60 * 1000;
+  }).length;
 
   return (
     <>
@@ -121,7 +101,52 @@ export default function DashboardPage() {
           {itemsLoading ? (
             <div className="text-sm text-muted-foreground">Loading stats...</div>
           ) : (
-            <QuickStats workItems={workItems ?? []} />
+            <QuickStats workItems={allItems} />
+          )}
+          </ErrorBoundary>
+
+          {/* Work Item Summary */}
+          <ErrorBoundary section="Work Items Summary">
+          {!itemsLoading && (
+            <div className="space-y-3">
+              <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Work Items
+              </h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-xl card-elevated bg-surface-1 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Play size={14} className="text-blue-500" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Active</span>
+                  </div>
+                  <span className="text-2xl font-bold tabular-nums text-foreground">{activeCount}</span>
+                  <p className="text-[10px] text-muted-foreground/60">executing + reviewing</p>
+                </div>
+                <div className="rounded-xl card-elevated bg-surface-1 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Inbox size={14} className="text-amber-500" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Queued</span>
+                  </div>
+                  <span className="text-2xl font-bold tabular-nums text-foreground">{queuedCount}</span>
+                  <p className="text-[10px] text-muted-foreground/60">ready + filed</p>
+                </div>
+                <div className="rounded-xl card-elevated bg-surface-1 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <CheckCircle2 size={14} className="text-green-500" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Merged</span>
+                  </div>
+                  <span className="text-2xl font-bold tabular-nums text-foreground">{mergedLast24h}</span>
+                  <p className="text-[10px] text-muted-foreground/60">last 24h</p>
+                </div>
+                <div className="rounded-xl card-elevated bg-surface-1 p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <XCircle size={14} className="text-red-500" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">Failed</span>
+                  </div>
+                  <span className="text-2xl font-bold tabular-nums text-foreground">{failedCount}</span>
+                  <p className="text-[10px] text-muted-foreground/60">needs attention</p>
+                </div>
+              </div>
+            </div>
           )}
           </ErrorBoundary>
 
@@ -183,7 +208,7 @@ export default function DashboardPage() {
               </div>
               <div className="space-y-2">
                 {escalations.map((esc) => {
-                  const workItem = workItems?.find(
+                  const workItem = allItems.find(
                     (wi) => wi.id === esc.workItemId
                   );
                   return (
@@ -199,63 +224,6 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          </ErrorBoundary>
-
-          {/* Projects */}
-          <ErrorBoundary section="Projects">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <h2 className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                  Projects
-                </h2>
-                <button
-                  onClick={() => setHideCompleteProjects(!hideCompleteProjects)}
-                  className="text-[10px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-                >
-                  {hideCompleteProjects ? "Show complete" : "Hide complete"}
-                </button>
-              </div>
-              <button className="text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1 font-medium">
-                New work item <ArrowRight size={12} />
-              </button>
-            </div>
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={projectSearch}
-              onChange={(e) => setProjectSearch(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            {projectsLoading ? (
-              <div className="text-sm text-muted-foreground">Loading projects...</div>
-            ) : !projects || projects.length === 0 ? (
-              <div className="rounded-xl card-elevated bg-surface-1 p-8 text-center">
-                <p className="text-sm text-muted-foreground">
-                  No projects found. Projects are managed in Notion.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {projects.filter((p) => {
-                  if (hideCompleteProjects && p.status === "Complete") return false;
-                  if (projectSearch) {
-                    const q = projectSearch.toLowerCase();
-                    return p.title.toLowerCase().includes(q) || p.projectId.toLowerCase().includes(q) || (p.targetRepo?.toLowerCase().includes(q) ?? false);
-                  }
-                  return true;
-                }).map((project) => (
-                  <ProjectCard
-                    key={project.id}
-                    project={project}
-                    workItems={getProjectWorkItems(project)}
-                    expanded={expandedProjects.has(project.id)}
-                    onToggle={() => toggleProject(project.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
           </ErrorBoundary>
 
           {/* Config / Kill Switches */}

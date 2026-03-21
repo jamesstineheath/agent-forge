@@ -642,75 +642,12 @@ export async function runBranchCleanup(): Promise<SupervisorPhaseOutput> {
 
 /**
  * §9.5: Work item blob-index reconciliation.
+ * No-op after Neon Postgres migration — Postgres is the single source of truth,
+ * so there's no index/blob drift to reconcile.
  */
 export async function runBlobReconciliation(): Promise<SupervisorPhaseOutput> {
   const out = emptyOutput();
-  const now = new Date();
-  const RECONCILIATION_KEY = "atc/last-reconciliation";
-
-  try {
-    const reconLast = await loadJson<{ lastRunAt: string }>(RECONCILIATION_KEY);
-    const reconElapsed = reconLast
-      ? (now.getTime() - new Date(reconLast.lastRunAt).getTime()) / 60_000
-      : Infinity;
-
-    if (reconElapsed >= 60) {
-      if (process.env.BLOB_READ_WRITE_TOKEN) {
-        const { list } = await import("@vercel/blob");
-        const { blobs } = await list({ prefix: "af-data/work-items/", mode: "folded" });
-        const blobIds = new Set(
-          blobs
-            .map(b => b.pathname.replace("af-data/work-items/", "").replace(".json", ""))
-            .filter(id => id && id !== "index")
-        );
-
-        const indexEntries = await listWorkItems({});
-        const indexIds = new Set(indexEntries.map(e => e.id));
-
-        if (indexEntries.length === 0 && blobs.length > 0) {
-          console.warn(`[supervisor] Reconciliation safety: index is empty but ${blobs.length} blob(s) exist. Skipping to prevent data loss.`);
-          await saveJson(RECONCILIATION_KEY, { lastRunAt: now.toISOString() });
-        } else {
-          const danglingIds = [...blobIds].filter(id => id && !indexIds.has(id));
-          if (danglingIds.length > 0 && danglingIds.length > blobIds.size * 0.5) {
-            console.error(`[supervisor] Reconciliation safety: ${danglingIds.length}/${blobIds.size} blobs flagged as dangling (>50%). Refusing to delete. Likely index corruption.`);
-            out.errors.push(`Reconciliation: >50% blobs dangling, refusing to delete`);
-          } else if (danglingIds.length > 0) {
-            for (const id of danglingIds) {
-              await deleteJson(`work-items/${id}`);
-            }
-            const reconEvents = [makeEvent(
-              "cleanup", "system", undefined, undefined,
-              `Blob reconciliation: deleted ${danglingIds.length} dangling work-item blob(s)`
-            )];
-            await import("./events").then(m => m.persistEvents(reconEvents));
-            out.decisions.push(`Blob reconciliation: deleted ${danglingIds.length} dangling blob(s)`);
-          }
-
-          const staleIndexEntries = indexEntries.filter(e => !blobIds.has(e.id));
-          if (staleIndexEntries.length > 0 && staleIndexEntries.length < indexEntries.length) {
-            const cleanedIndex = indexEntries.filter(e => blobIds.has(e.id));
-            await saveJson("work-items/index", cleanedIndex);
-            const reconEvents = [makeEvent(
-              "cleanup", "system", undefined, undefined,
-              `Index reconciliation: removed ${staleIndexEntries.length} stale index entries`
-            )];
-            await import("./events").then(m => m.persistEvents(reconEvents));
-            out.decisions.push(`Index reconciliation: removed ${staleIndexEntries.length} stale entries`);
-          } else if (staleIndexEntries.length === indexEntries.length && indexEntries.length > 0) {
-            console.error(`[supervisor] Reconciliation safety: ALL ${indexEntries.length} index entries are stale. Refusing to wipe index.`);
-            out.errors.push(`Reconciliation: all index entries stale, refusing to wipe`);
-          }
-        }
-      }
-
-      await saveJson(RECONCILIATION_KEY, { lastRunAt: now.toISOString() });
-    }
-  } catch (err) {
-    console.error("[supervisor] Blob-index reconciliation failed:", err);
-    out.errors.push(`Blob reconciliation: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
+  out.decisions.push("Blob reconciliation: skipped (work items now in Postgres)");
   return out;
 }
 

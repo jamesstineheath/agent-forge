@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
-import { loadJson, saveJson, deleteJson } from "./storage";
+import { eq, and, inArray, sql } from "drizzle-orm";
+import { db } from "./db";
+import { workItems } from "./db/schema";
 import type {
   WorkItem,
   WorkItemIndexEntry,
@@ -8,95 +10,22 @@ import type {
 } from "./types";
 import { FAST_LANE_BUDGET_SIMPLE, FAST_LANE_BUDGET_MODERATE } from "./types";
 
-const INDEX_KEY = "work-items/index";
-
 /**
  * Terminal statuses that should not be transitioned back to non-terminal states.
  * Prevents the lost-update bug where ATC health monitor overwrites MCP status changes.
- * See ADR: work item store race condition fix.
  */
-const TERMINAL_STATUSES = new Set<string>(['cancelled', 'merged', 'obsolete']);
+const TERMINAL_STATUSES = new Set<string>(["cancelled", "merged", "obsolete"]);
 
 /**
  * Return the default budget for a given complexityHint.
  * Used during handoff generation when no explicit budget is provided.
  */
-export function getDefaultBudgetForHint(hint?: 'simple' | 'moderate'): number | undefined {
-  if (hint === 'simple') return FAST_LANE_BUDGET_SIMPLE;
-  if (hint === 'moderate') return FAST_LANE_BUDGET_MODERATE;
+export function getDefaultBudgetForHint(
+  hint?: "simple" | "moderate"
+): number | undefined {
+  if (hint === "simple") return FAST_LANE_BUDGET_SIMPLE;
+  if (hint === "moderate") return FAST_LANE_BUDGET_MODERATE;
   return undefined;
-}
-
-function itemKey(id: string): string {
-  return `work-items/${id}`;
-}
-
-async function loadIndex(): Promise<WorkItemIndexEntry[]> {
-  try {
-    const index = await loadJson<WorkItemIndexEntry[]>(INDEX_KEY, { required: true });
-    if (!index) {
-      console.log(`[work-items] Index returned null for key "${INDEX_KEY}" — treating as empty (valid for new deploys).`);
-      return [];
-    }
-    return index;
-  } catch (err) {
-    // Distinguish "file doesn't exist" from "load failed" — only treat missing as empty
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("Not Found") || msg.includes("404")) {
-      console.log(`[work-items] Index file not found — treating as empty (new deploy or deleted).`);
-      return [];
-    }
-    // For actual errors (network, corruption), rethrow so callers know the index is unreliable
-    console.error(`[work-items] Index load FAILED (not missing, actual error):`, err);
-    throw err;
-  }
-}
-
-async function saveIndex(index: WorkItemIndexEntry[]): Promise<void> {
-  await saveJson(INDEX_KEY, index);
-}
-
-export interface WorkItemFilters {
-  status?: WorkItem["status"];
-  targetRepo?: string;
-  priority?: WorkItem["priority"];
-}
-
-export async function listWorkItems(
-  filters?: WorkItemFilters
-): Promise<WorkItemIndexEntry[]> {
-  let index = await loadIndex();
-  if (filters?.status) {
-    index = index.filter((e) => e.status === filters.status);
-  }
-  if (filters?.targetRepo) {
-    const filterRepo = filters.targetRepo;
-    const filterShort = filterRepo.includes("/") ? filterRepo.split("/")[1] : filterRepo;
-    index = index.filter((e) => {
-      const entryShort = e.targetRepo.includes("/") ? e.targetRepo.split("/")[1] : e.targetRepo;
-      return e.targetRepo === filterRepo || entryShort === filterShort;
-    });
-  }
-  if (filters?.priority) {
-    index = index.filter((e) => e.priority === filters.priority);
-  }
-  return index;
-}
-
-/**
- * Load full WorkItem objects for all items matching filters.
- * More expensive than listWorkItems (reads each blob), so use sparingly.
- */
-export async function listWorkItemsFull(
-  filters?: WorkItemFilters
-): Promise<WorkItem[]> {
-  const index = await listWorkItems(filters);
-  const items = await Promise.all(index.map((e) => getWorkItem(e.id)));
-  return items.filter((i): i is WorkItem => i !== null);
-}
-
-export async function getWorkItem(id: string): Promise<WorkItem | null> {
-  return loadJson<WorkItem>(itemKey(id));
 }
 
 /**
@@ -108,46 +37,174 @@ function normalizeTargetRepo(repo: string): string {
   return `jamesstineheath/${repo}`;
 }
 
-export async function createWorkItem(data: CreateWorkItemInput): Promise<WorkItem> {
-  const now = new Date().toISOString();
-
-  const item: WorkItem = {
-    id: randomUUID(),
-    title: data.title,
-    description: data.description,
-    targetRepo: normalizeTargetRepo(data.targetRepo),
-    source: data.source,
-    priority: data.priority,
-    riskLevel: data.riskLevel,
-    complexity: data.complexity,
-    status: "filed",
-    dependencies: data.dependencies,
-    triggeredBy: data.triggeredBy,
-    complexityHint: data.complexityHint,
-    expedite: data.expedite,
-    triagePriority: data.triagePriority,
-    rank: data.rank,
-    handoff: null,
-    execution: null,
-    createdAt: now,
-    updatedAt: now,
+/** Convert a database row to a WorkItem (maps snake_case columns to camelCase). */
+function rowToWorkItem(row: typeof workItems.$inferSelect): WorkItem {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    targetRepo: row.targetRepo,
+    status: row.status as WorkItem["status"],
+    priority: row.priority as WorkItem["priority"],
+    riskLevel: row.riskLevel as WorkItem["riskLevel"],
+    complexity: row.complexity as WorkItem["complexity"],
+    type: row.type as WorkItem["type"],
+    source: row.source as WorkItem["source"],
+    dependencies: (row.dependencies ?? []) as string[],
+    triggeredBy: row.triggeredBy ?? undefined,
+    complexityHint: row.complexityHint as WorkItem["complexityHint"],
+    expedite: row.expedite ?? undefined,
+    triagePriority: row.triagePriority as WorkItem["triagePriority"],
+    rank: row.rank ?? undefined,
+    handoff: (row.handoff ?? null) as WorkItem["handoff"],
+    execution: (row.execution ?? null) as WorkItem["execution"],
+    retryBudget: row.retryBudget ?? undefined,
+    blockedReason: row.blockedReason as WorkItem["blockedReason"],
+    escalation: (row.escalation ?? undefined) as WorkItem["escalation"],
+    failureCategory: row.failureCategory as WorkItem["failureCategory"],
+    attribution: (row.attribution ?? undefined) as WorkItem["attribution"],
+    reasoningMetrics: (row.reasoningMetrics ??
+      undefined) as WorkItem["reasoningMetrics"],
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
+}
 
-  await saveJson(itemKey(item.id), item);
+/** Convert a database row to a WorkItemIndexEntry. */
+function rowToIndexEntry(
+  row: typeof workItems.$inferSelect
+): WorkItemIndexEntry {
+  return {
+    id: row.id,
+    title: row.title,
+    targetRepo: row.targetRepo,
+    status: row.status as WorkItem["status"],
+    priority: row.priority as WorkItem["priority"],
+    updatedAt: row.updatedAt.toISOString(),
+    source: row.source as WorkItem["source"],
+  };
+}
 
-  const index = await loadIndex();
-  index.push({
-    id: item.id,
-    title: item.title,
-    targetRepo: item.targetRepo,
-    status: item.status,
-    priority: item.priority,
-    updatedAt: item.updatedAt,
-    source: item.source,
-  });
-  await saveIndex(index);
+export interface WorkItemFilters {
+  status?: WorkItem["status"];
+  targetRepo?: string;
+  priority?: WorkItem["priority"];
+}
 
-  return item;
+/**
+ * Build WHERE conditions from filters.
+ * targetRepo matching: supports both short ("personal-assistant") and
+ * full ("jamesstineheath/personal-assistant") formats by matching on the
+ * short name portion.
+ */
+function buildWhereConditions(filters?: WorkItemFilters) {
+  const conditions = [];
+  if (filters?.status) {
+    conditions.push(eq(workItems.status, filters.status));
+  }
+  if (filters?.targetRepo) {
+    const filterRepo = filters.targetRepo;
+    const filterShort = filterRepo.includes("/")
+      ? filterRepo.split("/")[1]
+      : filterRepo;
+    // Match full repo name OR short name suffix
+    conditions.push(
+      sql`(${workItems.targetRepo} = ${filterRepo} OR ${workItems.targetRepo} LIKE ${"%" + filterShort})`
+    );
+  }
+  if (filters?.priority) {
+    conditions.push(eq(workItems.priority, filters.priority));
+  }
+  return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+export async function listWorkItems(
+  filters?: WorkItemFilters
+): Promise<WorkItemIndexEntry[]> {
+  const where = buildWhereConditions(filters);
+  const rows = await db
+    .select({
+      id: workItems.id,
+      title: workItems.title,
+      targetRepo: workItems.targetRepo,
+      status: workItems.status,
+      priority: workItems.priority,
+      updatedAt: workItems.updatedAt,
+      source: workItems.source,
+    })
+    .from(workItems)
+    .where(where);
+
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    targetRepo: row.targetRepo,
+    status: row.status as WorkItem["status"],
+    priority: row.priority as WorkItem["priority"],
+    updatedAt: row.updatedAt.toISOString(),
+    source: row.source as WorkItem["source"],
+  }));
+}
+
+/**
+ * Load full WorkItem objects for all items matching filters.
+ * Single query — much faster than the old N+1 blob loading.
+ */
+export async function listWorkItemsFull(
+  filters?: WorkItemFilters
+): Promise<WorkItem[]> {
+  const where = buildWhereConditions(filters);
+  const rows = await db.select().from(workItems).where(where);
+  return rows.map(rowToWorkItem);
+}
+
+export async function getWorkItem(id: string): Promise<WorkItem | null> {
+  const rows = await db
+    .select()
+    .from(workItems)
+    .where(eq(workItems.id, id))
+    .limit(1);
+  if (rows.length === 0) return null;
+  return rowToWorkItem(rows[0]);
+}
+
+export async function createWorkItem(
+  data: CreateWorkItemInput
+): Promise<WorkItem> {
+  const now = new Date();
+  const id = randomUUID();
+
+  const rows = await db
+    .insert(workItems)
+    .values({
+      id,
+      title: data.title,
+      description: data.description,
+      targetRepo: normalizeTargetRepo(data.targetRepo),
+      source: data.source,
+      priority: data.priority,
+      riskLevel: data.riskLevel,
+      complexity: data.complexity,
+      status: "filed",
+      dependencies: data.dependencies,
+      triggeredBy: data.triggeredBy,
+      complexityHint: data.complexityHint,
+      expedite: data.expedite,
+      triagePriority: data.triagePriority,
+      rank: data.rank,
+      handoff: null,
+      execution: null,
+      prdId:
+        data.source.type === "project" &&
+        data.source.sourceId?.startsWith("PRD-")
+          ? data.source.sourceId
+          : null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  return rowToWorkItem(rows[0]);
 }
 
 export async function updateWorkItem(
@@ -158,67 +215,56 @@ export async function updateWorkItem(
   if (!existing) return null;
 
   // Guard: don't allow transitioning OUT of terminal states.
-  // This prevents ATC health monitor from overwriting MCP-driven status changes
-  // (e.g., an item marked 'cancelled' via MCP being reverted to 'failed' by
-  // the reconciliation loop reading stale index data).
-  // Exception: cancelled → ready is allowed for recovering wrongly-cancelled items
-  // (e.g., cascading auto-cancel from §4.1/§3.5 race, or manual recovery via MCP).
-  const isRecoveryTransition = existing.status === "cancelled" && patch.status === "ready";
+  // Exception: cancelled → ready is allowed for recovering wrongly-cancelled items.
+  const isRecoveryTransition =
+    existing.status === "cancelled" && patch.status === "ready";
   if (
     TERMINAL_STATUSES.has(existing.status) &&
     patch.status &&
     !TERMINAL_STATUSES.has(patch.status) &&
     !isRecoveryTransition
   ) {
-    console.warn('[work-items] blocked transition from terminal status', {
+    console.warn("[work-items] blocked transition from terminal status", {
       id,
       currentStatus: existing.status,
       attemptedStatus: patch.status,
     });
-    return existing; // return existing item without modification
+    return existing;
   }
 
-  const updated: WorkItem = {
-    ...existing,
-    ...patch,
-    id: existing.id,
-    createdAt: existing.createdAt,
-    updatedAt: new Date().toISOString(),
+  // Build the SET clause from the patch
+  const setCols: Record<string, unknown> = {
+    updatedAt: new Date(),
   };
+  if (patch.title !== undefined) setCols.title = patch.title;
+  if (patch.description !== undefined) setCols.description = patch.description;
+  if (patch.targetRepo !== undefined)
+    setCols.targetRepo = normalizeTargetRepo(patch.targetRepo);
+  if (patch.source !== undefined) setCols.source = patch.source;
+  if (patch.priority !== undefined) setCols.priority = patch.priority;
+  if (patch.riskLevel !== undefined) setCols.riskLevel = patch.riskLevel;
+  if (patch.complexity !== undefined) setCols.complexity = patch.complexity;
+  if (patch.type !== undefined) setCols.type = patch.type;
+  if (patch.status !== undefined) setCols.status = patch.status;
+  if (patch.dependencies !== undefined)
+    setCols.dependencies = patch.dependencies;
+  if (patch.handoff !== undefined) setCols.handoff = patch.handoff;
+  if (patch.execution !== undefined) setCols.execution = patch.execution;
+  if (patch.escalation !== undefined) setCols.escalation = patch.escalation;
+  if (patch.blockedReason !== undefined)
+    setCols.blockedReason = patch.blockedReason;
+  if (patch.failureCategory !== undefined)
+    setCols.failureCategory = patch.failureCategory;
+  if (patch.expedite !== undefined) setCols.expedite = patch.expedite;
 
-  // Write the individual item blob first (source of truth)
-  await saveJson(itemKey(id), updated);
+  const rows = await db
+    .update(workItems)
+    .set(setCols)
+    .where(eq(workItems.id, id))
+    .returning();
 
-  // Update the index blob — upsert to handle both existing and missing entries
-  const indexEntry: WorkItemIndexEntry = {
-    id: updated.id,
-    title: updated.title,
-    targetRepo: updated.targetRepo,
-    status: updated.status,
-    priority: updated.priority,
-    updatedAt: updated.updatedAt,
-    source: updated.source,
-  };
-  try {
-    const index = await loadIndex();
-    const idx = index.findIndex((e) => e.id === id);
-    if (idx !== -1) {
-      index[idx] = indexEntry;
-    } else {
-      // Item missing from index — add it rather than silently skipping
-      console.warn('[work-items] item missing from index during update, adding', { id });
-      index.push(indexEntry);
-    }
-    await saveIndex(index);
-  } catch (err) {
-    console.warn('[work-items] index write failed for item', {
-      id: updated.id,
-      newStatus: updated.status,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  return updated;
+  if (rows.length === 0) return null;
+  return rowToWorkItem(rows[0]);
 }
 
 const PRIORITY_ORDER: Record<WorkItem["priority"], number> = {
@@ -227,32 +273,34 @@ const PRIORITY_ORDER: Record<WorkItem["priority"], number> = {
   low: 2,
 };
 
-export async function getNextDispatchable(targetRepo: string): Promise<WorkItem | null> {
-  // Only 'ready' items are considered — escalated, blocked, parked, etc. are implicitly excluded
-  const entries = await listWorkItems({ status: "ready", targetRepo });
-  if (entries.length === 0) return null;
+/**
+ * Check whether all dependencies of an item are resolved (merged or cancelled).
+ */
+async function areDependenciesResolved(item: WorkItem): Promise<boolean> {
+  if (item.source.type === "direct") return true;
+  if (item.dependencies.length === 0) return true;
 
-  const items = await Promise.all(entries.map((e) => getWorkItem(e.id)));
-  const valid = items.filter((i): i is WorkItem => i !== null);
+  const depRows = await db
+    .select({ id: workItems.id, status: workItems.status })
+    .from(workItems)
+    .where(inArray(workItems.id, item.dependencies));
 
-  // Filter out items with unmet dependencies
+  // Every dependency must exist and be in a resolved state
+  if (depRows.length !== item.dependencies.length) return false;
+  return depRows.every(
+    (dep) => dep.status === "merged" || dep.status === "cancelled"
+  );
+}
+
+export async function getNextDispatchable(
+  targetRepo: string
+): Promise<WorkItem | null> {
+  const items = await listWorkItemsFull({ status: "ready", targetRepo });
+  if (items.length === 0) return null;
+
   const dispatchable: WorkItem[] = [];
-  for (const item of valid) {
-    // Direct items have no project and no dependencies — always dispatchable
-    if (item.source.type === 'direct') {
-      dispatchable.push(item);
-      continue;
-    }
-    if (item.dependencies.length === 0) {
-      dispatchable.push(item);
-      continue;
-    }
-    // Check all dependencies are resolved (merged or cancelled)
-    // Cancelled deps are treated as resolved: the work was either completed under
-    // a different item ID or is no longer needed — either way, the dependent item can proceed.
-    const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
-    const allResolved = depItems.every((dep) => dep !== null && (dep.status === "merged" || dep.status === "cancelled"));
-    if (allResolved) {
+  for (const item of items) {
+    if (await areDependenciesResolved(item)) {
       dispatchable.push(item);
     }
   }
@@ -262,58 +310,46 @@ export async function getNextDispatchable(targetRepo: string): Promise<WorkItem 
   dispatchable.sort((a, b) => {
     const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
     if (pd !== 0) return pd;
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    return (
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
   });
 
   return dispatchable[0] ?? null;
 }
 
-export async function getAllDispatchable(targetRepo: string): Promise<WorkItem[]> {
-  const entries = await listWorkItems({ status: "ready", targetRepo });
-  if (entries.length === 0) return [];
-
-  const items = await Promise.all(entries.map((e) => getWorkItem(e.id)));
-  const valid = items.filter((i): i is WorkItem => i !== null);
+export async function getAllDispatchable(
+  targetRepo: string
+): Promise<WorkItem[]> {
+  const items = await listWorkItemsFull({ status: "ready", targetRepo });
+  if (items.length === 0) return [];
 
   const dispatchable: WorkItem[] = [];
-  for (const item of valid) {
-    // Direct items have no project and no dependencies — always dispatchable
-    if (item.source.type === 'direct') {
-      dispatchable.push(item);
-      continue;
-    }
-    if (item.dependencies.length === 0) {
-      dispatchable.push(item);
-      continue;
-    }
-    const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
-    const allResolved = depItems.every((dep) => dep !== null && (dep.status === "merged" || dep.status === "cancelled"));
-    if (allResolved) {
+  for (const item of items) {
+    if (await areDependenciesResolved(item)) {
       dispatchable.push(item);
     }
   }
 
-  // Sort by priority then creation time
   dispatchable.sort((a, b) => {
     const pd = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
     if (pd !== 0) return pd;
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    return (
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
   });
 
   return dispatchable;
 }
 
-export async function getBlockedByDependencies(targetRepo: string): Promise<WorkItem[]> {
-  const entries = await listWorkItems({ status: "ready", targetRepo });
-  const items = await Promise.all(entries.map((e) => getWorkItem(e.id)));
-  const valid = items.filter((i): i is WorkItem => i !== null);
-
+export async function getBlockedByDependencies(
+  targetRepo: string
+): Promise<WorkItem[]> {
+  const items = await listWorkItemsFull({ status: "ready", targetRepo });
   const blocked: WorkItem[] = [];
-  for (const item of valid) {
+  for (const item of items) {
     if (item.dependencies.length === 0) continue;
-    const depItems = await Promise.all(item.dependencies.map((depId) => getWorkItem(depId)));
-    const allResolved = depItems.every((dep) => dep !== null && (dep.status === "merged" || dep.status === "cancelled"));
-    if (!allResolved) {
+    if (!(await areDependenciesResolved(item))) {
       blocked.push(item);
     }
   }
@@ -322,171 +358,107 @@ export async function getBlockedByDependencies(targetRepo: string): Promise<Work
 
 /**
  * Find a work item by its handoff branch name.
- * Scans active items (executing, reviewing, merged) to bridge the gap between
- * the execute-handoff workflow (which knows branch) and the work item store.
+ * Uses JSONB query — single indexed scan instead of N+1 blob loads.
  */
-export async function findWorkItemByBranch(branch: string): Promise<WorkItem | null> {
-  const activeStatuses: WorkItem["status"][] = ["executing", "reviewing", "retrying", "merged", "blocked"];
-  const index = await loadIndex();
-  const candidates = index.filter((e) => activeStatuses.includes(e.status));
+export async function findWorkItemByBranch(
+  branch: string
+): Promise<WorkItem | null> {
+  const activeStatuses = [
+    "executing",
+    "reviewing",
+    "retrying",
+    "merged",
+    "blocked",
+  ];
+  const rows = await db
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        inArray(workItems.status, activeStatuses),
+        sql`${workItems.handoff}->>'branch' = ${branch}`
+      )
+    )
+    .limit(1);
 
-  for (const entry of candidates) {
-    const item = await getWorkItem(entry.id);
-    if (item?.handoff?.branch === branch) return item;
-  }
-  return null;
+  if (rows.length === 0) return null;
+  return rowToWorkItem(rows[0]);
 }
 
 /**
  * Find a work item by its PR number and repo.
- * Scans active and failed items to match against execution.prNumber.
+ * Uses JSONB query — single scan instead of N+1 blob loads.
  */
-export async function findWorkItemByPR(repo: string, prNumber: number): Promise<WorkItem | null> {
-  const index = await loadIndex();
-  // Check items that could have a PR: executing, reviewing, retrying, merged, failed
-  const relevantStatuses: WorkItem["status"][] = ["executing", "reviewing", "retrying", "merged", "failed", "blocked"];
-  const candidates = index.filter((e) => relevantStatuses.includes(e.status));
+export async function findWorkItemByPR(
+  repo: string,
+  prNumber: number
+): Promise<WorkItem | null> {
+  const relevantStatuses = [
+    "executing",
+    "reviewing",
+    "retrying",
+    "merged",
+    "failed",
+    "blocked",
+  ];
+  const normalizedRepo = normalizeTargetRepo(repo);
+  const shortRepo = normalizedRepo.includes("/")
+    ? normalizedRepo.split("/")[1]
+    : normalizedRepo;
 
-  for (const entry of candidates) {
-    const item = await getWorkItem(entry.id);
-    if (item?.execution?.prNumber === prNumber) {
-      // Also verify repo matches (normalize both)
-      const itemRepo = normalizeTargetRepo(item.targetRepo);
-      const queryRepo = normalizeTargetRepo(repo);
-      if (itemRepo === queryRepo) return item;
-    }
-  }
-  return null;
+  const rows = await db
+    .select()
+    .from(workItems)
+    .where(
+      and(
+        inArray(workItems.status, relevantStatuses),
+        sql`(${workItems.execution}->>'prNumber')::int = ${prNumber}`,
+        sql`(${workItems.targetRepo} = ${normalizedRepo} OR ${workItems.targetRepo} LIKE ${"%" + shortRepo})`
+      )
+    )
+    .limit(1);
+
+  if (rows.length === 0) return null;
+  return rowToWorkItem(rows[0]);
 }
 
 export async function deleteWorkItem(id: string): Promise<boolean> {
-  const existing = await getWorkItem(id);
-  if (!existing) return false;
-
-  await deleteJson(itemKey(id));
-
-  const index = await loadIndex();
-  const filtered = index.filter((e) => e.id !== id);
-  await saveIndex(filtered);
-
-  return true;
+  const result = await db
+    .delete(workItems)
+    .where(eq(workItems.id, id))
+    .returning({ id: workItems.id });
+  return result.length > 0;
 }
 
 /**
- * Reconciles the work item index against individual item blobs.
- * Reads the individual blob for each item and repairs the index entry
- * if the status differs. Checks ALL items (including terminal states)
- * because MCP updates can change terminal status while the index is stale.
- * Returns a summary of repaired items.
+ * No-op: reconciliation is not needed with Postgres (single source of truth).
+ * Kept for API compatibility with callers (dispatcher, admin routes).
  */
 export async function reconcileWorkItemIndex(): Promise<{
   checked: number;
   repaired: number;
   repairedItems: Array<{ id: string; indexStatus: string; blobStatus: string }>;
 }> {
-  const index = await loadIndex();
-  const repairedItems: Array<{ id: string; indexStatus: string; blobStatus: string }> = [];
-  let needsSave = false;
-
-  for (let i = 0; i < index.length; i++) {
-    const entry = index[i];
-
-    try {
-      const blobItem = await getWorkItem(entry.id);
-      if (!blobItem) continue;
-
-      // Normalize targetRepo on both blob and index entry
-      const normalizedRepo = normalizeTargetRepo(blobItem.targetRepo);
-      const repoNeedsRepair = blobItem.targetRepo !== normalizedRepo || entry.targetRepo !== normalizedRepo;
-      const statusNeedsRepair = blobItem.status !== entry.status;
-
-      if (statusNeedsRepair || repoNeedsRepair) {
-        if (statusNeedsRepair) {
-          console.warn('[work-items] index/blob drift detected', {
-            id: entry.id,
-            indexStatus: entry.status,
-            blobStatus: blobItem.status,
-          });
-        }
-        if (repoNeedsRepair) {
-          console.warn('[work-items] targetRepo normalization repair', {
-            id: entry.id,
-            from: blobItem.targetRepo,
-            to: normalizedRepo,
-          });
-          // Also fix the blob itself
-          blobItem.targetRepo = normalizedRepo;
-          await saveJson(itemKey(entry.id), blobItem);
-        }
-        // Update the index entry to match the blob (source of truth)
-        index[i] = {
-          id: blobItem.id,
-          title: blobItem.title,
-          targetRepo: normalizedRepo,
-          status: blobItem.status,
-          priority: blobItem.priority,
-          updatedAt: blobItem.updatedAt,
-          source: blobItem.source,
-        };
-        repairedItems.push({
-          id: entry.id,
-          indexStatus: entry.status,
-          blobStatus: blobItem.status,
-        });
-        needsSave = true;
-      }
-    } catch (err) {
-      console.error('[work-items] reconcile error for item', entry.id, err);
-    }
-  }
-
-  if (needsSave) {
-    await saveIndex(index);
-  }
-
-  return { checked: index.length, repaired: repairedItems.length, repairedItems };
+  // With Postgres, there's no index/blob drift to reconcile.
+  // Count items for the "checked" field so callers see a reasonable value.
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(workItems);
+  const count = Number(result[0]?.count ?? 0);
+  return { checked: count, repaired: 0, repairedItems: [] };
 }
 
 /**
- * Rebuild the work items index by scanning all blobs in Vercel Blob storage.
- * Use this to recover from index deletion/corruption.
+ * No-op: no separate index to rebuild with Postgres.
+ * Kept for API compatibility with the rebuild-index admin route.
  */
-export async function rebuildIndex(): Promise<{ recovered: number; errors: number }> {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error("rebuildIndex requires BLOB_READ_WRITE_TOKEN (production only)");
-  }
-
-  const { list } = await import("@vercel/blob");
-  const { blobs } = await list({ prefix: "af-data/work-items/", mode: "folded" });
-
-  const recoveredEntries: WorkItemIndexEntry[] = [];
-  let errors = 0;
-
-  for (const blob of blobs) {
-    const id = blob.pathname.replace("af-data/work-items/", "").replace(".json", "");
-    if (!id || id === "index") continue;
-
-    try {
-      const item = await loadJson<WorkItem>(itemKey(id), { required: true });
-      if (item) {
-        recoveredEntries.push({
-          id: item.id,
-          title: item.title,
-          targetRepo: item.targetRepo,
-          status: item.status,
-          priority: item.priority,
-          updatedAt: item.updatedAt,
-          source: item.source,
-        });
-      }
-    } catch {
-      console.error(`[work-items] rebuildIndex: failed to load blob for id "${id}"`);
-      errors++;
-    }
-  }
-
-  await saveIndex(recoveredEntries);
-  console.log(`[work-items] rebuildIndex: recovered ${recoveredEntries.length} items, ${errors} errors`);
-
-  return { recovered: recoveredEntries.length, errors };
+export async function rebuildIndex(): Promise<{
+  recovered: number;
+  errors: number;
+}> {
+  const result = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(workItems);
+  const count = Number(result[0]?.count ?? 0);
+  return { recovered: count, errors: 0 };
 }
