@@ -86,6 +86,17 @@ If you use "request_changes", explain in the comment which hot patterns were mat
 - Check whether new utility functions, constants, or lookup structures (e.g. date formatting helpers, day/month name arrays, color mapping functions) duplicate or near-duplicate existing ones elsewhere in the codebase. If duplicates exist, flag them as candidates for consolidation.
 - Verify that the code in the PR branch is compatible with the *current* state of main's type definitions, not just the branch's own snapshot. If the PR imports shared types that may have changed on main (due to concurrent PRs or recent merges), note whether a rebase is needed to surface any type conflicts before merging.
 
+## Schema Migration Rule (MANDATORY)
+
+If the PR modifies `lib/db/schema.ts` (adding, removing, or renaming columns/tables), you MUST check for a corresponding migration. A valid migration is one of:
+- A new file matching `drizzle/*.sql` in the PR's changed files
+- A modification to `app/api/admin/migrate/route.ts` that applies the schema change
+
+If the PR modifies `lib/db/schema.ts` and does NOT include a migration file, use **request_changes** with this message:
+> "This PR modifies `lib/db/schema.ts` but does not include a database migration. Drizzle ORM generates SQL referencing ALL columns defined in the schema — if the schema defines columns that don't exist in the live Neon database, every query will fail at runtime. Please either: (a) generate a migration with `npx drizzle-kit generate` and include the resulting SQL file, or (b) update `app/api/admin/migrate/route.ts` to apply this schema change. See PRD-54 incident (PRs #422-#426) where missing migrations broke `/api/work-items` for hours."
+
+This rule takes precedence over other approval criteria. Do NOT approve or flag_for_human — always request_changes for schema modifications without migrations.
+
 ## Important Notes
 
 - Be concise. This is automated review, not a teaching moment.

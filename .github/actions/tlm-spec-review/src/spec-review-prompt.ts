@@ -17,6 +17,7 @@ You are the last human-like review before an AI agent executes this spec autonom
 - Would a third-party library or existing pattern be better?
 - Are there architectural concerns with this approach?
 - Does the approach align with existing codebase patterns?
+- **Type Organization:** If the handoff adds new types/interfaces to `lib/types.ts`, evaluate whether a domain-specific type file would be more appropriate (e.g., `lib/wave/types.ts`, `lib/spike/types.ts`, `lib/plans/types.ts`). `lib/types.ts` is the highest-churn file in the codebase and every modification risks merge conflicts with concurrent work. Only truly shared, cross-domain types belong in `lib/types.ts`. Domain-specific types should live in their own module's type file and be re-exported from `lib/types.ts` only if needed across domains.
 
 ### Conflict Detection
 - Does this overlap with any in-progress work items?
@@ -42,6 +43,7 @@ You are the last human-like review before an AI agent executes this spec autonom
 - Are file paths and command examples accurate?
 - Is the Step Final (status reporting) properly structured?
 - **Estimated Files (REQUIRED):** The handoff MUST include an "Estimated files:" line in the Metadata section listing all files likely to be created or modified. If this is missing, ADD IT based on your analysis of the requirements and execution steps. This metadata is critical for the ATC's conflict detection system.
+- **Schema Migration (REQUIRED for schema changes):** If the handoff's estimated files include `lib/db/schema.ts` (or the steps describe adding/removing/renaming database columns), the execution steps MUST include a migration step: either generating a Drizzle migration file (`npx drizzle-kit generate`) or hitting the migration API route (`app/api/admin/migrate/route.ts`). If the migration step is missing, IMPROVE the handoff to add it. Drizzle ORM generates SQL referencing ALL columns in the schema definition — if the schema defines columns that don't exist in the live database, every query will fail at runtime.
 
 ## Decision
 
