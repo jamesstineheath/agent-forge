@@ -114,7 +114,7 @@ export function registerPMTools(server: McpServer) {
     "get_project_status",
     "Get live execution status for a project. Shows work item progress, cost, merged/failed/executing counts.",
     {
-      project_id: z.string().describe("Project ID prefix to filter by (e.g., 'PRJ-43')"),
+      project_id: z.string().describe("Project ID prefix to filter by (e.g., 'PRD-43')"),
     },
     async (params) => {
       const allItems = await listWorkItems({});

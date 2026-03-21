@@ -41,7 +41,7 @@ export const MAX_RETRIES = 2;
 
 // Projects with human-authored plans that predate the PM quality gate.
 export const QUALITY_GATE_EXEMPT_PROJECTS = new Set([
-  "PRJ-9",  // PA Real Estate Agent v2 — human-authored plan
+  "PRD-9",  // PA Real Estate Agent v2 — human-authored plan
 ]);
 
 /**

@@ -22,6 +22,10 @@ const EVENT_LABELS: Record<string, string> = {
   project_trigger: "Project triggered",
   project_retry: "Project retried",
   dep_resolved: "Dependency resolved",
+  decomposer_empty_output: "Decomposer: Empty Output",
+  spec_review_stall: "Spec Review Stall",
+  empty_context_guard: "Empty Context Guard",
+  escalation_dedup: "Escalation Deduplicated",
 };
 
 function formatEventNarrative(event: ATCEvent): string {
@@ -48,6 +52,18 @@ function formatEventNarrative(event: ATCEvent): string {
   }
   if (event.type === "escalation") {
     return `\u{1F6A8} ${details}`;
+  }
+  if (event.type === "decomposer_empty_output") {
+    return `\u{1F6AB} Decomposer empty output \u2014 ${details}`;
+  }
+  if (event.type === "spec_review_stall") {
+    return `\u23F3 Spec review stall \u2014 ${details}`;
+  }
+  if (event.type === "empty_context_guard") {
+    return `\u{1F6E1}\uFE0F Empty context guard \u2014 ${details}`;
+  }
+  if (event.type === "escalation_dedup") {
+    return `\u{1F504} Escalation deduplicated \u2014 ${details}`;
   }
   return `${label}: ${details}`;
 }

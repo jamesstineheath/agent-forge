@@ -34,17 +34,32 @@ export default function ProjectsPage() {
     );
   };
 
-  /** Derive execution status from work item pipeline state */
-  const deriveStatus = (pWI: WorkItem[]): string => {
-    if (pWI.length === 0) return "No items";
-    const merged = pWI.filter((w) => w.status === "merged" || w.status === "verified").length;
-    const active = pWI.filter((w) => ["generating", "executing", "reviewing", "queued", "ready", "retrying"].includes(w.status)).length;
-    const failed = pWI.filter((w) => w.status === "failed" || w.status === "blocked" || w.status === "escalated").length;
-    if (merged === pWI.length) return "Complete";
-    if (active > 0) return "Executing";
-    if (failed > 0 && merged > 0) return "Partial";
-    if (failed > 0) return "Failed";
-    return "Queued";
+  /** Derive execution status from work item pipeline state, with PRD status as authoritative */
+  const deriveStatus = (pWI: WorkItem[], prdStatus?: string): string => {
+    // PRD status from Notion is authoritative for active statuses
+    const activePrdStatuses = new Set(["Partially Executed", "Approved", "Executing", "In Review"]);
+    const pipelineStatus = (() => {
+      if (pWI.length === 0) return "No items";
+      const merged = pWI.filter((w) => w.status === "merged" || w.status === "verified").length;
+      const active = pWI.filter((w) => ["generating", "executing", "reviewing", "queued", "ready", "retrying"].includes(w.status)).length;
+      const failed = pWI.filter((w) => w.status === "failed" || w.status === "blocked" || w.status === "escalated").length;
+      if (merged === pWI.length) return "Complete";
+      if (active > 0) return "Executing";
+      if (failed > 0 && merged > 0) return "Partial";
+      if (failed > 0) return "Failed";
+      return "Queued";
+    })();
+
+    // When pipeline says terminal but PRD says still active, PRD wins
+    if (prdStatus && activePrdStatuses.has(prdStatus) &&
+        (pipelineStatus === "Complete" || pipelineStatus === "No items")) {
+      return prdStatus;
+    }
+    // Use PRD status if available and pipeline has no items
+    if (prdStatus && pipelineStatus === "No items") {
+      return prdStatus;
+    }
+    return pipelineStatus;
   };
 
   const handleImportAll = async () => {
@@ -96,7 +111,7 @@ export default function ProjectsPage() {
             const wiFailed = pWI.filter((w) => w.status === "failed" || w.status === "blocked" || w.status === "escalated").length;
             const wiTotal = pWI.length;
             const wiProgress = wiTotal > 0 ? Math.round((wiMerged / wiTotal) * 100) : 0;
-            const derivedStatus = deriveStatus(pWI);
+            const derivedStatus = deriveStatus(pWI, entry.prdStatus);
 
             return (
               <Link

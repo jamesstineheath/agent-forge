@@ -16,6 +16,31 @@ function formatRelativeTime(ts: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** Detect silent failure type from escalation reason text */
+function getSilentFailureLabel(reason: string): string | null {
+  const lower = reason.toLowerCase();
+  if (lower.includes("0 work items") || lower.includes("empty output") || lower.includes("produced 0")) {
+    return "Decomposer: Empty Output";
+  }
+  if (lower.includes("spec review") && lower.includes("stall")) {
+    return "Spec Review Stall";
+  }
+  if (lower.includes("empty context") || lower.includes("repo context too short")) {
+    return "Empty Context Guard";
+  }
+  if (lower.includes("dedup") || lower.includes("duplicate escalation")) {
+    return "Escalation Deduplicated";
+  }
+  return null;
+}
+
+const SILENT_FAILURE_COLORS: Record<string, string> = {
+  "Decomposer: Empty Output": "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300",
+  "Spec Review Stall": "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300",
+  "Empty Context Guard": "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
+  "Escalation Deduplicated": "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+};
+
 function getActionLabel(reason: string): string {
   const lower = reason.toLowerCase();
   if (lower.includes("repo") && (lower.includes("register") || lower.includes("not found"))) {
@@ -86,6 +111,16 @@ export function EscalationCard({
                 {escalation.projectId}
               </span>
             )}
+            {(() => {
+              const silentLabel = getSilentFailureLabel(escalation.reason);
+              if (!silentLabel) return null;
+              const colorClass = SILENT_FAILURE_COLORS[silentLabel] || "bg-gray-100 text-gray-700";
+              return (
+                <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${colorClass}`}>
+                  {silentLabel}
+                </span>
+              );
+            })()}
             <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
               <Clock className="h-3 w-3" />
               {formatRelativeTime(escalation.createdAt)}

@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Find the project by projectId (e.g. "PRJ-1") or Notion page ID
+    // Find the project by projectId (e.g. "PRD-1") or Notion page ID
     const projects = await listProjects();
     const project = projects.find(
       (p) => p.projectId === projectId || p.id === projectId,

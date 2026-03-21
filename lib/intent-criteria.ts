@@ -222,6 +222,7 @@ interface PRDPageProperties {
   secondaryRepos?: string[];
   priority?: string;
   rank?: number;
+  prdStatus?: string;
   estimatedCost?: number;
   criteriaCount?: number;
   notionUrl: string;
@@ -246,6 +247,7 @@ function extractPRDProperties(page: { id: string; properties: Record<string, unk
       .filter(Boolean),
     priority: props["Priority"]?.select?.name || undefined,
     rank: props["Rank"]?.number ?? undefined,
+    prdStatus: props["Status"]?.select?.name || undefined,
     estimatedCost: props["Estimated Cost"]?.number ?? undefined,
     criteriaCount: props["Criteria Count"]?.number ?? undefined,
     notionUrl: `https://www.notion.so/${page.id.replace(/-/g, "")}`,
@@ -268,7 +270,7 @@ export async function listAllCriteria(): Promise<IntentCriteriaIndexEntry[]> {
 }
 
 /**
- * Find criteria sets by AF Project ID (e.g., "PRJ-43").
+ * Find criteria sets by AF Project ID (e.g., "PRD-43").
  * Returns all matching criteria sets (a project could have multiple PRDs).
  */
 export async function findCriteriaByProjectId(projectId: string): Promise<IntentCriteria[]> {
@@ -311,6 +313,7 @@ async function updateIndex(criteria: IntentCriteria): Promise<void> {
     prdTitle: criteria.prdTitle,
     projectId: criteria.projectId,
     targetRepo: criteria.targetRepo,
+    prdStatus: criteria.prdStatus,
     criteriaCount: criteria.criteria.length,
     passedCount: criteria.passedCount,
     failedCount: criteria.failedCount,
@@ -375,6 +378,7 @@ export async function importCriteriaFromNotion(prdPageId: string): Promise<Inten
     targetRepo: props.targetRepo,
     priority: props.priority,
     rank: props.rank,
+    prdStatus: props.prdStatus,
     criteria,
     importedAt: new Date().toISOString(),
     notionSyncedAt: new Date().toISOString(),

@@ -25,15 +25,15 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // 1. Find PRJ-9 via existing queryProjects
+    // 1. Find PRD-9 via existing queryProjects
     const allProjects = await queryProjects();
     const prj9 = allProjects.find(
-      (p) => p.projectId === "PRJ-9" || p.title.includes("Real Estate Agent v2")
+      (p) => p.projectId === "PRD-9" || p.title.includes("Real Estate Agent v2")
     );
 
     if (!prj9) {
       return NextResponse.json({
-        error: "PRJ-9 not found in Notion DB",
+        error: "PRD-9 not found in Notion DB",
         hint: "Check NOTION_PROJECTS_DB_ID env var",
         totalProjects: allProjects.length,
         projectIds: allProjects.map((p) => p.projectId),
@@ -68,8 +68,8 @@ export async function POST(request: NextRequest) {
         || "",
     }));
 
-    console.log("[recover-prj9] PRJ-9 page ID:", prj9.id);
-    console.log("[recover-prj9] PRJ-9 project ID:", prj9.projectId);
+    console.log("[recover-prj9] PRD-9 page ID:", prj9.id);
+    console.log("[recover-prj9] PRD-9 project ID:", prj9.projectId);
     console.log("[recover-prj9] Block count:", blocks.length);
     console.log("[recover-prj9] Blocks:", JSON.stringify(blockSummary, null, 2));
 
@@ -85,9 +85,9 @@ export async function POST(request: NextRequest) {
       const success = await updateProjectStatus(prj9.id, "Execute");
       resetPerformed = success;
       if (success) {
-        console.log("[recover-prj9] Reset PRJ-9 status to Execute");
+        console.log("[recover-prj9] Reset PRD-9 status to Execute");
       } else {
-        console.error("[recover-prj9] Failed to reset PRJ-9 status");
+        console.error("[recover-prj9] Failed to reset PRD-9 status");
       }
     }
 
@@ -103,10 +103,10 @@ export async function POST(request: NextRequest) {
       blockSummary,
       resetPerformed,
       message: resetPerformed
-        ? "PRJ-9 reset to Execute — ATC will re-decompose on next cycle"
+        ? "PRD-9 reset to Execute — ATC will re-decompose on next cycle"
         : hasContent
-          ? `PRJ-9 has ${blocks.length} blocks but status is "${currentStatus}" — no reset needed`
-          : "PRJ-9 plan page is empty — manual intervention required to add plan content",
+          ? `PRD-9 has ${blocks.length} blocks but status is "${currentStatus}" — no reset needed`
+          : "PRD-9 plan page is empty — manual intervention required to add plan content",
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
