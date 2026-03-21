@@ -98,7 +98,7 @@ async function getPipelineState(): Promise<{ inFlightCount: number; queueDepth: 
 // 0. Early-exit guard — skip LLM calls if there's nothing to act on
 // ─────────────────────────────────────────────────────────────────────────────
 
-const TERMINAL_PROJECT_STATES = ['Complete', 'Failed'] as const;
+const TERMINAL_PROJECT_STATES = ['Complete', 'Failed', 'Not Feasible'] as const;
 const TERMINAL_WORK_ITEM_STATES = ['cancelled', 'merged', 'obsolete'] as const;
 
 /**

@@ -12,7 +12,7 @@ function isTerminalState(status: string): status is TerminalState {
 export async function checkProjectCompletion(
   projectId: string,
   workItems: WorkItem[]
-): Promise<{ isTerminal: boolean; status: 'Complete' | 'Failed' | null; summary: string }> {
+): Promise<{ isTerminal: boolean; status: 'Complete' | 'Failed' | 'Not Feasible' | null; summary: string }> {
   const projectItems = workItems.filter(
     (item) => item.source.type === "project" && item.source.sourceId === projectId
   );
@@ -67,7 +67,7 @@ export async function checkProjectCompletion(
 
 export async function transitionProject(
   projectId: string,
-  status: 'Complete' | 'Failed',
+  status: 'Complete' | 'Failed' | 'Not Feasible',
   summary: string
 ): Promise<void> {
   await updateProjectStatus(projectId, status);
@@ -98,6 +98,12 @@ export async function transitionToFailed(
   project: Project,
 ): Promise<boolean> {
   return updateProjectStatus(project.id, "Failed");
+}
+
+export async function transitionToNotFeasible(
+  project: Project,
+): Promise<boolean> {
+  return updateProjectStatus(project.id, "Not Feasible");
 }
 
 function formatDuration(earliestCreated: string, latestUpdated: string): string {
@@ -150,7 +156,7 @@ function formatItemLine(item: WorkItem): string {
 
 export async function writeOutcomeSummary(
   projectId: string,
-  status: "Complete" | "Failed",
+  status: "Complete" | "Failed" | "Not Feasible",
 ): Promise<void> {
   // Find the project to get its Notion page ID
   const projects = await listProjects();
