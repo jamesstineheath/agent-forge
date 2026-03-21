@@ -9,6 +9,7 @@ import {
 import { createWorkItemSchema } from "@/lib/types";
 import type { WorkItem } from "@/lib/types";
 import { dispatchSortComparator } from "@/lib/atc/utils";
+import { writeBugRecord } from "@/lib/bugs";
 
 export async function GET(req: NextRequest) {
   const authError = await validateAuth(req, "WORK_ITEMS_API_KEY");
@@ -60,6 +61,14 @@ export async function POST(req: NextRequest) {
 
   try {
     const item = await createWorkItem(parsed.data);
+
+    // Fire-and-forget write-through to Notion Bugs DB for bugfix items
+    if (item.type === "bugfix") {
+      writeBugRecord(item).catch(() => {
+        // already logged inside writeBugRecord
+      });
+    }
+
     return NextResponse.json(item, { status: 201 });
   } catch {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

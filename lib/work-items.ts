@@ -192,6 +192,7 @@ export async function createWorkItem(
       expedite: data.expedite,
       triagePriority: data.triagePriority,
       rank: data.rank,
+      type: data.type,
       handoff: null,
       execution: null,
       prdId:

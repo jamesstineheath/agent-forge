@@ -112,6 +112,7 @@ export const createWorkItemSchema = z.object({
   priority: z.enum(["high", "medium", "low"]).default("medium"),
   riskLevel: z.enum(["low", "medium", "high"]).default("medium"),
   complexity: z.enum(["simple", "moderate", "complex"]).default("moderate"),
+  type: z.enum(["feature", "bugfix", "refactor", "test", "docs", "chore"]).optional(),
   dependencies: z.array(z.string()).default([]),
   triggeredBy: z.string().optional(),
   complexityHint: z.enum(["simple", "moderate"]).optional(),
