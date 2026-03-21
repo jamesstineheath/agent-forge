@@ -4,7 +4,7 @@ import { listProjects } from "@/lib/projects";
 import type { ProjectStatus } from "@/lib/types";
 
 const VALID_STATUSES: ProjectStatus[] = [
-  "Draft", "Ready", "Execute", "Executing", "Complete", "Failed",
+  "Draft", "Ready", "Execute", "Executing", "Complete", "Failed", "Not Feasible",
 ];
 
 export async function GET(request: Request) {
