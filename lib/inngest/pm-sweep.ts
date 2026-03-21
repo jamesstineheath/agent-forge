@@ -1,5 +1,6 @@
 import { inngest } from "./client";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
+import { writeExecutionLog } from "./execution-log";
 import { runPmSweep, type SupervisorPhaseOutput } from "@/lib/atc/supervisor";
 import { startTrace, addPhase, addError, completeTrace, persistTrace } from "@/lib/atc/tracing";
 
@@ -12,6 +13,16 @@ export const pmSweep = inngest.createFunction(
     ],
   },
   async ({ step }) => {
+    const startedAt = new Date().toISOString();
+    const startMs = Date.now();
+
+    try {
+      await writeExecutionLog({ functionId: 'pm-sweep', status: 'running', startedAt, completedAt: null, durationMs: null });
+    } catch (e) {
+      console.error('[pm-sweep] Failed to write running log:', e);
+    }
+
+    try {
     const preflight = await step.run("preflight", async () => {
       if (await isPipelineKilled()) {
         return { skipped: true, reason: "kill-switch" } as const;
@@ -38,6 +49,33 @@ export const pmSweep = inngest.createFunction(
       await persistTrace(trace);
     });
 
+    try {
+      await writeExecutionLog({
+        functionId: 'pm-sweep',
+        status: 'success',
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startMs,
+      });
+    } catch (e) {
+      console.error('[pm-sweep] Failed to write success log:', e);
+    }
+
     return { success: true, decisions: result.output.decisions.length };
+    } catch (err) {
+      try {
+        await writeExecutionLog({
+          functionId: 'pm-sweep',
+          status: 'error',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startMs,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch (logErr) {
+        console.error('[pm-sweep] Failed to write error log:', logErr);
+      }
+      throw err;
+    }
   },
 );

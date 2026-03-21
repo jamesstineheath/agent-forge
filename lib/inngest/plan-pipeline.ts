@@ -1,6 +1,7 @@
 import { inngest } from "./client";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
+import { writeExecutionLog } from "./execution-log";
 import { loadJson, saveJson } from "@/lib/storage";
 import { listWorkItems } from "@/lib/work-items";
 import { recordAgentRun } from "@/lib/atc/utils";
@@ -45,6 +46,15 @@ export const planPipeline = inngest.createFunction(
     ],
   },
   async ({ step }) => {
+    const startedAt = new Date().toISOString();
+    const startMs = Date.now();
+
+    try {
+      await writeExecutionLog({ functionId: 'plan-pipeline', status: 'running', startedAt, completedAt: null, durationMs: null });
+    } catch (e) {
+      console.error('[plan-pipeline] Failed to write running log:', e);
+    }
+
     // Step 1: Preflight — kill switch + lock
     const preflight = await step.run("preflight", async () => {
       if (await isPipelineKilled()) {
@@ -155,8 +165,33 @@ export const planPipeline = inngest.createFunction(
         return executionLog;
       });
 
+      try {
+        await writeExecutionLog({
+          functionId: 'plan-pipeline',
+          status: 'success',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startMs,
+        });
+      } catch (e) {
+        console.error('[plan-pipeline] Failed to write success log:', e);
+      }
+
       return { success: true, cycleId, phases: phaseResults.length };
     } catch (err) {
+      try {
+        await writeExecutionLog({
+          functionId: 'plan-pipeline',
+          status: 'error',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startMs,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch (logErr) {
+        console.error('[plan-pipeline] Failed to write error log:', logErr);
+      }
+
       // Ensure lock is released on error
       await step.run("release-lock-on-error", async () => {
         await releaseLock(SUPERVISOR_LOCK_KEY);
