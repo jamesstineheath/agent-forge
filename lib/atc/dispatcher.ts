@@ -7,6 +7,9 @@ import { GLOBAL_CONCURRENCY_LIMIT } from "./types";
 import { parseEstimatedFiles, hasFileOverlap, HIGH_CHURN_FILES, makeEvent, dispatchSortComparator } from "./utils";
 import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrace, cleanupOldTraces } from "./tracing";
 import { queryTriagedBugs, updateBugPage, type TriagedBug, type BugSeverity } from "../bugs";
+import { assignWavesSafe, type WaveSchedulerInput } from "../wave-scheduler";
+import { emitWaveAssigned, emitWaveDispatched } from "./events";
+import { createWaveFallbackEscalation } from "../escalation";
 
 /**
  * Dispatch items that were blocked on a dependency that just resolved.
@@ -310,6 +313,99 @@ async function dispatchTriagedBugs(
 }
 
 /**
+ * Dispatch a single work item with conflict detection. Returns 'dispatched', 'blocked', or 'failed'.
+ * Extracted so it can be called both sequentially (fallback) and concurrently (wave dispatch).
+ */
+async function dispatchSingleItem(
+  item: WorkItem,
+  repoFullName: string,
+  allCandidates: WorkItem[],
+  trace: ReturnType<typeof startTrace>,
+  events: ATCState["recentEvents"],
+  now: Date,
+  activeExecutions: ATCState["activeExecutions"],
+): Promise<'dispatched' | 'blocked' | 'failed'> {
+  const itemFiles = item.handoff?.content ? parseEstimatedFiles(item.handoff.content) : [];
+  const repoActiveExecs = activeExecutions.filter((e) => e.targetRepo === repoFullName);
+  const conflicting = repoActiveExecs.find((e) => hasFileOverlap(itemFiles, e.filesBeingModified));
+  if (conflicting) {
+    addDecision(trace, { workItemId: item.id, action: 'blocked', reason: `file overlap with ${conflicting.workItemId}` });
+    events.push(
+      makeEvent(
+        "conflict",
+        item.id,
+        undefined,
+        undefined,
+        `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repoFullName}`
+      )
+    );
+    return 'blocked';
+  }
+
+  const itemHighChurn = itemFiles.filter((f) => HIGH_CHURN_FILES.has(f));
+  if (itemHighChurn.length > 0) {
+    const highChurnConflict = activeExecutions.find((e) =>
+      e.filesBeingModified.some((f) => itemHighChurn.includes(f))
+    );
+    if (highChurnConflict) {
+      addDecision(trace, { workItemId: item.id, action: 'blocked', reason: `high-churn file overlap with ${highChurnConflict.workItemId}` });
+      events.push(
+        makeEvent(
+          "conflict",
+          item.id,
+          undefined,
+          undefined,
+          `Dispatch blocked: high-churn file(s) [${itemHighChurn.join(", ")}] overlap with active item ${highChurnConflict.workItemId}`
+        )
+      );
+      return 'blocked';
+    }
+  }
+
+  try {
+    const result = await dispatchWorkItem(item.id);
+    const rank = allCandidates.indexOf(item) + 1;
+    const prioritySkipped = computePrioritySkipped(item, allCandidates.filter((c) => c.id !== item.id));
+    addDecision(trace, { workItemId: item.id, action: 'dispatched', reason: `dispatched to ${repoFullName} (branch: ${result.branch})` });
+    events.push(
+      makeEvent(
+        "auto_dispatch",
+        item.id,
+        "ready",
+        "executing",
+        `Auto-dispatched to ${repoFullName} (branch: ${result.branch})`,
+        { priority: item.priority, rank, ...(prioritySkipped ? { prioritySkipped } : {}) }
+      )
+    );
+    activeExecutions.push({
+      workItemId: item.id,
+      targetRepo: repoFullName,
+      branch: result.branch,
+      status: "executing",
+      startedAt: new Date().toISOString(),
+      elapsedMinutes: 0,
+      filesBeingModified: itemFiles,
+    });
+    return 'dispatched';
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    addDecision(trace, { workItemId: item.id, action: 'dispatch_failed', reason: msg });
+    await updateWorkItem(item.id, {
+      status: "failed",
+      execution: {
+        ...item.execution,
+        completedAt: now.toISOString(),
+        outcome: "failed",
+      },
+    });
+    events.push(
+      makeEvent("error", item.id, "ready", "failed", `Auto-dispatch failed: ${msg}`)
+    );
+    return 'failed';
+  }
+}
+
+/**
  * Dispatcher agent: maximizes throughput within concurrency limits.
  *
  * Responsibilities:
@@ -505,78 +601,121 @@ export async function runDispatcher(ctx: CycleContext): Promise<ATCState["active
       // then createdAt (earliest first). Legacy items without priority/rank default to P1/999.
       candidates.sort(dispatchSortComparator);
 
-      const toDispatch = candidates.slice(0, Math.min(slotsRemaining, repoSlotsAvailable));
+      // --- Wave scheduling ---
+      // Convert candidates to WaveSchedulerInput format
+      const waveInputs: WaveSchedulerInput[] = candidates.map((item) => ({
+        id: item.id,
+        dependsOn: item.dependencies,
+        filesBeingModified: item.handoff?.content ? parseEstimatedFiles(item.handoff.content) : [],
+        createdAt: new Date(item.createdAt),
+      }));
 
-      for (const item of toDispatch) {
-        const itemFiles = item.handoff?.content ? parseEstimatedFiles(item.handoff.content) : [];
-        const repoActiveExecs = activeExecutions.filter((e) => e.targetRepo === repo.fullName);
-        const conflicting = repoActiveExecs.find((e) => hasFileOverlap(itemFiles, e.filesBeingModified));
-        if (conflicting) {
-          addDecision(trace, { workItemId: item.id, action: 'blocked', reason: `file overlap with ${conflicting.workItemId}` });
-          events.push(
-            makeEvent(
-              "conflict",
-              item.id,
-              undefined,
-              undefined,
-              `Dispatch blocked: file overlap with active item ${conflicting.workItemId} in ${repo.fullName}`
-            )
-          );
-          continue;
+      const { assignments, fallback, error: waveError } = assignWavesSafe(waveInputs);
+
+      // Build lookup: workItemId → waveNumber
+      const waveMap = new Map<string, number>();
+      for (const a of assignments) {
+        waveMap.set(a.workItemId, a.waveNumber);
+      }
+      const totalWaves = assignments.length > 0 ? Math.max(...assignments.map((a) => a.waveNumber)) + 1 : 1;
+
+      if (fallback) {
+        // Fallback: sequential dispatch + escalation
+        console.warn(`[dispatcher] Wave scheduler fallback for ${repo.fullName}: ${waveError}`);
+        addDecision(trace, { workItemId: candidates[0]?.id ?? 'unknown', action: 'dispatched', reason: `wave scheduler fallback — sequential dispatch (error: ${waveError})` });
+
+        // Create escalation (fire-and-forget to not block dispatch)
+        const projectId = candidates[0]?.source.sourceId ?? repo.fullName;
+        createWaveFallbackEscalation(projectId, waveError ?? 'unknown error').catch((err) =>
+          console.error('[dispatcher] Failed to create wave fallback escalation:', err)
+        );
+
+        // Sequential fallback: dispatch one at a time (existing behavior)
+        const toDispatch = candidates.slice(0, Math.min(slotsRemaining, repoSlotsAvailable));
+        for (const item of toDispatch) {
+          const dispatchResult = await dispatchSingleItem(item, repo.fullName, candidates, trace, events, now, activeExecutions);
+          if (dispatchResult === 'dispatched') {
+            slotsRemaining--;
+            concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
+          }
         }
+      } else {
+        // Persist waveNumber on each work item
+        await Promise.allSettled(
+          candidates.map((item) => {
+            const waveNum = waveMap.get(item.id) ?? 0;
+            return updateWorkItem(item.id, { waveNumber: waveNum });
+          })
+        );
 
-        const itemHighChurn = itemFiles.filter((f) => HIGH_CHURN_FILES.has(f));
-        if (itemHighChurn.length > 0) {
-          const highChurnConflict = activeExecutions.find((e) =>
-            e.filesBeingModified.some((f) => itemHighChurn.includes(f))
-          );
-          if (highChurnConflict) {
-            addDecision(trace, { workItemId: item.id, action: 'blocked', reason: `high-churn file overlap with ${highChurnConflict.workItemId}` });
-            events.push(
-              makeEvent(
-                "conflict",
-                item.id,
-                undefined,
-                undefined,
-                `Dispatch blocked: high-churn file(s) [${itemHighChurn.join(", ")}] overlap with active item ${highChurnConflict.workItemId}`
-              )
-            );
-            continue;
+        // Emit wave:assigned event
+        const projectId = candidates[0]?.source.sourceId ?? repo.fullName;
+        await emitWaveAssigned(
+          projectId,
+          0, // current wave being assigned
+          candidates.map((i) => i.id),
+          totalWaves,
+        );
+
+        // Find lowest incomplete wave (items not yet in terminal/executing states)
+        const TERMINAL_STATES = new Set(['merged', 'verified', 'failed', 'parked', 'cancelled', 'executing', 'reviewing', 'retrying']);
+        const incompleteWaveNums = [
+          ...new Set(
+            candidates
+              .filter((item) => !TERMINAL_STATES.has(item.status))
+              .map((item) => waveMap.get(item.id) ?? 0)
+          ),
+        ].sort((a, b) => a - b);
+
+        const currentWaveNum = incompleteWaveNums[0];
+        if (currentWaveNum === undefined) continue; // all waves complete
+
+        // Get items in current wave
+        const waveItems = candidates.filter(
+          (item) => waveMap.get(item.id) === currentWaveNum && !TERMINAL_STATES.has(item.status)
+        );
+
+        // Apply concurrency budget
+        const budget = Math.min(slotsRemaining, repoSlotsAvailable, waveItems.length);
+        const itemsToDispatch = waveItems.slice(0, budget);
+
+        if (itemsToDispatch.length === 0) continue;
+
+        console.log(
+          `[dispatcher] ${repo.fullName}: dispatching wave ${currentWaveNum}/${totalWaves - 1} with ${itemsToDispatch.length} item(s) concurrently`
+        );
+
+        // Dispatch all items in current wave concurrently
+        const dispatchResults = await Promise.allSettled(
+          itemsToDispatch.map((item) =>
+            dispatchSingleItem(item, repo.fullName, candidates, trace, events, now, activeExecutions)
+          )
+        );
+
+        // Count successful dispatches and update concurrency tracking
+        const waveDispatchResults: Array<{ id: string; status: 'dispatched' | 'failed'; error?: string }> = [];
+        let concurrentDispatches = 0;
+        for (let i = 0; i < dispatchResults.length; i++) {
+          const result = dispatchResults[i];
+          const item = itemsToDispatch[i];
+          if (result.status === 'fulfilled' && result.value === 'dispatched') {
+            slotsRemaining--;
+            concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
+            concurrentDispatches++;
+            waveDispatchResults.push({ id: item.id, status: 'dispatched' });
+          } else {
+            const error = result.status === 'rejected' ? String(result.reason) : 'blocked or failed';
+            waveDispatchResults.push({ id: item.id, status: 'failed', error });
           }
         }
 
-        try {
-          const result = await dispatchWorkItem(item.id);
-          const rank = candidates.indexOf(item) + 1;
-          const prioritySkipped = computePrioritySkipped(item, candidates.filter((c) => c.id !== item.id));
-          addDecision(trace, { workItemId: item.id, action: 'dispatched', reason: `dispatched to ${repo.fullName} (branch: ${result.branch})` });
-          events.push(
-            makeEvent(
-              "auto_dispatch",
-              item.id,
-              "ready",
-              "executing",
-              `Auto-dispatched to ${repo.fullName} (branch: ${result.branch})`,
-              { priority: item.priority, rank, ...(prioritySkipped ? { prioritySkipped } : {}) }
-            )
-          );
-          slotsRemaining--;
-          concurrencyMap.set(repo.fullName, (concurrencyMap.get(repo.fullName) ?? 0) + 1);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : "Unknown error";
-          addDecision(trace, { workItemId: item.id, action: 'dispatch_failed', reason: msg });
-          await updateWorkItem(item.id, {
-            status: "failed",
-            execution: {
-              ...item.execution,
-              completedAt: now.toISOString(),
-              outcome: "failed",
-            },
-          });
-          events.push(
-            makeEvent("error", item.id, "ready", "failed", `Auto-dispatch failed: ${msg}`)
-          );
-        }
+        // Emit wave:dispatched event
+        await emitWaveDispatched(
+          projectId,
+          currentWaveNum,
+          itemsToDispatch.length,
+          concurrentDispatches,
+        );
       }
     }
 

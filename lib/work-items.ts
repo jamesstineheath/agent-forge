@@ -66,6 +66,7 @@ export function rowToWorkItem(row: typeof workItems.$inferSelect): WorkItem {
     spikeMetadata: (row.spikeMetadata ?? undefined) as WorkItem["spikeMetadata"],
     reasoningMetrics: (row.reasoningMetrics ??
       undefined) as WorkItem["reasoningMetrics"],
+    waveNumber: row.waveNumber ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -272,6 +273,7 @@ export async function updateWorkItem(
   if (patch.failureCategory !== undefined)
     setCols.failureCategory = patch.failureCategory;
   if (patch.expedite !== undefined) setCols.expedite = patch.expedite;
+  if (patch.waveNumber !== undefined) setCols.waveNumber = patch.waveNumber;
 
   const rows = await db
     .update(workItems)
