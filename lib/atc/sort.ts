@@ -1,3 +1,4 @@
+// Branch protection verification test (Handoff 70)
 import type { Priority, WorkItem } from "../types";
 
 // ---------------------------------------------------------------------------
