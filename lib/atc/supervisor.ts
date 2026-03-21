@@ -273,6 +273,15 @@ export async function runArchitecturePlanning(): Promise<SupervisorPhaseOutput> 
     for (const entry of criteriaEntries) {
       const existingPlan = await getArchitecturePlan(entry.prdId);
       if (existingPlan) continue;
+
+      // Only generate architecture plans for Approved or Executing PRDs
+      const { fetchPRDStatus } = await import("@/lib/intent-criteria");
+      const prdStatus = await fetchPRDStatus(entry.prdId);
+      if (prdStatus && prdStatus !== "Approved" && prdStatus !== "Executing") {
+        console.log(`[supervisor §21] Skipping architecture planning for "${entry.prdTitle}" — PRD status is "${prdStatus}" (requires Approved or Executing)`);
+        continue;
+      }
+
       if (entry.criteriaCount === 0) continue;
 
       const { getCriteria } = await import("@/lib/intent-criteria");
@@ -343,6 +352,14 @@ export async function runDecomposition(): Promise<SupervisorPhaseOutput> {
     for (const entry of criteriaEntries) {
       const plan = await getArchitecturePlan(entry.prdId);
       if (!plan) continue;
+
+      // Only decompose PRDs that are Approved or Executing
+      const { fetchPRDStatus } = await import("@/lib/intent-criteria");
+      const prdStatus = await fetchPRDStatus(entry.prdId);
+      if (prdStatus && prdStatus !== "Approved" && prdStatus !== "Executing") {
+        console.log(`[supervisor §22] Skipping decomposition for "${entry.prdTitle}" — PRD status is "${prdStatus}" (requires Approved or Executing)`);
+        continue;
+      }
 
       // Dedup guard check
       const dedupKey = `atc/project-decomposed/prd-${entry.prdId}`;
