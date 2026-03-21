@@ -70,7 +70,8 @@ app/
     auth/           # Auth.js route handler
 lib/
   auth.ts           # Auth.js configuration
-  storage.ts        # Vercel Blob / local file storage
+  storage.ts        # Vercel Blob / local file storage (non-work-item data)
+  db/               # Neon Postgres connection + Drizzle schema (work items)
   utils.ts          # shadcn/ui utilities
   atc/              # Autonomous agent implementations
     dispatcher.ts   # Work item dispatch logic

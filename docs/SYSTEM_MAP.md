@@ -34,7 +34,7 @@
 │  ┌──────────┐  ┌────────┴───┐  ┌──────────┐  ┌──────────┐  │
 │  │Work Item │  │Orchestrator│  │Decomposer│  │Escalation│  │
 │  │  Store   │  │(handoff gen│  │(plan →   │  │(state    │  │
-│  │(Blob)    │  │ + dispatch)│  │ work items│  │ machine) │  │
+│  │(Postgres)│  │ + dispatch)│  │ work items│  │ machine) │  │
 │  └──────────┘  └────────────┘  └──────────┘  └──────────┘  │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐   │
@@ -125,7 +125,7 @@ The ATC monolith has been decomposed into 4 autonomous agents:
 
 ### Self-Healing Sections
 
-- **Dispatcher §0 — Index Reconciliation**: Detects and repairs work item index/blob drift before each dispatch cycle.
+- **Dispatcher §0 — Index Reconciliation**: No-op since Neon Postgres migration (no index/blob drift possible).
 - **Health Monitor §2.8 — Failed PR Reconciliation**: Checks all "failed" work items with a `prNumber`. If the PR is actually merged on GitHub, transitions to "merged".
 - **Health Monitor — Stall Detection**: Stage-aware timeouts (20-35 min depending on phase). Auto-transitions stuck items.
 - **Health Monitor — Merge Conflict Recovery**: Detects PRs with conflicts, attempts auto-rebase.
@@ -191,13 +191,14 @@ Outcome Tracker (daily)
 | ATC (DEPRECATED) | `lib/atc.ts` | **Deprecated 2026-03-18.** Cron disabled. All responsibilities now handled by Dispatcher, Health Monitor, Project Manager, and Supervisor agents. File kept for utility re-exports only. |
 | **Core** | | |
 | Orchestrator | `lib/orchestrator.ts` | Handoff generation + dispatch to target repos |
-| Work Items | `lib/work-items.ts` | CRUD + dependency-aware dispatch |
+| Work Items | `lib/work-items.ts` | CRUD + dependency-aware dispatch (Neon Postgres via Drizzle) |
 | Decomposer | `lib/decomposer.ts` | Plan page → ordered work items with dependency DAG |
 | Escalation | `lib/escalation.ts` | State machine: pending/resolved/expired, SLA timers |
 | Gmail | `lib/gmail.ts` | OAuth2, escalation emails, decomposition summaries |
 | Notion | `lib/notion.ts` | Notion API client, project status reads |
 | Projects | `lib/projects.ts` | Project lifecycle: Complete/Failed transitions |
-| Storage | `lib/storage.ts` | Vercel Blob CRUD |
+| Storage | `lib/storage.ts` | Vercel Blob CRUD (non-work-item data) |
+| Database | `lib/db/index.ts`, `lib/db/schema.ts` | Neon Postgres connection + Drizzle schema |
 | Types | `lib/types.ts` | Shared types (WorkItem, Project, source types) |
 | Repos | `lib/repos.ts` | Multi-repo registry with per-repo concurrency limits |
 | GitHub | `lib/github.ts` | GitHub API wrapper |
@@ -247,7 +248,7 @@ Outcome Tracker (daily)
 
 | Store | Location | Purpose |
 |-------|----------|---------|
-| Work Items | Vercel Blob `af-data/work-items/*` | Work item CRUD |
+| Work Items | Neon Postgres `work_items` table | Work item CRUD (migrated from Vercel Blob 2026-03-21) |
 | ATC State | Vercel Blob `af-data/atc/*` | Active executions, queue, dedup guards |
 | Repo Config | Vercel Blob `af-data/repos/*` | Registered repo metadata |
 | Escalations | Vercel Blob `escalations/*` | Escalation records + index |
@@ -273,7 +274,8 @@ Outcome Tracker (daily)
 
 | Variable | Purpose |
 |----------|---------|
-| `BLOB_READ_WRITE_TOKEN` | Vercel Blob access |
+| `DATABASE_URL` | Neon Postgres connection string (work items) |
+| `BLOB_READ_WRITE_TOKEN` | Vercel Blob access (non-work-item data) |
 | `NOTION_API_KEY` | Notion API for project reads |
 | `NOTION_PROJECTS_DB_ID` | Projects database ID |
 | `GMAIL_CLIENT_ID` / `CLIENT_SECRET` / `REFRESH_TOKEN` | Gmail OAuth2 |
