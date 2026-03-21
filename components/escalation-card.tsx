@@ -16,7 +16,23 @@ function formatRelativeTime(ts: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-/** Detect silent failure type from escalation reason text */
+/** Derive label from structured silentFailureType field */
+function getLabelFromType(type: string): string | null {
+  switch (type) {
+    case 'decomposer_empty_output':
+      return "Decomposer: Empty Output";
+    case 'spec_review_stall':
+      return "Spec Review Stall";
+    case 'empty_context_guard':
+      return "Empty Context Guard";
+    case 'escalation_dedup':
+      return "Escalation Deduplicated";
+    default:
+      return null;
+  }
+}
+
+/** Detect silent failure type from escalation reason text (legacy fallback) */
 function getSilentFailureLabel(reason: string): string | null {
   const lower = reason.toLowerCase();
   if (lower.includes("0 work items") || lower.includes("empty output") || lower.includes("produced 0")) {
@@ -112,7 +128,9 @@ export function EscalationCard({
               </span>
             )}
             {(() => {
-              const silentLabel = getSilentFailureLabel(escalation.reason);
+              const silentLabel = escalation.silentFailureType
+                ? (getLabelFromType(escalation.silentFailureType) ?? getSilentFailureLabel(escalation.reason))
+                : getSilentFailureLabel(escalation.reason);
               if (!silentLabel) return null;
               const colorClass = SILENT_FAILURE_COLORS[silentLabel] || "bg-gray-100 text-gray-700";
               return (

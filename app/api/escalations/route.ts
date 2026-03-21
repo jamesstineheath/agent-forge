@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { workItemId, reason, confidenceScore, contextSnapshot, projectId } = body;
+    const { workItemId, reason, confidenceScore, contextSnapshot, projectId, silentFailureType } = body;
 
     // Validate required fields
     if (!workItemId || !reason) {
@@ -51,7 +51,8 @@ export async function POST(req: NextRequest) {
       reason,
       confidenceScore ?? 0.7,
       contextSnapshot ?? {},
-      projectId
+      projectId,
+      silentFailureType
     );
 
     // Transition work item to "blocked"

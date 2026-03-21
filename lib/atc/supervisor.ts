@@ -300,7 +300,8 @@ export async function runArchitecturePlanning(): Promise<SupervisorPhaseOutput> 
             `Architecture planner produced empty plan for "${criteria.prdTitle}" (PRD ${entry.prdId}). Repo context fetch may have failed. Plan generation skipped.`,
             0.5,
             { prdId: entry.prdId, prdTitle: criteria.prdTitle, targetRepo: criteria.targetRepo },
-            entry.projectId
+            entry.projectId,
+            'empty_context_guard'
           );
           continue;
         }
@@ -414,7 +415,8 @@ export async function runDecomposition(): Promise<SupervisorPhaseOutput> {
               failureReason,
               planVersion: plan.version,
             },
-            entry.projectId
+            entry.projectId,
+            'decomposer_empty_output'
           );
           continue;
         }

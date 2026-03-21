@@ -882,7 +882,9 @@ export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["act
               item.id,
               `Spec review never triggered for work item ${item.id} (branch: ${item.handoff.branch}) after ${Math.round(elapsed)} minutes. GitHub push event may have been suppressed.`,
               0.7,
-              { branch: item.handoff.branch, elapsedMinutes: Math.round(elapsed) }
+              { branch: item.handoff.branch, elapsedMinutes: Math.round(elapsed) },
+              undefined,
+              'spec_review_stall'
             );
             events.push(
               makeEvent(
