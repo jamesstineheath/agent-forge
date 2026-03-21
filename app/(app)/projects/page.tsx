@@ -1,10 +1,10 @@
 "use client";
 
-import { useIntentCriteriaList, useWorkItems } from "@/lib/hooks";
+import { useIntentCriteriaList, useProjects, useWorkItems } from "@/lib/hooks";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { useState } from "react";
-import type { WorkItem } from "@/lib/types";
+import type { Project, WorkItem } from "@/lib/types";
 
 const statusColors: Record<string, string> = {
   pending: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
@@ -20,9 +20,44 @@ const repoColors: Record<string, string> = {
   "fitness-app": "bg-pink-100 text-pink-700 dark:bg-pink-900 dark:text-pink-300",
 };
 
+/** Detect silent failure conditions from work items and derived status */
+function getSilentFailureLabel(derivedStatus: string, workItems: WorkItem[]): string | null {
+  if (workItems.length === 0 && (derivedStatus === "Executing" || derivedStatus === "Execute")) {
+    return "\u26A0 No work items";
+  }
+
+  const twoHoursAgo = Date.now() - 2 * 60 * 60 * 1000;
+  const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+
+  const mostRecentUpdate = workItems.reduce((latest, wi) => {
+    const t = new Date(wi.updatedAt).getTime();
+    return t > latest ? t : latest;
+  }, 0);
+
+  if (
+    (derivedStatus === "Executing" || derivedStatus === "Execute") &&
+    mostRecentUpdate > 0 &&
+    mostRecentUpdate < twoHoursAgo
+  ) {
+    return "\u26A0 Stalled";
+  }
+
+  const hasBlocked = workItems.some((wi) => wi.status === "blocked" || wi.status === "escalated");
+  if (hasBlocked) {
+    return "\u26A0 Blocked";
+  }
+
+  if (derivedStatus === "Queued" && mostRecentUpdate > 0 && mostRecentUpdate < thirtyMinAgo) {
+    return "\u26A0 Queued too long";
+  }
+
+  return null;
+}
+
 export default function ProjectsPage() {
   const { data: criteria, isLoading, mutate } = useIntentCriteriaList();
   const { data: workItems } = useWorkItems();
+  const { data: notionProjects } = useProjects();
   const [importing, setImporting] = useState(false);
 
   const getProjectWorkItems = (entry: { projectId?: string; targetRepo?: string }): WorkItem[] => {
@@ -32,6 +67,12 @@ export default function ProjectsPage() {
         (wi) => wi.source?.type === "project" && wi.source?.sourceId === entry.projectId
       ) ?? []
     );
+  };
+
+  /** Look up Notion project by projectId to get authoritative status */
+  const getNotionProject = (projectId?: string): Project | undefined => {
+    if (!projectId || !notionProjects) return undefined;
+    return notionProjects.find((p) => p.projectId === projectId);
   };
 
   /** Derive execution status from work item pipeline state */
@@ -98,6 +139,13 @@ export default function ProjectsPage() {
             const wiProgress = wiTotal > 0 ? Math.round((wiMerged / wiTotal) * 100) : 0;
             const derivedStatus = deriveStatus(pWI);
 
+            // AC-5: Prefer Notion/PRD status as authoritative source
+            const notionProject = getNotionProject(entry.projectId);
+            const displayStatus = notionProject?.status ?? derivedStatus;
+
+            // AC-6: Detect silent failure conditions
+            const failureLabel = getSilentFailureLabel(displayStatus, pWI);
+
             return (
               <Link
                 key={entry.prdId}
@@ -121,8 +169,13 @@ export default function ProjectsPage() {
                         </span>
                       )}
                       <span className="text-xs text-muted-foreground">
-                        {derivedStatus}
+                        {displayStatus}
                       </span>
+                      {failureLabel && (
+                        <span className="text-xs font-medium text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded px-1.5 py-0.5">
+                          {failureLabel}
+                        </span>
+                      )}
                       <span className="text-xs text-muted-foreground">
                         Est. ${entry.totalEstimatedCost.toFixed(0)}
                       </span>

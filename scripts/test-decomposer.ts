@@ -47,6 +47,7 @@ async function main() {
     complexity: "Moderate",
     riskLevel: "Medium",
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   try {

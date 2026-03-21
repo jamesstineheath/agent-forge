@@ -218,7 +218,7 @@ async function testDispatchErrorTransition(): Promise<void> {
 }
 
 async function testNotionConnectivity(): Promise<void> {
-  // Use a known plan page ID (PRJ-26 plan)
+  // Use a known plan page ID (PRD-26 plan)
   const content = await fetchPageContent("325041760b7081488f4ae9ac32e1a38c");
   assert(!!content && content.length > 50, `Notion page fetch failed or returned empty (length: ${content?.length ?? 0})`);
   console.log(`  (${content.length} chars fetched)`);

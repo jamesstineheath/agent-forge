@@ -293,7 +293,7 @@ export type ProjectTargetRepo = "personal-assistant" | "rez-sniper" | "agent-for
 
 export interface Project {
   id: string;
-  projectId: string; // e.g. "PRJ-1"
+  projectId: string; // e.g. "PRD-1"
   title: string;
   planUrl: string | null;
   targetRepo: ProjectTargetRepo | null;
@@ -305,6 +305,7 @@ export interface Project {
   retry?: boolean;
   retryCount?: number;
   createdAt: string;
+  updatedAt: string;
 }
 
 // --- ATC ---

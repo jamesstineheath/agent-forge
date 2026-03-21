@@ -1230,6 +1230,7 @@ export async function decomposeFromPlan(input: {
       planUrl: null,
       rank: input.rank,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     console.log(

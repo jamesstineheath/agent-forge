@@ -59,7 +59,7 @@ function extractNumber(page: PageObjectResponse, prop: string): number {
 function extractUniqueId(page: PageObjectResponse, prop: string): string {
   const p = page.properties[prop];
   if (p?.type === "unique_id" && p.unique_id) {
-    const prefix = p.unique_id.prefix ?? "PRJ";
+    const prefix = p.unique_id.prefix ?? "PRD";
     return `${prefix}-${p.unique_id.number}`;
   }
   return page.id;
@@ -79,6 +79,7 @@ function pageToProject(page: PageObjectResponse): Project {
     retry: extractCheckbox(page, "Retry"),
     retryCount: extractNumber(page, "RetryCount"),
     createdAt: page.created_time,
+    updatedAt: page.last_edited_time,
   };
 }
 

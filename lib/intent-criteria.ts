@@ -268,7 +268,7 @@ export async function listAllCriteria(): Promise<IntentCriteriaIndexEntry[]> {
 }
 
 /**
- * Find criteria sets by AF Project ID (e.g., "PRJ-43").
+ * Find criteria sets by AF Project ID (e.g., "PRD-43").
  * Returns all matching criteria sets (a project could have multiple PRDs).
  */
 export async function findCriteriaByProjectId(projectId: string): Promise<IntentCriteria[]> {

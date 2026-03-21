@@ -112,6 +112,7 @@ function buildProject(overrides: Partial<Project> = {}): Project {
     complexity: "Moderate",
     riskLevel: "Medium",
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     ...overrides,
   };
 }
