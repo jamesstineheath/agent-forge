@@ -1,4 +1,8 @@
-import { Settings } from "lucide-react";
+"use client";
+
+import { SettingsKillSwitch } from "@/components/settings-kill-switch";
+import { SettingsForceOpus } from "@/components/settings-force-opus";
+import { SettingsConcurrency } from "@/components/settings-concurrency";
 
 export default function SettingsPage() {
   return (
@@ -8,21 +12,17 @@ export default function SettingsPage() {
           <div>
             <h1 className="text-lg font-display font-bold text-foreground">Settings</h1>
             <p className="text-[11px] font-medium text-muted-foreground">
-              Global configuration
+              System-wide controls for the Agent Forge pipeline
             </p>
           </div>
         </div>
       </header>
 
       <div className="p-4 md:p-6 dot-grid min-h-[calc(100vh-60px)]">
-        <div className="max-w-5xl">
-          <div className="rounded-xl card-elevated bg-surface-1 p-8 text-center">
-            <Settings className="h-8 w-8 text-muted-foreground/20 mx-auto mb-3" />
-            <p className="text-[14px] font-display font-bold text-foreground">Configuration</p>
-            <p className="text-[12px] text-muted-foreground mt-1">
-              Global settings, concurrency limits, and API keys. Coming soon.
-            </p>
-          </div>
+        <div className="max-w-5xl space-y-6">
+          <SettingsKillSwitch />
+          <SettingsForceOpus />
+          <SettingsConcurrency />
         </div>
       </div>
     </>
