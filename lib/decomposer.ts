@@ -535,7 +535,7 @@ function splitIntoSubPhases(items: DecomposedItem[]): DecomposedItem[][] {
 
 // --- Main ---
 
-// Debug wrapper: tags async calls so we can identify which one throws .length error
+// Error context wrapper: tags async calls with labels for better error attribution
 async function tagged<T>(label: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();

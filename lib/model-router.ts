@@ -187,7 +187,16 @@ export async function routedAnthropicCall(
       success: true,
     }).catch(() => {}); // fire-and-forget
 
-    return { ...result, routingDecision: { model, wasEscalated: false } as RoutingDecision };
+    // Explicitly extract getter-based properties — AI SDK v6 uses class getters
+    // that are lost by object spread (text, usage, toolCalls, etc.)
+    return {
+      text: result.text,
+      usage: result.usage,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
+      steps: result.steps,
+      routingDecision: { model, wasEscalated: false } as RoutingDecision,
+    };
   } catch (err) {
     // --- error path ---
     const durationMs = Date.now() - callStart;
@@ -250,8 +259,13 @@ export async function routedAnthropicCall(
         success: true,
       }).catch(() => {}); // fire-and-forget
 
+      // Explicitly extract getter-based properties (same as primary path)
       return {
-        ...escalatedResult,
+        text: escalatedResult.text,
+        usage: escalatedResult.usage,
+        toolCalls: escalatedResult.toolCalls,
+        toolResults: escalatedResult.toolResults,
+        steps: escalatedResult.steps,
         routingDecision: { model: OPUS_MODEL, wasEscalated: true } as RoutingDecision,
       };
     } catch (opusError) {
