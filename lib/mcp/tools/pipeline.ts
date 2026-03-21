@@ -263,4 +263,71 @@ export function registerPipelineTools(server: McpServer) {
       };
     }
   );
+
+  // --- Inngest Agent Triggers ---
+
+  const INNGEST_EVENTS: Record<string, { event: string; functions: string[] }> = {
+    supervisor: {
+      event: "agent/supervisor.requested",
+      functions: ["plan-pipeline", "pipeline-oversight"],
+    },
+    dispatcher: {
+      event: "agent/dispatcher.requested",
+      functions: ["dispatcher-cycle"],
+    },
+    "project-manager": {
+      event: "agent/project-manager.requested",
+      functions: ["pm-cycle"],
+    },
+    "health-monitor": {
+      event: "agent/health-monitor.requested",
+      functions: ["health-monitor-cycle"],
+    },
+  };
+
+  async function sendInngestEvent(eventName: string): Promise<{ ids: string[]; status: number }> {
+    const key = process.env.INNGEST_EVENT_KEY;
+    if (!key) {
+      throw new Error("INNGEST_EVENT_KEY not configured");
+    }
+    const res = await fetch(`https://inn.gs/e/${key}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: eventName, data: { source: "mcp" } }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Inngest API error ${res.status}: ${body}`);
+    }
+    return res.json();
+  }
+
+  server.tool(
+    "trigger_agent",
+    "Trigger an Inngest agent function to run immediately. Available agents: supervisor (runs plan-pipeline + pipeline-oversight), dispatcher, project-manager, health-monitor. Housekeeping and pm-sweep are cron-only.",
+    {
+      agent: z.enum(["supervisor", "dispatcher", "project-manager", "health-monitor"])
+        .describe("Which agent to trigger"),
+    },
+    async (params) => {
+      const config = INNGEST_EVENTS[params.agent];
+      try {
+        const result = await sendInngestEvent(config.event);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            triggered: true,
+            agent: params.agent,
+            event: config.event,
+            functions: config.functions,
+            inngestIds: result.ids,
+          }, null, 2) }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: "text" as const, text: `Failed to trigger ${params.agent}: ${err instanceof Error ? err.message : String(err)}` }],
+          isError: true,
+        };
+      }
+    }
+  );
 }
