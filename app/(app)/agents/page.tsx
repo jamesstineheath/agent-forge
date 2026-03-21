@@ -9,6 +9,7 @@ import { AgentDashboard } from "@/components/agent-dashboard";
 import { AgentTraceViewer } from "@/components/agent-trace-viewer";
 import { EvaluationMetricsPanel } from "@/components/evaluation-metrics-panel";
 import { AgentTriggerButton } from "@/components/agent-trigger-button";
+import { SupervisorPhaseLog } from "@/components/supervisor-phase-log";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -209,6 +210,17 @@ export default function AgentsPage() {
 
           {/* Agent Traces */}
           <AgentTraceViewer />
+
+          {/* Supervisor Phase Log */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                Supervisor Phase Log
+              </p>
+              <span className="text-[10px] text-muted-foreground/40">(last cycle execution)</span>
+            </div>
+            <SupervisorPhaseLog />
+          </div>
 
           {/* TLM Agents */}
           <div className="space-y-3">

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Agent } from "undici";
-import { saveJson } from "@/lib/storage";
+import { loadJson, saveJson } from "@/lib/storage";
 import { listWorkItems } from "@/lib/work-items";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
 import { recordAgentRun } from "@/lib/atc/utils";
@@ -21,6 +21,8 @@ export const maxDuration = 800;
 
 const SUPERVISOR_LOCK_KEY = "atc/supervisor-lock";
 const EXECUTION_LOG_KEY = "af-data/supervisor/execution-log";
+const EXECUTION_LOG_HISTORY_KEY = "af-data/supervisor/execution-log-history";
+const MAX_HISTORY_ENTRIES = 10;
 const COORDINATOR_BUDGET_MS = 780_000; // 780s — leave 20s for cleanup (Pro Fluid Compute ceiling: 800s)
 
 async function handleCron(req: NextRequest) {
@@ -172,6 +174,16 @@ async function handleCron(req: NextRequest) {
 
     try {
       await saveJson(EXECUTION_LOG_KEY, executionLog);
+
+      // Append to rolling history (capped at 10 entries)
+      let history: PhaseExecutionLog[] = [];
+      try {
+        const existing = await loadJson<PhaseExecutionLog[]>(EXECUTION_LOG_HISTORY_KEY);
+        if (existing) history = existing;
+      } catch { /* first run, no history yet */ }
+      history.unshift(executionLog);
+      if (history.length > MAX_HISTORY_ENTRIES) history = history.slice(0, MAX_HISTORY_ENTRIES);
+      await saveJson(EXECUTION_LOG_HISTORY_KEY, history);
     } catch (logErr) {
       console.error('[supervisor] Failed to persist execution log:', logErr);
     }
