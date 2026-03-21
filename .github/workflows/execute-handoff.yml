@@ -239,25 +239,6 @@ jobs:
           > This PR was created because the Claude Code executor did not create one during handoff execution. The code changes were committed successfully but PR creation was skipped (likely due to budget exhaustion or execution error)." \
             || echo "::warning::Failed to create fallback PR for branch $BRANCH"
 
-      - name: Trigger CI on bot-created PR
-        if: success()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          BRANCH="${{ steps.params.outputs.branch }}"
-          # Wait briefly for PR to be indexed
-          sleep 5
-          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null || echo "")
-          if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
-            echo "Closing and reopening PR #$PR_NUMBER to trigger CI..."
-            gh pr close "$PR_NUMBER" --repo "${{ github.repository }}"
-            sleep 2
-            gh pr reopen "$PR_NUMBER" --repo "${{ github.repository }}"
-            echo "CI should now be triggered for PR #$PR_NUMBER"
-          else
-            echo "No open PR found for branch $BRANCH, skipping CI trigger"
-          fi
-
       - name: Wait for CI and report failures
         if: success()
         env:
