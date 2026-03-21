@@ -127,9 +127,11 @@ export const dispatcherCycle = inngest.createFunction(
               ? plan.targetRepo
               : `jamesstineheath/${plan.targetRepo}`;
 
-            // Trigger execute-handoff workflow with plan inputs
-            await triggerWorkflow(repoFullName, "execute-handoff.yml", plan.branchName, {
+            // Trigger execute-handoff workflow on main (the branch doesn't exist yet —
+            // the workflow creates it). Pass branch name as a workflow input.
+            await triggerWorkflow(repoFullName, "execute-handoff.yml", "main", {
               plan_id: plan.id,
+              branch: plan.branchName,
               max_budget: String(plan.estimatedBudget ?? 10),
               max_duration_minutes: String(plan.maxDurationMinutes ?? 60),
             });
