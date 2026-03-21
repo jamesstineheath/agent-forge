@@ -8,6 +8,7 @@ import { withTimeout, recordAgentRun } from "@/lib/atc/utils";
 import { CYCLE_TIMEOUT_MS, ATC_STATE_KEY, CycleTimeoutError } from "@/lib/atc/types";
 import type { CycleContext } from "@/lib/atc/types";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
+import { startTrace, addPhase, addError, completeTrace, persistTrace, cleanupOldTraces } from "@/lib/atc/tracing";
 
 export const maxDuration = 800;
 
@@ -30,6 +31,8 @@ async function handleCron(req: NextRequest) {
     return NextResponse.json({ success: true, skipped: true, reason: "lock held" });
   }
 
+  const trace = startTrace('project-manager');
+
   try {
     const ctx: CycleContext = { now: new Date(), events: [] };
     await withTimeout(runProjectManager(ctx), CYCLE_TIMEOUT_MS);
@@ -47,6 +50,9 @@ async function handleCron(req: NextRequest) {
       recentEvents: ctx.events.slice(-20),
     });
 
+    addPhase(trace, { name: 'pm-cycle', durationMs: Date.now() - trace._startMs });
+    completeTrace(trace, 'success', `Project manager cycle complete, ${ctx.events.length} events`);
+
     await recordAgentRun("project-manager");
 
     return NextResponse.json({
@@ -59,11 +65,19 @@ async function handleCron(req: NextRequest) {
   } catch (err) {
     if (err instanceof CycleTimeoutError) {
       console.error(`[project-manager] Cycle aborted after ${CYCLE_TIMEOUT_MS / 1000}s timeout.`);
+      addError(trace, `Cycle aborted after ${CYCLE_TIMEOUT_MS / 1000}s timeout`);
+      completeTrace(trace, 'error');
       return NextResponse.json({ success: true, timedOut: true });
     }
     const message = err instanceof Error ? err.message : "Internal server error";
+    addError(trace, message);
+    completeTrace(trace, 'error');
     return NextResponse.json({ success: false, error: message }, { status: 500 });
   } finally {
+    try {
+      await persistTrace(trace);
+      await cleanupOldTraces('project-manager', 7);
+    } catch { /* non-fatal */ }
     await releaseLock(PROJECT_MANAGER_LOCK_KEY);
   }
 }
