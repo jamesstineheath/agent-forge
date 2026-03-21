@@ -16,6 +16,7 @@ import { buildCachedPrompt } from "./prompt-cache";
 import type { WorkItem, RepoConfig } from "./types";
 import { FAST_LANE_BUDGET_SIMPLE, FAST_LANE_BUDGET_MODERATE } from "./types";
 import { estimateBudget, parseHandoffType } from "./cost-estimator";
+import { generateSpikeHandoff } from "./spike-handoff";
 
 // --- Types ---
 
@@ -371,8 +372,14 @@ export async function dispatchWorkItem(workItemId: string): Promise<DispatchResu
       }
     }
 
-    // 5. Generate handoff via Claude
-    let handoffContent = await generateHandoff(workItem, repoContext, repoConfig, siblingItems.length > 0 ? siblingItems : undefined);
+    // 5. Generate handoff — spike work items use a deterministic template,
+    //    all others go through the LLM-based generator.
+    let handoffContent: string;
+    if (workItem.type === "spike" && workItem.spikeMetadata) {
+      handoffContent = generateSpikeHandoff(workItem);
+    } else {
+      handoffContent = await generateHandoff(workItem, repoContext, repoConfig, siblingItems.length > 0 ? siblingItems : undefined);
+    }
 
     // 5a. Prepend source metadata for direct-source items
     let directEstimate: { budget: number; budgetSource: "learned" | "partial" | "default"; budgetSampleSize: number } | null = null;
