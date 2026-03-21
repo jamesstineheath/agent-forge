@@ -1,6 +1,7 @@
 "use client";
 
 import { useIntentCriteria } from "@/lib/hooks";
+import { WaveProgress } from "@/components/wave-progress";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ExternalLink, RefreshCw, CheckCircle2, XCircle, Clock, SkipForward, FileCode2, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
@@ -172,6 +173,11 @@ export default function ProjectDetailPage() {
           />
         </div>
       </div>
+
+      {/* Wave Progress */}
+      {data.projectId && (
+        <WaveProgress projectId={data.projectId} />
+      )}
 
       {/* Architecture Plan */}
       {plan && (
