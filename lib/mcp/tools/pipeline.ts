@@ -16,6 +16,7 @@ import {
   getPullRequestChecks,
   listPullRequests,
 } from "@/lib/github";
+import { readAllExecutionLogs, INNGEST_FUNCTION_REGISTRY } from "@/lib/inngest/execution-log";
 
 export function registerPipelineTools(server: McpServer) {
   server.tool(
@@ -128,8 +129,38 @@ export function registerPipelineTools(server: McpServer) {
         };
       });
 
+      // Resilient fetch of all 7 Inngest function execution logs
+      let inngestFunctions: Array<{
+        functionId: string;
+        functionName: string;
+        status: string;
+        lastRunAt: string | null;
+      }> = [];
+
+      try {
+        const allLogs = await readAllExecutionLogs();
+
+        inngestFunctions = INNGEST_FUNCTION_REGISTRY.map((fn) => {
+          const log = allLogs[fn.id] ?? null;
+          return {
+            functionId: fn.id,
+            functionName: fn.displayName,
+            status: log?.status ?? 'idle',
+            lastRunAt: log?.startedAt ?? null,
+          };
+        });
+      } catch (err) {
+        console.error('[MCP] check_pipeline_health: failed to read Inngest execution logs', err);
+        inngestFunctions = INNGEST_FUNCTION_REGISTRY.map((fn) => ({
+          functionId: fn.id,
+          functionName: fn.displayName,
+          status: 'idle',
+          lastRunAt: null,
+        }));
+      }
+
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }],
+        content: [{ type: "text" as const, text: JSON.stringify({ workflows: summary, inngestFunctions }, null, 2) }],
       };
     }
   );
