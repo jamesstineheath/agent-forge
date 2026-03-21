@@ -121,7 +121,7 @@ Old cron routes (`/api/agents/*/cron`) are kept as thin Inngest event triggers f
 | **housekeeping** | */6h | branch-cleanup, drift-detection, repo-reindex + cache-metrics | Supervisor (maintenance) |
 | **dispatcher-cycle** | */15 | index-reconciliation, dispatch | Dispatcher |
 | **pm-cycle** | */30 | retry-processing, decomposition, lifecycle-management | Project Manager |
-| **health-monitor-cycle** | */15 | health-monitoring, hlo-polling | Health Monitor |
+| **health-monitor-cycle** | */15 | health-monitoring, dashboard-health-check, hlo-polling | Health Monitor |
 
 **Shared infrastructure:**
 - **Distributed lock** (`lib/atc/lock.ts`): Optimistic Vercel Blob lock with write-then-reread race detection. 5-min TTL, 10-min hard ceiling.
@@ -134,6 +134,7 @@ Old cron routes (`/api/agents/*/cron`) are kept as thin Inngest event triggers f
 - **Health Monitor §2.8 — Failed PR Reconciliation**: Checks all "failed" work items with a `prNumber`. If the PR is actually merged on GitHub, transitions to "merged".
 - **Health Monitor — Stall Detection**: Stage-aware timeouts (20-35 min depending on phase). Auto-transitions stuck items.
 - **Health Monitor — Merge Conflict Recovery**: Detects PRs with conflicts, attempts auto-rebase.
+- **Health Monitor — Dashboard Self-Health**: Checks `/api/work-items` and `/api/pipeline/kill-switch` every 15 min. Sends email alert on failure. Detects schema mismatches, deployment failures, and infrastructure issues.
 - **Project Manager §13a — Stuck Executing Recovery**: Detects projects where decomposition never ran, resets for re-decomposition.
 - **Project Manager §13b — Completion Detection**: When all work items reach terminal state, auto-transitions project.
 
@@ -222,6 +223,7 @@ Outcome Tracker (daily)
 | Telemetry API | `app/api/telemetry/route.ts` | Unified telemetry query (events, traces, costs, metrics) |
 | Pipeline Metrics | `lib/pipeline-metrics.ts` | Speed, quality, cost, volume KPIs |
 | Cost Tracking | `lib/cost-tracking.ts` | Cost recording, period queries, aggregation |
+| Admin Migrate | `app/api/admin/migrate/route.ts` | Idempotent schema migrations (ALTER TABLE) against Neon |
 | **Inngest** | | |
 | Inngest Client | `lib/inngest/client.ts` | Inngest instance (`id: "agent-forge"`) |
 | Plan Pipeline | `lib/inngest/plan-pipeline.ts` | Criteria import → architecture planning → decomposition |
@@ -230,7 +232,7 @@ Outcome Tracker (daily)
 | Housekeeping | `lib/inngest/housekeeping.ts` | Branch cleanup, drift detection, repo reindex |
 | Dispatcher Cycle | `lib/inngest/dispatcher.ts` | Index reconciliation + dispatch |
 | PM Cycle | `lib/inngest/pm-cycle.ts` | Project retry + decomposition + lifecycle |
-| Health Monitor Cycle | `lib/inngest/health-monitor.ts` | Health monitoring + HLO polling |
+| Health Monitor Cycle | `lib/inngest/health-monitor.ts` | Health monitoring + dashboard self-health + HLO polling |
 | Serve Handler | `app/api/inngest/route.ts` | Inngest serve endpoint (registers all 7 functions) |
 | **Dashboard** | | |
 | Hooks (SWR) | `lib/hooks.ts` | React data fetching hooks |
