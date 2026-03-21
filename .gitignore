@@ -41,5 +41,5 @@ yarn-error.log*
 next-env.d.ts
 
 # local dev data (storage layer fallback)
-/data/*.json
+/data/
 .github/actions/tlm-feedback-compiler/node_modules/
