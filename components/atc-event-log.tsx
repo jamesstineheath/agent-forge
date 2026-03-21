@@ -31,6 +31,9 @@ const EVENT_COLORS: Record<ATCEvent["type"], string> = {
   spec_review_stall: "bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400",
   empty_context_guard: "bg-orange-100 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400",
   escalation_dedup: "bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400",
+  wave_assigned: "bg-primary/10 text-primary",
+  wave_dispatched: "bg-status-executing/10 text-status-executing",
+  wave_completed: "bg-status-merged/10 text-status-merged",
 };
 
 const ALL_TYPES = Object.keys(EVENT_COLORS) as ATCEvent["type"][];
