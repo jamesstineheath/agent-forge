@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Agent } from "undici";
 import { saveJson } from "@/lib/storage";
 import { listWorkItems } from "@/lib/work-items";
 import { acquireLock, releaseLock } from "@/lib/atc/lock";
@@ -7,6 +8,14 @@ import { startTrace, addPhase, addDecision, addError, completeTrace, persistTrac
 import { ATC_STATE_KEY } from "@/lib/atc/types";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
 import { PHASE_MANIFEST, type PhaseResult, type PhaseExecutionLog } from "@/lib/atc/supervisor-manifest";
+
+// Node.js undici (which backs global fetch) defaults headersTimeout to 300s.
+// Long-running phases like decomposition need more time before sending response
+// headers, so we use a custom dispatcher that raises the ceiling to 800s.
+const longRunningDispatcher = new Agent({
+  headersTimeout: 800_000,
+  bodyTimeout: 800_000,
+});
 
 export const maxDuration = 800;
 
@@ -90,6 +99,10 @@ async function handleCron(req: NextRequest) {
             },
             body: JSON.stringify({ cycleId, timestamp: now.toISOString() }),
             signal: AbortSignal.timeout(phase.timeoutMs),
+            // Override undici's default 300s headersTimeout which kills long-running
+            // phase calls (like decomposition) before the AbortSignal fires.
+            // @ts-expect-error -- undici dispatcher option not in standard RequestInit
+            dispatcher: longRunningDispatcher,
           }
         );
 
