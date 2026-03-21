@@ -9,6 +9,7 @@
 - Risk Level: low
 - Complexity: simple
 - Date: 2026-03-21
+- Estimated files: lib/atc/sort.ts
 
 ## Context
 
@@ -21,25 +22,3 @@ Create branch `test/branch-protection-verification` from `main`. Commit this han
 ## Step 1: Add a comment to a safe file
 
 Add a single comment line to the top of `lib/atc/sort.ts`:
-
-```typescript
-// Branch protection verification test — 2026-03-21
-```
-
-This is a zero-risk change that will compile and not affect behavior.
-
-## Step 2: Verify
-
-```bash
-npx tsc --noEmit
-```
-
-## Step 3: Commit and push
-
-```bash
-git add lib/atc/sort.ts
-git commit -m "test: branch protection verification"
-git push origin test/branch-protection-verification
-```
-
-Open PR targeting main.
