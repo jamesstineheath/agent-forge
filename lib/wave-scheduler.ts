@@ -196,6 +196,30 @@ export function assignWaves(items: WaveSchedulerInput[]): WaveAssignment[] {
 }
 
 /**
+ * Safe wrapper around `assignWaves` that catches errors and falls back to
+ * sequential dispatch (all items in wave 0) when wave assignment fails.
+ */
+export function assignWavesSafe(items: WaveSchedulerInput[]): {
+  assignments: WaveAssignment[];
+  fallback: boolean;
+  error?: string;
+} {
+  try {
+    const assignments = assignWaves(items);
+    return { assignments, fallback: false };
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    const assignments: WaveAssignment[] = items.map((item) => ({
+      workItemId: item.id,
+      waveNumber: 0,
+      dependsOn: item.dependsOn ?? [],
+      filesBeingModified: item.filesBeingModified ?? [],
+    }));
+    return { assignments, fallback: true, error: errorMessage };
+  }
+}
+
+/**
  * After bumping `bumpedId` to a new wave, ensure all items that depend on it
  * (directly or transitively) are assigned to at least bumpedWave + 1.
  */
