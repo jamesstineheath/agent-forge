@@ -198,6 +198,44 @@ export async function handleCodeCIFailure(
  * - Retry failed items (§3.5)
  * - Re-evaluate failed items with resolved deps (§3.6)
  */
+
+/**
+ * Check whether the dashboard's own API endpoints are healthy.
+ * Called by the health monitor Inngest function to detect self-outages
+ * (e.g., schema mismatches, deployment failures, infrastructure issues).
+ */
+export async function checkDashboardHealth(): Promise<{
+  healthy: boolean;
+  failures: string[];
+}> {
+  const baseUrl =
+    process.env.AGENT_FORGE_URL || "https://agent-forge-phi.vercel.app";
+  const secret = process.env.AGENT_FORGE_API_SECRET;
+  const endpoints = [
+    "/api/work-items?full=false",
+    "/api/pipeline/kill-switch",
+  ];
+  const failures: string[] = [];
+
+  for (const endpoint of endpoints) {
+    try {
+      const resp = await fetch(`${baseUrl}${endpoint}`, {
+        headers: secret ? { Authorization: `Bearer ${secret}` } : {},
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!resp.ok) {
+        failures.push(`${endpoint}: HTTP ${resp.status}`);
+      }
+    } catch (err) {
+      failures.push(
+        `${endpoint}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  return { healthy: failures.length === 0, failures };
+}
+
 export async function runHealthMonitor(ctx: CycleContext): Promise<ATCState["activeExecutions"]> {
   const { now, events } = ctx;
 

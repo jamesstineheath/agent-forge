@@ -47,6 +47,30 @@ export const healthMonitorCycle = inngest.createFunction(
         return { events: ctx.events, activeExecutions };
       });
 
+      // Step 2b: Dashboard self-health check
+      const dashboardHealth = await step.run(
+        "dashboard-health-check",
+        async () => {
+          const { checkDashboardHealth } = await import(
+            "@/lib/atc/health-monitor"
+          );
+          const result = await checkDashboardHealth();
+          if (!result.healthy) {
+            const { sendEmail } = await import("@/lib/gmail");
+            await sendEmail({
+              subject: "[Agent Forge] Dashboard API Health Alert",
+              body: `Dashboard health check failed.\n\nFailing endpoints:\n${result.failures.map((f) => `- ${f}`).join("\n")}\n\nThis may indicate a database schema mismatch, a deployment failure, or an infrastructure issue. Check Vercel runtime logs for details.`,
+            }).catch((err) =>
+              console.error(
+                "[health-monitor] Failed to send dashboard health alert:",
+                err
+              )
+            );
+          }
+          return result;
+        }
+      );
+
       // Step 3: HLO Polling (absorbed from Supervisor)
       const hloResult = await step.run("hlo-polling", async () => {
         const start = Date.now();

@@ -6,6 +6,7 @@
 <!-- Maintained by Outcome Tracker. Items here should influence every review. -->
 <!-- Format: - [YYYY-MM-DD] Pattern description. -->
 
+- [2026-03-21] **Schema Changes Require Migration** (critical): Any PR that modifies `lib/db/schema.ts` (adding/removing/renaming columns) requires a corresponding database migration against the live Neon database. Drizzle ORM generates SQL referencing ALL columns in the schema definition. If the schema defines columns that don't exist in the database, every query fails at runtime. PRD-54 PRs #422-#426 all merged with new columns in the schema but no migration, breaking `/api/work-items` for hours. Action: FLAG_FOR_HUMAN any PR touching schema.ts unless it also includes a migration file or migration API route.
 
 
 - [2026-03-14] All 14 PRs were merged within approximately 10 hours, representing an extremely rapid development pace. This cadence increases the risk of integration issues and makes it hard to distinguish fix commits from normal feature iteration. (medium): TLM should account for development velocity when assessing risk. When many PRs touch overlapping files in rapid succession, integration review becomes more critical. Consider recommending staging/batching for related changes.
