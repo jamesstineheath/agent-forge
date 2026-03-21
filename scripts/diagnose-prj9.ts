@@ -8,19 +8,19 @@ async function main() {
   const notion = new Client({ auth: process.env.NOTION_API_KEY });
   const dbId = process.env.NOTION_PROJECTS_DB_ID || "b1eb06a469ac4a9eb3f01851611fb80b";
 
-  // Query for PRJ-9
+  // Query for PRD-9
   const response = await notion.databases.query({
     database_id: dbId,
     filter: {
       property: "ID",
-      rich_text: { equals: "PRJ-9" },
+      rich_text: { equals: "PRD-9" },
     },
   });
 
   console.log("Query result page count:", response.results.length);
 
   if (response.results.length === 0) {
-    console.error("PRJ-9 not found. Check filter property name.");
+    console.error("PRD-9 not found. Check filter property name.");
     // Try listing a few projects to see available properties
     const sample = await notion.databases.query({ database_id: dbId, page_size: 3 });
     console.log("Sample project properties:", JSON.stringify(
@@ -36,8 +36,8 @@ async function main() {
   const project = response.results[0];
   if (!("properties" in project)) return;
 
-  console.log("PRJ-9 properties:", JSON.stringify(project.properties, null, 2));
-  console.log("PRJ-9 page ID:", project.id);
+  console.log("PRD-9 properties:", JSON.stringify(project.properties, null, 2));
+  console.log("PRD-9 page ID:", project.id);
 
   // Find the plan page (look for a "Plan" relation or child page)
   const blocks = await notion.blocks.children.list({ block_id: project.id });

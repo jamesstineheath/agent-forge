@@ -38,7 +38,7 @@ async function main() {
 
   const mockProject: Project = {
     id: "test-page-id",
-    projectId: "PRJ-TEST",
+    projectId: "PRD-TEST",
     title: "Test Decomposition",
     planUrl: "323041760b70813aa3f6e609a47cff57",
     targetRepo: "agent-forge",

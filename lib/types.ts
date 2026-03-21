@@ -293,7 +293,7 @@ export type ProjectTargetRepo = "personal-assistant" | "rez-sniper" | "agent-for
 
 export interface Project {
   id: string;
-  projectId: string; // e.g. "PRJ-1"
+  projectId: string; // e.g. "PRD-1"
   title: string;
   planUrl: string | null;
   targetRepo: ProjectTargetRepo | null;
@@ -312,7 +312,7 @@ export interface Project {
 export interface ATCEvent {
   id: string;
   timestamp: string;
-  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved" | "ci_code_retry_triggered" | "ci_code_retry_exhausted" | "routing_threshold_tightened";
+  type: "status_change" | "timeout" | "concurrency_block" | "auto_dispatch" | "conflict" | "retry" | "parked" | "error" | "cleanup" | "project_trigger" | "project_completion" | "work_item_reconciled" | "escalation" | "escalation_timeout" | "escalation_resolved" | "dependency_block" | "auto_cancel" | "project_retry" | "dep_resolved" | "ci_code_retry_triggered" | "ci_code_retry_exhausted" | "routing_threshold_tightened" | "decomposer_empty_output" | "spec_review_stall" | "empty_context_guard" | "escalation_dedup";
   workItemId: string;
   details: string;
   previousStatus?: string;
@@ -717,6 +717,7 @@ export interface IntentCriteria {
   secondaryRepos?: string[];
   priority?: string;
   rank?: number;
+  prdStatus?: string;
   criteria: Criterion[];
   importedAt: string;
   notionSyncedAt: string;
@@ -731,6 +732,7 @@ export interface IntentCriteriaIndexEntry {
   prdTitle: string;
   projectId?: string;
   targetRepo?: string;
+  prdStatus?: string;
   criteriaCount: number;
   passedCount: number;
   failedCount: number;
