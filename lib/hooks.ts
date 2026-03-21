@@ -1,5 +1,5 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode, Bug } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode, Bug, WaveProgressData } from "@/lib/types";
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
@@ -380,6 +380,17 @@ export function useCostBaseline() {
     error,
     refresh: mutate,
   };
+}
+
+// ── Wave Progress ────────────────────────────────────────────────────────────
+
+export function useWaveProgress(projectId: string | null) {
+  const { data, error, isLoading, mutate } = useSWR<WaveProgressData>(
+    projectId ? `/api/work-items?projectId=${projectId}&groupByWave=true` : null,
+    fetcher,
+    { refreshInterval: 15000 }
+  );
+  return { data, error, isLoading, mutate };
 }
 
 // ── Model Routing Analytics ──────────────────────────────────────────────────

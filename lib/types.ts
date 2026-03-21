@@ -90,10 +90,25 @@ export interface WorkItem {
   reasoningMetrics?: ReasoningQualityAssessment;
 }
 
-export interface WaveProgressData {
+// Wave status for a group of work items in a wave
+export type WaveStatus = 'pending' | 'active' | 'complete' | 'failed';
+
+// Per-wave grouping returned by API when groupByWave=true
+export interface WaveGroup {
   waveNumber: number;
+  status: WaveStatus;
   items: WorkItem[];
-  status: 'pending' | 'active' | 'complete';
+  totalItems: number;
+  completedItems: number;
+  progressPercent: number;
+}
+
+// Full response shape when groupByWave=true
+export interface WaveProgressData {
+  projectId: string;
+  waves: WaveGroup[];
+  currentWave: number | null;
+  totalWaves: number;
 }
 
 export interface WorkItemIndexEntry {

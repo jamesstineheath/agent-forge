@@ -38,7 +38,7 @@ function normalizeTargetRepo(repo: string): string {
 }
 
 /** Convert a database row to a WorkItem (maps snake_case columns to camelCase). */
-function rowToWorkItem(row: typeof workItems.$inferSelect): WorkItem {
+export function rowToWorkItem(row: typeof workItems.$inferSelect): WorkItem {
   return {
     id: row.id,
     title: row.title,
