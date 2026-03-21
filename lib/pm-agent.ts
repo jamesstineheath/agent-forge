@@ -28,6 +28,7 @@ import type {
   NextBatchPipelineState,
   DigestProjectSummary,
   DigestContext,
+  BugsSummary,
 } from "./pm-prompts";
 
 // Storage keys (without af-data/ prefix and .json suffix — storage.ts adds those)
@@ -387,6 +388,151 @@ export async function suggestNextBatch(): Promise<{ workItemIds: string[]; ratio
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 3b. fetchBugsSummary
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BUGS_DB_ID = '023f3621-2885-468d-a8cf-2e0bd1458bb3';
+
+async function fetchBugsSummary(): Promise<BugsSummary> {
+  const notionKey = process.env.NOTION_API_KEY;
+  if (!notionKey) {
+    console.warn('[fetchBugsSummary] NOTION_API_KEY not set, returning empty summary');
+    return {
+      newCount: 0,
+      fixedCount: 0,
+      fixedWithPRs: [],
+      openBySeverity: { critical: 0, high: 0, medium: 0, low: 0 },
+    };
+  }
+
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const headers = {
+    Authorization: `Bearer ${notionKey}`,
+    'Notion-Version': '2022-06-28',
+    'Content-Type': 'application/json',
+  };
+
+  // 1. Bugs filed in last 24h
+  let newCount = 0;
+  try {
+    const newBugsRes = await fetch(
+      `https://api.notion.com/v1/databases/${BUGS_DB_ID}/query`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          filter: {
+            timestamp: 'created_time',
+            created_time: { after: yesterday },
+          },
+        }),
+      }
+    );
+    if (newBugsRes.ok) {
+      const newBugsData = await newBugsRes.json();
+      newCount = newBugsData.results?.length ?? 0;
+    }
+  } catch (err) {
+    console.error('[fetchBugsSummary] Failed to query new bugs:', err);
+  }
+
+  // 2. Bugs fixed in last 24h
+  let fixedCount = 0;
+  let fixedWithPRs: Array<{ title: string; prUrl: string }> = [];
+  try {
+    const fixedBugsRes = await fetch(
+      `https://api.notion.com/v1/databases/${BUGS_DB_ID}/query`,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          filter: {
+            and: [
+              {
+                property: 'Status',
+                status: { equals: 'Fixed' },
+              },
+              {
+                timestamp: 'last_edited_time',
+                last_edited_time: { after: yesterday },
+              },
+            ],
+          },
+        }),
+      }
+    );
+    if (fixedBugsRes.ok) {
+      const fixedBugsData = await fixedBugsRes.json();
+      const fixedResults: Record<string, unknown>[] = fixedBugsData.results ?? [];
+      fixedCount = fixedResults.length;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fixedWithPRs = fixedResults
+        .map((page: any) => {
+          const titleProp = page.properties?.Name ?? page.properties?.Title;
+          const title =
+            titleProp?.title?.[0]?.plain_text ?? titleProp?.rich_text?.[0]?.plain_text ?? 'Untitled';
+          const prProp =
+            page.properties?.PR ??
+            page.properties?.['PR URL'] ??
+            page.properties?.['Pull Request'];
+          const prUrl =
+            prProp?.url ?? prProp?.rich_text?.[0]?.plain_text ?? '';
+          return prUrl ? { title, prUrl } : null;
+        })
+        .filter(Boolean) as Array<{ title: string; prUrl: string }>;
+    }
+  } catch (err) {
+    console.error('[fetchBugsSummary] Failed to query fixed bugs:', err);
+  }
+
+  // 3. Open bugs by severity
+  const severities = ['critical', 'high', 'medium', 'low'] as const;
+  const openBySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
+
+  await Promise.all(
+    severities.map(async (severity) => {
+      try {
+        const res = await fetch(
+          `https://api.notion.com/v1/databases/${BUGS_DB_ID}/query`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              filter: {
+                and: [
+                  {
+                    property: 'Status',
+                    status: { does_not_equal: 'Fixed' },
+                  },
+                  {
+                    property: 'Status',
+                    status: { does_not_equal: "Won't Fix" },
+                  },
+                  {
+                    property: 'Severity',
+                    select: { equals: severity.charAt(0).toUpperCase() + severity.slice(1) },
+                  },
+                ],
+              },
+            }),
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          openBySeverity[severity] = data.results?.length ?? 0;
+        }
+      } catch (err) {
+        console.error(`[fetchBugsSummary] Failed to query ${severity} bugs:`, err);
+      }
+    })
+  );
+
+  return { newCount, fixedCount, fixedWithPRs, openBySeverity };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 4. composeDigest
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -437,6 +583,14 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
     }
   }
 
+  // Fetch bugs summary (graceful fallback on error)
+  let bugs: BugsSummary | undefined;
+  try {
+    bugs = await fetchBugsSummary();
+  } catch (err) {
+    console.error('[composeDigest] Failed to fetch bugs summary:', err);
+  }
+
   const digestContext: DigestContext = {
     period: "daily",
     stats: {
@@ -447,6 +601,7 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
     },
     projectSummaries,
     recommendations,
+    bugs,
   };
 
   const prompt = buildDigestPrompt(digestContext);
