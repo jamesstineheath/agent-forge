@@ -11,8 +11,94 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// In-memory storage mock — replaces lib/storage.ts so no disk/blob I/O occurs
-const store = new Map<string, string>();
+// vi.hoisted ensures these are available before vi.mock factories run
+const { store, dbRows, drizzleOrmMock, createDbMock } = vi.hoisted(() => {
+  // Inline the mock helpers to avoid import hoisting issues
+  function whereFilter(data: Record<string, unknown>[], condition: unknown): Record<string, unknown>[] {
+    if (!condition) return data;
+    if (typeof condition === "function") return data.filter(condition as (r: Record<string, unknown>) => boolean);
+    return data;
+  }
+
+  const store = new Map<string, string>();
+  const dbRows = new Map<string, Record<string, unknown>>();
+
+  const drizzleOrmMock = {
+    eq: (col: { name: string }, val: unknown) => (row: Record<string, unknown>) => row[col.name] === val,
+    and: (...preds: ((row: Record<string, unknown>) => boolean)[]) => (row: Record<string, unknown>) => preds.every((p) => p?.(row) ?? true),
+    inArray: (col: { name: string }, vals: unknown[]) => (row: Record<string, unknown>) => (vals as unknown[]).includes(row[col.name]),
+    sql: (_strings: TemplateStringsArray, ..._values: unknown[]) => (_row: Record<string, unknown>) => true,
+  };
+
+  function createDbMock(rows: Map<string, Record<string, unknown>>) {
+    const db = {
+      select: (_cols?: unknown) => ({
+        from: (_table: unknown) => {
+          let w: unknown = undefined;
+          let lim: number | undefined;
+          const chain = {
+            where: (cond: unknown) => { w = cond; return chain; },
+            limit: (n: number) => { lim = n; return chain; },
+            then: (res: (v: unknown[]) => void) => {
+              let result = whereFilter([...rows.values()], w);
+              if (lim !== undefined) result = result.slice(0, lim);
+              res(result);
+            },
+          };
+          return chain;
+        },
+      }),
+      insert: (_table: unknown) => ({
+        values: (vals: Record<string, unknown> | Record<string, unknown>[]) => {
+          const arr = Array.isArray(vals) ? vals : [vals];
+          return {
+            returning: () => ({
+              then: (res: (v: unknown[]) => void) => { for (const v of arr) rows.set(v.id as string, { ...v }); res(arr); },
+            }),
+            then: (res: (v: unknown[]) => void) => { for (const v of arr) rows.set(v.id as string, { ...v }); res(arr); },
+          };
+        },
+      }),
+      update: (_table: unknown) => ({
+        set: (setCols: Record<string, unknown>) => {
+          let w: unknown = undefined;
+          const chain = {
+            where: (cond: unknown) => { w = cond; return chain; },
+            returning: () => ({
+              then: (res: (v: unknown[]) => void) => {
+                const matched = whereFilter([...rows.values()], w);
+                const updated: Record<string, unknown>[] = [];
+                for (const row of matched) { const merged = { ...row, ...setCols }; rows.set(merged.id as string, merged); updated.push(merged); }
+                res(updated);
+              },
+            }),
+          };
+          return chain;
+        },
+      }),
+      delete: (_table: unknown) => {
+        let w: unknown = undefined;
+        const chain = {
+          where: (cond: unknown) => { w = cond; return chain; },
+          returning: (_cols?: unknown) => ({
+            then: (res: (v: unknown[]) => void) => {
+              const matched = whereFilter([...rows.values()], w);
+              for (const row of matched) rows.delete(row.id as string);
+              res(matched);
+            },
+          }),
+        };
+        return chain;
+      },
+    };
+    return { db };
+  }
+
+  return { store, dbRows, drizzleOrmMock, createDbMock };
+});
+
+vi.mock("drizzle-orm", () => drizzleOrmMock);
+vi.mock("@/lib/db", () => createDbMock(dbRows));
 
 vi.mock("@/lib/storage", () => ({
   loadJson: async <T>(key: string): Promise<T | null> => {
@@ -85,6 +171,7 @@ async function createDirectItem(overrides: {
 
 beforeEach(() => {
   store.clear();
+  dbRows.clear();
 });
 
 // ---------------------------------------------------------------------------
