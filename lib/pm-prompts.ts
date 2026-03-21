@@ -404,3 +404,50 @@ Your digest must include these sections in order:
 Output the plain text email body only. Begin with the SUBJECT: line. Do not include any preamble or explanation outside the email body itself.`;
 }
 
+/**
+ * Builds a prompt instructing Claude to detect technical uncertainty in a PRD
+ * and recommend a feasibility spike if uncertainty signals are found.
+ *
+ * Expected output: JSON with uncertaintySignals, recommendedScope, technicalQuestion.
+ */
+export function buildUncertaintyDetectionPrompt(prdContent: string): string {
+  return `You are a PM Agent analyzing a PRD (Product Requirements Document) for technical uncertainty. Your job is to identify signals that suggest a feasibility spike is needed before committing to full implementation.
+
+## PRD Content
+
+${prdContent}
+
+## Uncertainty Signal Categories
+
+Look for the following categories of uncertainty:
+
+1. **Unknown API access**: References to APIs, services, or data sources where access, availability, or rate limits are unclear
+2. **New platforms**: Mentions of platforms, frameworks, or environments the team hasn't used before
+3. **Unproven approaches**: Novel algorithms, architectures, or techniques that haven't been validated
+4. **External service dependencies**: Reliance on third-party services where reliability, cost, or integration complexity is uncertain
+5. **Hardware integrations**: References to hardware, devices, sensors, or physical systems
+6. **Explicit uncertainty language**: Phrases like "not sure if", "need to investigate", "TBD", "to be determined", "might not work", "unclear whether", "research needed", "unknown if", "may require"
+
+## Your Task
+
+Analyze the PRD content above and identify any technical uncertainty signals. For each signal found, provide a concise description of the uncertainty.
+
+If uncertainty signals are found, also provide:
+- A recommended scope for a feasibility spike (1-2 sentences describing what to investigate)
+- A single technical question that the spike should answer
+
+If NO uncertainty signals are found, return empty values.
+
+## Output Format
+
+Respond with a single JSON object matching this structure exactly:
+
+{
+  "uncertaintySignals": ["<signal description>", ...],
+  "recommendedScope": "<1-2 sentence spike scope, or empty string if no uncertainty>",
+  "technicalQuestion": "<the key technical question to answer, or empty string if no uncertainty>"
+}
+
+Do not include any text outside the JSON object.`;
+}
+

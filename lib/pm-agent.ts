@@ -3,11 +3,13 @@ import { routedAnthropicCall } from "./model-router";
 import { listWorkItems, getWorkItem } from "./work-items";
 import { listProjects } from "./projects";
 import { sendEmail } from "./gmail";
+import { fetchPageContent, addCommentToPage, getPageComments } from "./notion";
 import {
   buildBacklogReviewPrompt,
   buildHealthAssessmentPrompt,
   buildNextBatchPrompt,
   buildDigestPrompt,
+  buildUncertaintyDetectionPrompt,
 } from "./pm-prompts";
 import type {
   BacklogReview,
@@ -128,6 +130,123 @@ export async function checkShouldRun(): Promise<{ shouldRun: boolean; reason?: s
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 0b. Uncertainty Detection for Idea-status PRDs
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PRD_DATABASE_ID = "2a61cc49-73c5-41bf-981c-37ef1ab2f77b";
+const UNCERTAINTY_COMMENT_MARKER = "Uncertainty Detected \u2014 Feasibility Spike Recommended";
+
+interface UncertaintyResult {
+  uncertaintySignals: string[];
+  recommendedScope: string;
+  technicalQuestion: string;
+}
+
+/**
+ * Query the PRD database for pages with a given status.
+ */
+async function queryPRDsByStatus(status: string): Promise<Array<{ id: string; title: string }>> {
+  const notionApiKey = process.env.NOTION_API_KEY;
+  if (!notionApiKey) return [];
+
+  try {
+    const response = await fetch(
+      `https://api.notion.com/v1/databases/${PRD_DATABASE_ID}/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${notionApiKey}`,
+          "Notion-Version": "2022-06-28",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filter: { property: "Status", select: { equals: status } },
+        }),
+      },
+    );
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (data.results ?? []).map((page: any) => ({
+      id: page.id,
+      title: page.properties?.["PRD Title"]?.title?.[0]?.plain_text ?? "Untitled",
+    }));
+  } catch (err) {
+    console.error("[pm-agent] Failed to query PRDs by status:", err);
+    return [];
+  }
+}
+
+/**
+ * Detect technical uncertainty in a PRD and post a Notion comment recommending
+ * a feasibility spike if uncertainty signals are found.
+ */
+async function detectAndCommentUncertainty(
+  pageId: string,
+  prdTitle: string,
+): Promise<UncertaintyResult | null> {
+  // Fetch PRD content
+  let prdContent: string;
+  try {
+    prdContent = await fetchPageContent(pageId);
+  } catch (err) {
+    console.error(`[pm-agent] Failed to fetch PRD content for "${prdTitle}" (${pageId}):`, err);
+    return null;
+  }
+
+  if (!prdContent.trim()) {
+    console.log(`[pm-agent] PRD "${prdTitle}" has no content — skipping uncertainty detection`);
+    return null;
+  }
+
+  // Check idempotency: skip if already has an uncertainty comment
+  const existingComments = await getPageComments(pageId);
+  if (existingComments.some((c) => c.includes(UNCERTAINTY_COMMENT_MARKER))) {
+    console.log(`[pm-agent] PRD "${prdTitle}" already has uncertainty comment — skipping`);
+    return null;
+  }
+
+  // Call Claude to detect uncertainty
+  const prompt = buildUncertaintyDetectionPrompt(prdContent);
+  const raw = await callClaude(prompt);
+  const result = safeParseJSON<UncertaintyResult>(raw, {
+    uncertaintySignals: [],
+    recommendedScope: "",
+    technicalQuestion: "",
+  });
+
+  if (result.uncertaintySignals.length === 0) {
+    console.log(`[pm-agent] No uncertainty detected in PRD "${prdTitle}"`);
+    return result;
+  }
+
+  // Build and post the comment
+  const signalsList = result.uncertaintySignals
+    .map((s) => `  \u2022 ${s}`)
+    .join("\n");
+
+  const commentBody = `\uD83D\uDD0D ${UNCERTAINTY_COMMENT_MARKER}
+
+Signals found:
+${signalsList}
+
+Recommended spike scope: ${result.recommendedScope}
+
+Technical question to answer: ${result.technicalQuestion}`;
+
+  try {
+    await addCommentToPage(pageId, commentBody);
+    console.log(`[pm-agent] Posted uncertainty comment on PRD "${prdTitle}" (${result.uncertaintySignals.length} signals)`);
+  } catch (err) {
+    console.error(`[pm-agent] Failed to post uncertainty comment on PRD "${prdTitle}":`, err);
+  }
+
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. reviewBacklog
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -209,6 +328,26 @@ export async function reviewBacklog(config?: Partial<PMAgentConfig>): Promise<Ba
   }).catch((err) => {
     console.error("[pm-agent] Gmail send failed (non-fatal):", err);
   });
+
+  // --- Uncertainty detection for Idea-status PRDs ---
+  try {
+    const ideaPRDs = await queryPRDsByStatus("Idea");
+    const backlogPRDs = await queryPRDsByStatus("Backlog");
+
+    for (const prd of backlogPRDs) {
+      console.log(`[pm-agent] Skipping Backlog-status PRD "${prd.title}" — uncertainty detection only applies to Idea-status PRDs`);
+    }
+
+    for (const prd of ideaPRDs) {
+      try {
+        await detectAndCommentUncertainty(prd.id, prd.title);
+      } catch (err) {
+        console.error(`[pm-agent] Uncertainty detection failed for PRD "${prd.title}":`, err);
+      }
+    }
+  } catch (err) {
+    console.error("[pm-agent] Uncertainty detection phase failed (non-fatal):", err);
+  }
 
   return review;
 }

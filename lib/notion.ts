@@ -559,6 +559,73 @@ export async function updateBugStatus(
   }
 }
 
+/**
+ * Post a comment on a Notion page using the Notion Comments API.
+ */
+export async function addCommentToPage(
+  pageId: string,
+  commentBody: string,
+): Promise<void> {
+  const notionApiKey = process.env.NOTION_API_KEY;
+  if (!notionApiKey) {
+    throw new Error("NOTION_API_KEY environment variable is not set");
+  }
+
+  const response = await fetch("https://api.notion.com/v1/comments", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${notionApiKey}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      parent: { page_id: pageId },
+      rich_text: [{ type: "text", text: { content: commentBody } }],
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(
+      `Notion API error posting comment on page ${pageId}: HTTP ${response.status} — ${body}`,
+    );
+  }
+}
+
+/**
+ * Fetch all comments on a Notion page. Returns an array of comment body strings.
+ */
+export async function getPageComments(pageId: string): Promise<string[]> {
+  const notionApiKey = process.env.NOTION_API_KEY;
+  if (!notionApiKey) return [];
+
+  try {
+    const response = await fetch(
+      `https://api.notion.com/v1/comments?block_id=${pageId}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${notionApiKey}`,
+          "Notion-Version": "2022-06-28",
+        },
+      },
+    );
+
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (data.results ?? []).map((comment: any) =>
+      (comment.rich_text ?? [])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((rt: any) => rt.plain_text ?? "")
+        .join(""),
+    );
+  } catch {
+    return [];
+  }
+}
+
 export async function updateProjectStatus(
   pageId: string,
   status: ProjectStatus,
