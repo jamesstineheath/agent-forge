@@ -52,7 +52,7 @@ export const PHASE_MANIFEST: PhaseDefinition[] = [
   { name: 'branch-cleanup',        tier: 'housekeeping', maxDurationSeconds: 60, timeoutMs: 55_000, description: 'Stale branch deletion' },
   { name: 'blob-reconciliation',   tier: 'housekeeping', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§9.5: Work item blob-index reconciliation' },
   { name: 'drift-detection',       tier: 'housekeeping', maxDurationSeconds: 30, timeoutMs: 25_000, description: '§18: Statistical drift detection' },
-  { name: 'pm-sweep',              tier: 'housekeeping', maxDurationSeconds: 120, timeoutMs: 120_000, description: '§14: PM Agent daily sweep + digest' },
+  { name: 'pm-sweep',              tier: 'housekeeping', maxDurationSeconds: 300, timeoutMs: 300_000, description: '§14: PM Agent daily sweep + digest' },
   { name: 'repo-reindex',          tier: 'housekeeping', maxDurationSeconds: 60, timeoutMs: 55_000, description: '§16: Full re-index for stale repos' },
   { name: 'cache-metrics',         tier: 'housekeeping', maxDurationSeconds: 10, timeoutMs: 8_000, description: 'Daily cache metrics summary' },
 ];
