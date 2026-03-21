@@ -1,7 +1,8 @@
 import { loadJson, saveJson } from "./storage";
 import { routedAnthropicCall } from "./model-router";
-import { listWorkItems, getWorkItem } from "./work-items";
+import { listWorkItems, getWorkItem, updateWorkItem } from "./work-items";
 import { listProjects } from "./projects";
+import { handleSpikeCompletion } from "./spike-completion";
 import { sendEmail } from "./gmail";
 import { fetchPageContent, addCommentToPage, getPageComments } from "./notion";
 import {
@@ -349,7 +350,70 @@ export async function reviewBacklog(config?: Partial<PMAgentConfig>): Promise<Ba
     console.error("[pm-agent] Uncertainty detection phase failed (non-fatal):", err);
   }
 
+  // --- Spike completion phase ---
+  try {
+    await processSpikeCompletions(workItems);
+  } catch (err) {
+    console.error("[pm-agent] Spike completion phase failed (non-fatal):", err);
+  }
+
   return review;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1b. Spike Completion Phase
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Process merged spike work items: read findings from target repo,
+ * post Notion comment on parent PRD, and transition PRD status.
+ */
+async function processSpikeCompletions(allWorkItems: WorkItem[]): Promise<void> {
+  const mergedSpikes = allWorkItems.filter(
+    (item) =>
+      item.type === "spike" &&
+      item.status === "merged" &&
+      !item.updatedAt.includes("spikeCompletionProcessed"), // fallback check
+  );
+
+  // Double-check: re-fetch each to ensure we have latest status and check metadata
+  const spikesToProcess: WorkItem[] = [];
+  for (const spike of mergedSpikes) {
+    const fresh = await getWorkItem(spike.id);
+    if (!fresh) continue;
+    if (fresh.type === "spike" && fresh.status === "merged") {
+      spikesToProcess.push(fresh);
+    }
+  }
+
+  if (spikesToProcess.length === 0) {
+    console.log("[pm-agent] No merged spikes awaiting completion processing");
+    return;
+  }
+
+  console.log(
+    `[pm-agent] Found ${spikesToProcess.length} spike(s) awaiting completion processing`,
+  );
+
+  for (const workItem of spikesToProcess) {
+    try {
+      const action = await handleSpikeCompletion(workItem);
+      console.log(
+        `[pm-agent] Spike ${workItem.id} completion: ${action.type}`,
+      );
+
+      // Mark as processed — transition to verified status
+      await updateWorkItem(workItem.id, {
+        status: "verified",
+      });
+    } catch (err) {
+      console.error(
+        `[pm-agent] Error processing spike completion for ${workItem.id}:`,
+        err,
+      );
+      // Don't rethrow — continue processing other spikes
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

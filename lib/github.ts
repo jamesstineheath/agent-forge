@@ -1013,3 +1013,37 @@ export async function closePRWithReason(
     );
   }
 }
+
+/**
+ * Read the raw text content of a file from a GitHub repository.
+ * @throws Error if the file is not found or content cannot be decoded.
+ */
+export async function readFileContent(
+  owner: string,
+  repo: string,
+  path: string,
+  ref?: string,
+): Promise<string> {
+  const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}${qs}`,
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `File ${path} not found in ${owner}/${repo}: ${res.status}`,
+    );
+  }
+
+  const data = (await res.json()) as { type?: string; content?: string };
+
+  if (data.type !== "file") {
+    throw new Error(`Path ${path} is not a file in ${owner}/${repo}`);
+  }
+
+  if (!data.content) {
+    throw new Error(`File ${path} in ${owner}/${repo} has no content`);
+  }
+
+  return Buffer.from(data.content, "base64").toString("utf-8");
+}

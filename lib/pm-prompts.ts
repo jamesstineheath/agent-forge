@@ -451,3 +451,36 @@ Respond with a single JSON object matching this structure exactly:
 Do not include any text outside the JSON object.`;
 }
 
+/**
+ * Builds a prompt instructing Claude to generate a concise Notion comment
+ * summarizing the outcome of a completed spike investigation.
+ *
+ * Expected output: plain text comment body (no markdown headers).
+ */
+export function buildSpikeCompletionSummaryPrompt(
+  workItem: { id: string; title: string },
+  findings: {
+    recommendation: string;
+    question: string;
+    findings: string;
+    implications: string;
+    tried: string;
+  },
+): string {
+  return `You are summarizing the results of a technical spike for a project stakeholder comment in Notion.
+
+Spike work item: ${workItem.id} — ${workItem.title}
+
+Spike findings:
+- Recommendation: ${findings.recommendation}
+- Technical question: ${findings.question}
+- What was tried: ${findings.tried || 'N/A'}
+- Detailed findings: ${findings.findings || 'N/A'}
+- Implications for parent PRD: ${findings.implications || 'N/A'}
+
+Write a concise (3-5 sentence) Notion comment summarizing the spike outcome.
+Start with the recommendation (GO / GO_WITH_CHANGES / NO_GO), explain the key finding,
+and state the next step for the PRD. Use plain language suitable for a non-technical stakeholder.
+Do not use markdown headers. Output only the comment text.`;
+}
+
