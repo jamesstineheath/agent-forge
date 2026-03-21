@@ -1,5 +1,7 @@
 import useSWR from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode, Bug, WaveProgressData } from "@/lib/types";
+import { useState } from "react";
+import type { KeyedMutator } from "swr";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode, Bug, WaveProgressData, InngestFunctionStatus } from "@/lib/types";
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
@@ -448,4 +450,60 @@ export function useModelRoutingAnalytics(params?: ModelRoutingParams) {
 
   const { data, error, isLoading } = useSWR<ModelRoutingAnalytics>(url, fetcher);
   return { data, error, isLoading };
+}
+
+// ── Inngest Status ────────────────────────────────────────────────────────────
+
+export function useInngestStatus(): {
+  statuses: InngestFunctionStatus[];
+  isLoading: boolean;
+  error: any;
+  mutate: KeyedMutator<InngestFunctionStatus[]>;
+} {
+  const { data, error, isLoading, mutate } = useSWR<InngestFunctionStatus[]>(
+    "/api/agents/inngest-status",
+    fetcher,
+    {
+      refreshInterval: 30000,
+      revalidateOnFocus: true,
+    }
+  );
+
+  return {
+    statuses: data ?? [],
+    isLoading,
+    error,
+    mutate,
+  };
+}
+
+// ── Inngest Trigger ───────────────────────────────────────────────────────────
+
+export function useTriggerInngestFunction(): {
+  trigger: (functionId: string) => Promise<void>;
+  triggeringId: string | null;
+} {
+  const [triggeringId, setTriggeringId] = useState<string | null>(null);
+  const { mutate } = useInngestStatus();
+
+  const trigger = async (functionId: string): Promise<void> => {
+    setTriggeringId(functionId);
+    try {
+      await fetch("/api/agents/inngest-trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ functionId }),
+      });
+      // Immediate revalidation
+      await mutate();
+      // Delayed revalidation to pick up 'running' status
+      setTimeout(async () => {
+        await mutate();
+      }, 3000);
+    } finally {
+      setTriggeringId(null);
+    }
+  };
+
+  return { trigger, triggeringId };
 }
