@@ -79,6 +79,18 @@ export interface DigestProjectSummary {
   delta: string;
 }
 
+export interface BugsSummary {
+  newCount: number;
+  fixedCount: number;
+  fixedWithPRs: Array<{ title: string; prUrl: string }>;
+  openBySeverity: {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
+}
+
 export interface DigestContext {
   period: string;
   stats: {
@@ -89,6 +101,7 @@ export interface DigestContext {
   };
   projectSummaries: DigestProjectSummary[];
   recommendations: string[];
+  bugs?: BugsSummary;
 }
 
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
@@ -316,6 +329,28 @@ export function buildDigestPrompt(context: DigestContext): string {
     .map((r, i) => `  ${i + 1}. ${r}`)
     .join('\n');
 
+  let bugsSection = '';
+  if (context.bugs) {
+    const { newCount, fixedCount, fixedWithPRs, openBySeverity } = context.bugs;
+    const { critical, high, medium, low } = openBySeverity;
+    const totalOpen = critical + high + medium + low;
+
+    const fixedPRList =
+      fixedWithPRs.length > 0
+        ? fixedWithPRs.map((b) => `  - ${b.title}: ${b.prUrl}`).join('\n')
+        : '';
+
+    bugsSection = `
+## Bugs (last 24h)
+
+- New bugs filed: ${newCount}
+- Bugs fixed: ${fixedCount}
+${fixedWithPRs.length > 0 ? `  Fixed bugs with PRs:\n${fixedPRList}\n` : ''}- Open bugs: ${totalOpen} total (${critical} critical, ${high} high, ${medium} medium, ${low} low)
+
+Generate a concise bugs paragraph summarizing the above. Highlight if there are critical open bugs or a spike in new filings.
+`;
+  }
+
   return `You are a PM Agent composing a concise, scannable progress digest email for a software development pipeline. Your audience is a technical project owner who reviews this digest quickly — keep it clear, direct, and actionable.
 
 ## Digest Period
@@ -336,7 +371,7 @@ ${projectSummariesText}
 ## Recommended Actions
 
 ${recommendationsText}
-
+${bugsSection}
 ## Your Task
 
 Compose a plain text email body for this digest. The email should be:
