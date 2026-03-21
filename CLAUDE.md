@@ -15,7 +15,7 @@ A dev orchestration platform (Next.js on Vercel) that coordinates autonomous age
 
 ### Control Plane (this repo)
 
-- **Work Item Store** (Vercel Blob, `af-data/work-items/*`): Project-agnostic store for filed, queued, and executed work items.
+- **Work Item Store** (Neon Postgres, `work_items` table): Project-agnostic store for filed, queued, and executed work items. Migrated from Vercel Blob to eliminate race conditions.
 - **Orchestrator** (API route + Agent SDK): Reads repo context, generates handoff files, pushes to target repos, triggers execution.
 - **4 Autonomous Agents** (independent Vercel crons, `lib/atc/`):
   - **Dispatcher** (5 min): Picks up `ready` items, checks concurrency/conflicts, dispatches to target repos.
@@ -49,7 +49,7 @@ Agent Forge communicates with target repos entirely through the GitHub API:
 
 - **Framework**: Next.js 16 App Router
 - **Auth**: Auth.js v5 (next-auth@beta) with Google OAuth
-- **Storage**: Vercel Blob (production) / local files (development)
+- **Storage**: Neon Postgres (work items via Drizzle ORM), Vercel Blob (other data) / local files (development)
 - **UI**: Tailwind CSS v4, shadcn/ui
 - **AI**: Anthropic Claude via AI SDK (`@ai-sdk/anthropic`, `ai`)
 
@@ -99,7 +99,8 @@ handoffs/           # Handoff file directory
 ### Vercel (production)
 - `ANTHROPIC_API_KEY` -- Claude API access
 - `AUTH_SECRET` -- Auth.js session encryption (generate with `openssl rand -base64 32`)
-- `BLOB_READ_WRITE_TOKEN` -- Vercel Blob storage
+- `DATABASE_URL` -- Neon Postgres connection string (work item store)
+- `BLOB_READ_WRITE_TOKEN` -- Vercel Blob storage (non-work-item data)
 - `GOOGLE_AUTH_CLIENT_ID` -- Google OAuth
 - `GOOGLE_AUTH_CLIENT_SECRET` -- Google OAuth
 - `CRON_SECRET` -- Vercel cron authentication
