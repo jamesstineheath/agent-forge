@@ -839,14 +839,14 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
 
       // Convert back: build DecomposedItem phases from SubPhase results
       phases = subPhaseResult.phases.map((sp) =>
-        sp.items.map((wi) => {
+        (sp.items ?? []).map((wi) => {
           const origIdx = parseInt(wi.id.replace("temp-", ""), 10);
           return decomposedItems[isNaN(origIdx) ? 0 : origIdx];
         }).filter(Boolean),
       );
 
       console.log(
-        `[decomposer] Split into ${subPhaseResult.phases.length} phases: ${subPhaseResult.phases.map((p) => p.items.length + " items").join(", ")}`,
+        `[decomposer] Split into ${subPhaseResult.phases.length} phases: ${subPhaseResult.phases.map((p) => (p.items?.length ?? 0) + " items").join(", ")}`,
       );
     } catch (err) {
       if (err instanceof SubPhaseEscalationError) {
@@ -876,7 +876,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     const item = decomposedItems[i];
 
     // Embed acceptance criteria and estimated files in description
-    const descriptionWithCriteria = `${item.description}\n\n## Acceptance Criteria\n${item.acceptanceCriteria.map((c) => `- ${c}`).join("\n")}\n\n**Estimated files:** ${item.estimatedFiles.join(", ")}`;
+    const descriptionWithCriteria = `${item.description}\n\n## Acceptance Criteria\n${(item.acceptanceCriteria ?? []).map((c) => `- ${c}`).join("\n")}\n\n**Estimated files:** ${(item.estimatedFiles ?? []).join(", ")}`;
 
     // Resolve dependency indices to work item IDs
     const resolvedDeps = item.dependencies
@@ -935,19 +935,19 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
 
   // Build PhaseBreakdown for email rendering when sub-phases exist
   let phaseBreakdown: PhaseBreakdown | undefined;
-  if (subPhaseResult && subPhaseResult.phases.length > 1) {
+  if (subPhaseResult && subPhaseResult.phases?.length > 1) {
     phaseBreakdown = {
       phases: subPhaseResult.phases.map((sp) => ({
         id: sp.id,
         name: sp.name,
-        itemCount: sp.items.length,
-        items: sp.items.map((wi) => ({
+        itemCount: (sp.items ?? []).length,
+        items: (sp.items ?? []).map((wi) => ({
           title: wi.title,
           priority: wi.priority,
         })),
       })),
       crossPhaseDeps: subPhaseResult.phases.flatMap((sp) =>
-        sp.dependencies.map((depId) => ({ from: sp.id, to: depId })),
+        (sp.dependencies ?? []).map((depId) => ({ from: sp.id, to: depId })),
       ),
     };
   }

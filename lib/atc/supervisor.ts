@@ -428,8 +428,10 @@ export async function runDecomposition(): Promise<SupervisorPhaseOutput> {
         // Only decompose 1 per cycle
         break;
       } catch (decompErr) {
-        console.warn(`[supervisor §22] Decomposition failed for "${criteria.prdTitle}":`, decompErr);
-        out.errors.push(`Decomposition for "${criteria.prdTitle}": ${decompErr instanceof Error ? decompErr.message : String(decompErr)}`);
+        const errMsg = decompErr instanceof Error ? decompErr.message : String(decompErr);
+        const errStack = decompErr instanceof Error ? decompErr.stack : undefined;
+        console.error(`[supervisor §22] Decomposition failed for "${criteria.prdTitle}":`, errStack ?? errMsg);
+        out.errors.push(`Decomposition for "${criteria.prdTitle}": ${errMsg}`);
       }
     }
   } catch (err) {
