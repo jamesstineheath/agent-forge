@@ -13,6 +13,17 @@ export type FailureCategory = 'transient' | 'execution' | 'structural' | 'unknow
 
 export type Priority = 'P0' | 'P1' | 'P2';
 
+// --- Spike Types ---
+
+export type SpikeMetadata = {
+  parentPrdId: string;
+  technicalQuestion: string;
+  scope: string;
+  recommendedBy: 'pm-agent' | 'manual';
+};
+
+export type SpikeRecommendation = 'GO' | 'GO_WITH_CHANGES' | 'NO_GO';
+
 // --- WorkItem ---
 
 export interface WorkItem {
@@ -45,7 +56,8 @@ export interface WorkItem {
     | "superseded"
     | "verified"
     | "partial";
-  type?: "feature" | "bugfix" | "refactor" | "test" | "docs" | "chore";
+  type?: "feature" | "bugfix" | "refactor" | "test" | "docs" | "chore" | "spike";
+  spikeMetadata?: SpikeMetadata;
   dependencies: string[];
   handoff: {
     content: string;
@@ -140,7 +152,7 @@ export const updateWorkItemSchema = z.object({
   priority: z.enum(["high", "medium", "low"]).optional(),
   riskLevel: z.enum(["low", "medium", "high"]).optional(),
   complexity: z.enum(["simple", "moderate", "complex"]).optional(),
-  type: z.enum(["feature", "bugfix", "refactor", "test", "docs", "chore"]).optional(),
+  type: z.enum(["feature", "bugfix", "refactor", "test", "docs", "chore", "spike"]).optional(),
   status: z
     .enum([
       "filed",
@@ -291,7 +303,7 @@ export interface TLMMemory {
 
 // --- Project (Notion) ---
 
-export type ProjectStatus = "Draft" | "Ready" | "Execute" | "Executing" | "Complete" | "Failed";
+export type ProjectStatus = "Draft" | "Ready" | "Execute" | "Executing" | "Complete" | "Failed" | "Not Feasible";
 export type ProjectPriority = "P0" | "P1" | "P2";
 export type ProjectComplexity = "Simple" | "Moderate" | "Complex";
 export type ProjectRiskLevel = "Low" | "Medium" | "High";
