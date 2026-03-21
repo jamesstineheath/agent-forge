@@ -3,6 +3,7 @@ import {
   text,
   boolean,
   integer,
+  real,
   timestamp,
   jsonb,
   json,
@@ -95,3 +96,51 @@ export const workItems = pgTable(
 
 export type WorkItemRow = typeof workItems.$inferSelect;
 export type WorkItemInsert = typeof workItems.$inferInsert;
+
+/**
+ * Plans table — Pipeline v2: 1 PRD = 1 plan = 1 branch = 1 PR.
+ * Replaces work item decomposition with direct PRD execution.
+ */
+export const plans = pgTable(
+  "plans",
+  {
+    id: text("id").primaryKey(),
+    prdId: text("prd_id").notNull(),
+    prdTitle: text("prd_title").notNull(),
+    targetRepo: text("target_repo").notNull(),
+    branchName: text("branch_name").notNull(),
+    status: text("status").notNull().default("ready"),
+    // Statuses: ready, dispatching, executing, reviewing,
+    // complete, failed, timed_out, budget_exceeded, needs_review
+    acceptanceCriteria: text("acceptance_criteria").notNull(),
+    kgContext: jsonb("kg_context").$type<{
+      affectedFiles: string[];
+      systemMapSections: string;
+      relevantADRs: Array<{ title: string; status: string; decision: string }>;
+      entityCount: number;
+    } | null>(),
+    affectedFiles: jsonb("affected_files").$type<string[] | null>(),
+    estimatedBudget: real("estimated_budget"),
+    actualCost: real("actual_cost"),
+    maxDurationMinutes: integer("max_duration_minutes").default(60),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    errorLog: text("error_log"),
+    prNumber: integer("pr_number"),
+    prUrl: text("pr_url"),
+    workflowRunId: text("workflow_run_id"),
+    retryCount: integer("retry_count").default(0),
+    prdRank: integer("prd_rank"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_plans_status").on(table.status),
+    index("idx_plans_target_repo").on(table.targetRepo),
+    index("idx_plans_prd_id").on(table.prdId),
+    index("idx_plans_status_target_repo").on(table.status, table.targetRepo),
+  ]
+);
+
+export type PlanRow = typeof plans.$inferSelect;
+export type PlanInsert = typeof plans.$inferInsert;

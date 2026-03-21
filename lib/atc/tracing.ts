@@ -2,7 +2,7 @@ import { saveJson, loadJson, deleteJson } from "../storage";
 
 // === Types ===
 
-export type AgentName = 'dispatcher' | 'health-monitor' | 'project-manager' | 'supervisor' | 'pm-agent';
+export type AgentName = 'dispatcher' | 'health-monitor' | 'project-manager' | 'supervisor' | 'pm-agent' | 'plan-pipeline';
 
 export interface TracePhase {
   name: string;
