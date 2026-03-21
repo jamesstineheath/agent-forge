@@ -1,5 +1,6 @@
 import { inngest } from "./client";
 import { isPipelineKilled } from "@/lib/atc/kill-switch";
+import { writeExecutionLog } from "./execution-log";
 import { saveJson } from "@/lib/storage";
 import { listWorkItems } from "@/lib/work-items";
 import { recordAgentRun } from "@/lib/atc/utils";
@@ -25,6 +26,16 @@ export const pipelineOversight = inngest.createFunction(
     ],
   },
   async ({ step }) => {
+    const startedAt = new Date().toISOString();
+    const startMs = Date.now();
+
+    try {
+      await writeExecutionLog({ functionId: 'pipeline-oversight', status: 'running', startedAt, completedAt: null, durationMs: null });
+    } catch (e) {
+      console.error('[pipeline-oversight] Failed to write running log:', e);
+    }
+
+    try {
     // Preflight: kill switch only (no lock needed for read-only monitoring)
     const preflight = await step.run("preflight", async () => {
       if (await isPipelineKilled()) {
@@ -107,6 +118,33 @@ export const pipelineOversight = inngest.createFunction(
       await recordAgentRun("supervisor");
     });
 
+    try {
+      await writeExecutionLog({
+        functionId: 'pipeline-oversight',
+        status: 'success',
+        startedAt,
+        completedAt: new Date().toISOString(),
+        durationMs: Date.now() - startMs,
+      });
+    } catch (e) {
+      console.error('[pipeline-oversight] Failed to write success log:', e);
+    }
+
     return { success: true, events: allEvents.length };
+    } catch (err) {
+      try {
+        await writeExecutionLog({
+          functionId: 'pipeline-oversight',
+          status: 'error',
+          startedAt,
+          completedAt: new Date().toISOString(),
+          durationMs: Date.now() - startMs,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } catch (logErr) {
+        console.error('[pipeline-oversight] Failed to write error log:', logErr);
+      }
+      throw err;
+    }
   },
 );
