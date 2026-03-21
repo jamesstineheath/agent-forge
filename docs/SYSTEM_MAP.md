@@ -107,21 +107,26 @@ Filed → Ready → Queued → Generating → Executing → Reviewing → Merged
 10. **Blocked**: Escalation created, awaiting human resolution via email
 11. **Parked**: File conflict detected or execution failed, waiting for retry
 
-### Autonomous Agent Architecture (ADR-010)
+### Autonomous Agent Architecture (ADR-010) — Inngest Migration (PR #415)
 
-The ATC monolith has been decomposed into 4 autonomous agents:
+All cron agents run as **Inngest durable step functions** (migrated from Vercel serverless cron 2026-03-21). Each step gets its own execution context with independent timeout and retry. Eliminates the timeout compounding flaw that caused decomposition to fail at 340s every cycle.
 
-| Agent | Route | Cadence | Responsibility |
-|-------|-------|---------|----------------|
-| **Dispatcher** | `/api/agents/dispatcher/cron` | 5 min | Index reconciliation, conflict detection, concurrency enforcement, auto-dispatch |
-| **Health Monitor** | `/api/agents/health-monitor/cron` | 5 min | Stall detection, merge conflict recovery, auto-rebase, failed item reconciliation, dependency re-evaluation |
-| **Project Manager** | `/api/pm-agent` | 15 min | Backlog review, project health assessment, decomposition, completion detection |
-| **Supervisor** | `/api/agents/supervisor/cron` | 10 min | Agent health, escalation management, criteria import, architecture planning, decomposition, intent validation, phase-prioritized execution |
+Old cron routes (`/api/agents/*/cron`) are kept as thin Inngest event triggers for dashboard "Run Now" button compatibility. Inngest serve endpoint: `/api/inngest`.
+
+| Inngest Function | Cron | Steps | Source |
+|-----------------|------|-------|--------|
+| **plan-pipeline** | */10 | criteria-import, architecture-planning (800s), decomposition (800s) | Supervisor (core) |
+| **pipeline-oversight** | */30 | escalation-management, intent-validation, spend-monitoring, agent-health | Supervisor (monitoring) |
+| **pm-sweep** | daily 08:00 UTC | PM sweep (backlog review, health, digest) | Supervisor (extracted) |
+| **housekeeping** | */6h | branch-cleanup, drift-detection, repo-reindex + cache-metrics | Supervisor (maintenance) |
+| **dispatcher-cycle** | */15 | index-reconciliation, dispatch | Dispatcher |
+| **pm-cycle** | */30 | retry-processing, decomposition, lifecycle-management | Project Manager |
+| **health-monitor-cycle** | */15 | health-monitoring, hlo-polling | Health Monitor |
 
 **Shared infrastructure:**
 - **Distributed lock** (`lib/atc/lock.ts`): Optimistic Vercel Blob lock with write-then-reread race detection. 5-min TTL, 10-min hard ceiling.
 - **Event log** (`lib/atc/events.ts`): Global rolling log (max 1000 events) + per-work-item history (uncapped).
-- **Feature flag**: `AGENT_SPLIT_ENABLED=true` enables new agent cron routes. Legacy `/api/atc/cron` has been **disabled** (cron removed 2026-03-18).
+- **Inngest client** (`lib/inngest/client.ts`): Inngest instance (`id: "agent-forge"`). Functions defined in `lib/inngest/*.ts`.
 
 ### Self-Healing Sections
 
@@ -217,6 +222,16 @@ Outcome Tracker (daily)
 | Telemetry API | `app/api/telemetry/route.ts` | Unified telemetry query (events, traces, costs, metrics) |
 | Pipeline Metrics | `lib/pipeline-metrics.ts` | Speed, quality, cost, volume KPIs |
 | Cost Tracking | `lib/cost-tracking.ts` | Cost recording, period queries, aggregation |
+| **Inngest** | | |
+| Inngest Client | `lib/inngest/client.ts` | Inngest instance (`id: "agent-forge"`) |
+| Plan Pipeline | `lib/inngest/plan-pipeline.ts` | Criteria import → architecture planning → decomposition |
+| Pipeline Oversight | `lib/inngest/pipeline-oversight.ts` | Escalation, intent validation, spend, agent health |
+| PM Sweep | `lib/inngest/pm-sweep.ts` | Daily PM sweep (backlog, health, digest) |
+| Housekeeping | `lib/inngest/housekeeping.ts` | Branch cleanup, drift detection, repo reindex |
+| Dispatcher Cycle | `lib/inngest/dispatcher.ts` | Index reconciliation + dispatch |
+| PM Cycle | `lib/inngest/pm-cycle.ts` | Project retry + decomposition + lifecycle |
+| Health Monitor Cycle | `lib/inngest/health-monitor.ts` | Health monitoring + HLO polling |
+| Serve Handler | `app/api/inngest/route.ts` | Inngest serve endpoint (registers all 7 functions) |
 | **Dashboard** | | |
 | Hooks (SWR) | `lib/hooks.ts` | React data fetching hooks |
 | Handoffs | `handoffs/` | Version-controlled handoff files |
@@ -283,8 +298,9 @@ Outcome Tracker (daily)
 | `WORK_ITEMS_API_KEY` | Bearer token for PA → AF work item filing |
 | `GH_PAT` | Fine-grained PAT for GitHub API |
 | `GITHUB_WEBHOOK_SECRET` | HMAC-SHA256 for webhook verification |
-| `AGENT_SPLIT_ENABLED` | Feature flag: enables new agent cron routes |
-| `CRON_SECRET` | Auth for Vercel cron invocations |
+| `INNGEST_EVENT_KEY` | Inngest event key (sends events) |
+| `INNGEST_SIGNING_KEY` | Inngest signing key (verifies serve requests) |
+| `CRON_SECRET` | Auth for Vercel cron invocations (now thin Inngest event triggers) |
 
 ### Target Repos (GitHub Secrets)
 
