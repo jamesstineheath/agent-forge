@@ -297,6 +297,17 @@ export function useTlmAgents() {
   return { data, error, isLoading };
 }
 
+// === Agent Count ===
+
+export function useAgentCount() {
+  const { data, error, isLoading } = useSWR<import("@/app/api/agents/count/route").AgentCountData>(
+    "/api/agents/count",
+    fetcher,
+    { refreshInterval: 60000 }
+  );
+  return { data, error, isLoading };
+}
+
 // === Evaluation Metrics ===
 
 export function useEvaluationMetrics() {

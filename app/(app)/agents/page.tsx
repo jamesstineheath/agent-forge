@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { RefreshCw, Bot } from "lucide-react";
+import { RefreshCw, Bot, ChevronDown } from "lucide-react";
 import { useWorkItems, useTlmAgents } from "@/lib/hooks";
 import type { TlmWorkflowStatus } from "@/lib/hooks";
 import { PAAgentRow } from "@/components/pa-agent-row";
@@ -9,6 +9,7 @@ import { AgentDashboard } from "@/components/agent-dashboard";
 import { AgentTraceViewer } from "@/components/agent-trace-viewer";
 import { EvaluationMetricsPanel } from "@/components/evaluation-metrics-panel";
 import { AgentTriggerButton } from "@/components/agent-trigger-button";
+import { AgentCountBadge, usePAAgentsAvailable } from "@/components/agent-count-badge";
 
 const PA_AGENTS = [
   { name: "Inbox Triage", tier: "Tier 1", assessmentTier: "Weekly", status: "active" as const },
@@ -159,6 +160,66 @@ function TlmAgentsSection() {
   );
 }
 
+// --- PA Agents (collapsed when PA MCP unavailable) ---
+
+function PAAgentsSection() {
+  const paAvailable = usePAAgentsAvailable();
+
+  if (paAvailable) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+            PA Agents
+          </p>
+          <span className="text-[10px] text-muted-foreground/40">(personal-assistant)</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Evaluation framework (ADR-007) active for Tier 1 agents. Tier 2/3
+          agents collect actions but lack assessment signal.
+        </p>
+        <div className="rounded-xl card-elevated bg-surface-1 divide-y divide-border">
+          {PA_AGENTS.map((agent) => (
+            <PAAgentRow
+              key={agent.name}
+              name={agent.name}
+              tier={agent.tier}
+              assessmentTier={agent.assessmentTier}
+              status={agent.status}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <details className="space-y-3">
+      <summary className="flex items-center gap-2 cursor-pointer list-none">
+        <ChevronDown className="h-3 w-3 text-muted-foreground/60 transition-transform [[open]>&]:rotate-180" />
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+          PA Agents
+        </p>
+        <span className="text-[10px] text-muted-foreground/40">(status unavailable)</span>
+      </summary>
+      <p className="text-xs text-muted-foreground mt-2">
+        PA MCP endpoint not configured. Agent status data is static.
+      </p>
+      <div className="rounded-xl card-elevated bg-surface-1 divide-y divide-border mt-2">
+        {PA_AGENTS.map((agent) => (
+          <PAAgentRow
+            key={agent.name}
+            name={agent.name}
+            tier={agent.tier}
+            assessmentTier={agent.assessmentTier}
+            status={agent.status}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 // --- Main Page ---
 
 export default function AgentsPage() {
@@ -175,7 +236,7 @@ export default function AgentsPage() {
           <div className="flex items-center gap-2 text-[11px]">
             <span className="flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1 font-medium text-muted-foreground ring-1 ring-border">
               <Bot className="h-3 w-3" />
-              {PA_AGENTS.filter(a => a.status === "active").length + 5} agents
+              <AgentCountBadge />
             </span>
           </div>
         </div>
@@ -222,29 +283,7 @@ export default function AgentsPage() {
           </div>
 
           {/* PA Agents */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
-                PA Agents
-              </p>
-              <span className="text-[10px] text-muted-foreground/40">(personal-assistant)</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Evaluation framework (ADR-007) active for Tier 1 agents. Tier 2/3
-              agents collect actions but lack assessment signal.
-            </p>
-            <div className="rounded-xl card-elevated bg-surface-1 divide-y divide-border">
-              {PA_AGENTS.map((agent) => (
-                <PAAgentRow
-                  key={agent.name}
-                  name={agent.name}
-                  tier={agent.tier}
-                  assessmentTier={agent.assessmentTier}
-                  status={agent.status}
-                />
-              ))}
-            </div>
-          </div>
+          <PAAgentsSection />
 
           {/* Evaluation Metrics */}
           <div className="space-y-3">
