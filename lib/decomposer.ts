@@ -7,6 +7,7 @@ import { escalate } from "./escalation";
 import type { Project, ProjectTargetRepo, WorkItem, RepoConfig, DecomposerConfig, SubPhase, PhaseBreakdown, Priority } from "./types";
 import { loadGraph } from "./knowledge-graph/storage";
 import { buildTargetedContext } from "./knowledge-graph/query";
+import { assignWaves, type WaveSchedulerInput } from "./wave-scheduler";
 
 // --- Constants ---
 
@@ -117,6 +118,39 @@ export class SubPhaseEscalationError extends Error {
     super(message);
     this.name = "SubPhaseEscalationError";
   }
+}
+
+// --- Parallelism Validation ---
+
+/**
+ * Validates that a decomposed set of work items has sufficient parallelism.
+ * For projects with 8+ items, the parallelism factor (items / waves) must be >= 2.0.
+ * Smaller projects are always considered valid.
+ */
+export function validateParallelismFactor(
+  items: { dependsOn: string[] }[]
+): { factor: number; valid: boolean } {
+  if (items.length === 0) {
+    return { factor: 1, valid: true };
+  }
+
+  const now = new Date();
+  const itemsWithIds: WaveSchedulerInput[] = items.map((item, idx) => ({
+    id: `item-${idx}`,
+    dependsOn: item.dependsOn,
+    filesBeingModified: [],
+    createdAt: now,
+  }));
+
+  const waves = assignWaves(itemsWithIds);
+  const totalWaves = Math.max(
+    waves.reduce((max, w) => Math.max(max, w.waveNumber), 0) + 1,
+    1
+  );
+  const factor = items.length / totalWaves;
+  const valid = items.length < 8 ? true : factor >= 2.0;
+
+  return { factor, valid };
 }
 
 // --- Types ---
@@ -362,11 +396,38 @@ CONSTRAINTS:
 - Each work item should touch 1-3 files maximum
 - Each work item must compile and pass tests independently after execution
 - Each work item must have 3-5 specific, testable acceptance criteria
-- Dependencies must form a DAG (no cycles). MAXIMIZE PARALLELISM: only add a dependency if item B truly cannot start until item A is merged. If two items touch different files or subsystems, they should have NO dependency between them even if one is "logically first". The pipeline can execute independent items concurrently.
-- Prefer wide, shallow DAGs over deep linear chains. A 10-item plan with 3 parallel tracks of 3-4 items each is far better than a single 10-item sequence.
 - Prefer more, smaller items over fewer, larger ones
 - The first item in the sequence should be the lowest-risk foundational change
 - Include a final integration/E2E test item that depends on all others
+
+## Dependency DAG Rules — Wide, Shallow Topologies
+
+When assigning dependencies between work items, follow these rules strictly:
+
+1. **Prefer fan-out over chains.** If multiple items can be worked on independently, they should ALL have no dependency on each other, even if they will eventually be integrated.
+
+2. **Separate interface definitions from implementations.** If a shared type or interface must be defined first, make that one item, then ALL items that implement it can be parallel (they all depend on the interface item, not on each other).
+
+3. **Group shared-nothing tasks at the same dependency level.** If two items touch different files or different subsystems, they MUST have NO dependency between them.
+
+4. **Only add a dependency if truly required.** Ask: "Can item B start before item A is merged?" If yes — even if B would benefit from A — do NOT add the dependency. Only add a dependency if B literally cannot compile or run without A being merged first.
+
+5. **Never create chains for organizational convenience.** A chain A → B → C → D is almost always wrong. Prefer A → [B, C, D] (B, C, D all depend on A but not each other).
+
+6. **Target parallelism factor >= 2.** If you have N work items, aim for them to be completable in at most N/2 sequential waves. A 10-item project should complete in 5 or fewer waves.
+
+Example of WRONG (linear chain):
+- Item 0: Define schema (no deps)
+- Item 1: Add API route (depends on [0])
+- Item 2: Add UI component (depends on [1])
+- Item 3: Add tests (depends on [2])
+
+Example of CORRECT (wide, shallow):
+- Item 0: Define schema + types (no deps)
+- Item 1: Add API route (depends on [0])
+- Item 2: Add UI component (depends on [0])
+- Item 3: Add unit tests for API (depends on [0])
+- Item 4: Add integration tests (depends on [1, 2])
 
 OUTPUT FORMAT:
 Return a JSON array (no markdown fencing, no explanation) where each element is:
@@ -799,16 +860,107 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     }
   }
 
+  // 4.6. Validate parallelism factor and retry once if too low
+  const parallelismItems = decomposedItems.map((item) => ({
+    dependsOn: item.dependencies.map((dep) => `item-${dep}`),
+  }));
+  const validation = validateParallelismFactor(parallelismItems);
+
+  if (!validation.valid) {
+    const totalWaves = Math.round(decomposedItems.length / validation.factor);
+    console.warn(
+      `[Decomposer] Low parallelism factor: ${validation.factor.toFixed(2)} ` +
+      `(${decomposedItems.length} items / ${totalWaves} waves). ` +
+      `Retrying with stronger prompt...`
+    );
+
+    // One retry with a stronger parallelism prompt
+    const retryPrompt = `${planPrompt}\n\n---\nCRITICAL: The previous decomposition had too many sequential dependencies ` +
+      `(parallelism factor ${validation.factor.toFixed(2)}, need >= 2.0). ` +
+      `Re-decompose with a parallelism factor of at least 2.0 (items/waves >= 2). ` +
+      `Most items should be able to run in parallel. Only add dependencies when ` +
+      `absolutely required for compilation correctness. Prefer fan-out topologies.`;
+
+    const retryStart = Date.now();
+    const { text: retryText } = await tagged('routedAnthropicCall(parallelism-retry)', () => routedAnthropicCall({
+      model: "claude-opus-4-6",
+      taskType: "decomposition",
+      workItemId: project.projectId,
+      system: {
+        role: "system" as const,
+        content: SYSTEM_PROMPT,
+        providerOptions: cacheEphemeral,
+      },
+      messages: [
+        {
+          role: "user" as const,
+          content: [
+            {
+              type: "text" as const,
+              text: repoContext,
+              providerOptions: cacheEphemeral,
+            },
+            {
+              type: "text" as const,
+              text: retryPrompt,
+            },
+          ],
+        },
+      ],
+    }));
+    console.log(`[decomposer] Parallelism retry took ${Date.now() - retryStart}ms (response: ${retryText.length} chars)`);
+
+    const retryCleaned = retryText.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
+    try {
+      const retryParsed = JSON.parse(retryCleaned);
+      if (Array.isArray(retryParsed)) {
+        for (let i = 0; i < retryParsed.length; i++) {
+          const deps = retryParsed[i]?.dependencies;
+          if (Array.isArray(deps)) {
+            retryParsed[i].dependencies = deps.filter((d: number) => d !== i);
+          }
+        }
+      }
+      const retryValidationError = validateDecomposition(retryParsed);
+      if (!retryValidationError) {
+        const retryParallelismItems = retryParsed.map((item: DecomposedItem) => ({
+          dependsOn: item.dependencies.map((dep) => `item-${dep}`),
+        }));
+        const retryValidation = validateParallelismFactor(retryParallelismItems);
+        if (retryValidation.factor > validation.factor) {
+          console.log(
+            `[decomposer] Parallelism retry improved factor: ${validation.factor.toFixed(2)} → ${retryValidation.factor.toFixed(2)}`
+          );
+          decomposedItems = retryParsed;
+          // Re-run file-overlap injection on retried items
+          const retryInjected = injectFileOverlapDependencies(decomposedItems!);
+          if (retryInjected > 0) {
+            console.log(`[decomposer] Re-injected ${retryInjected} file-overlap dependency edge(s) after parallelism retry`);
+          }
+        } else {
+          console.log(`[decomposer] Parallelism retry did not improve factor (${retryValidation.factor.toFixed(2)}), keeping original`);
+        }
+      } else {
+        console.warn(`[decomposer] Parallelism retry failed validation: ${retryValidationError}, keeping original`);
+      }
+    } catch (err) {
+      console.warn(`[decomposer] Parallelism retry parse failed: ${err instanceof Error ? err.message : String(err)}, keeping original`);
+    }
+  }
+
   // 5. Check item count limits and route accordingly
+  // Re-assert non-null: decomposedItems was confirmed non-null before step 4.5,
+  // and the retry block above only replaces it with a valid parsed array.
+  const finalItems = decomposedItems!;
   const config = getDecomposerConfig();
   const { softLimit, hardLimit, maxRecursionDepth } = config;
 
-  if (decomposedItems.length > hardLimit) {
+  if (finalItems.length > hardLimit) {
     await escalate(
       `project:${project.projectId}`,
-      `Decomposition produced ${decomposedItems.length} items (max ${hardLimit}). The plan should be split into smaller phases.`,
+      `Decomposition produced ${finalItems.length} items (max ${hardLimit}). The plan should be split into smaller phases.`,
       0.7,
-      { projectId: project.projectId, itemCount: decomposedItems.length },
+      { projectId: project.projectId, itemCount: finalItems.length },
       project.projectId,
     );
     return { workItems: [], phases: null };
@@ -818,9 +970,9 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   let phases: DecomposedItem[][] | null = null;
   let subPhaseResult: { items: WorkItem[]; phases: SubPhase[] } | null = null;
 
-  if (decomposedItems.length > softLimit) {
+  if (finalItems.length > softLimit) {
     // Convert DecomposedItems to temporary WorkItems for groupIntoSubPhases
-    const tempWorkItems: WorkItem[] = decomposedItems.map((item, i) => ({
+    const tempWorkItems: WorkItem[] = finalItems.map((item, i) => ({
       id: `temp-${i}`,
       title: item.title,
       description: item.description,
@@ -837,7 +989,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       updatedAt: new Date().toISOString(),
     }));
 
-    const targetPhaseCount = Math.ceil(decomposedItems.length / softLimit);
+    const targetPhaseCount = Math.ceil(finalItems.length / softLimit);
     const projectId = project.projectId || "phase";
 
     try {
@@ -854,7 +1006,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       phases = subPhaseResult.phases.map((sp) =>
         (sp.items ?? []).map((wi) => {
           const origIdx = parseInt(wi.id.replace("temp-", ""), 10);
-          return decomposedItems[isNaN(origIdx) ? 0 : origIdx];
+          return finalItems[isNaN(origIdx) ? 0 : origIdx];
         }).filter(Boolean),
       );
 
@@ -869,7 +1021,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
           0.7,
           {
             projectId: project.projectId,
-            totalItems: decomposedItems.length,
+            totalItems: finalItems.length,
             phaseName: err.phaseName,
             phaseSize: err.phaseSize,
           },
@@ -886,8 +1038,8 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
   const indexToId = new Map<number, string>();
   const createdItems: WorkItem[] = [];
 
-  for (let i = 0; i < decomposedItems.length; i++) {
-    const item = decomposedItems[i];
+  for (let i = 0; i < finalItems.length; i++) {
+    const item = finalItems[i];
 
     // Embed acceptance criteria and estimated files in description
     const descriptionWithCriteria = `${item.description}\n\n## Acceptance Criteria\n${(item.acceptanceCriteria ?? []).map((c) => `- ${c}`).join("\n")}\n\n**Estimated files:** ${(item.estimatedFiles ?? []).join(", ")}`;
@@ -903,7 +1055,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
       ? item.targetRepo
       : `jamesstineheath/${item.targetRepo}`;
 
-    const workItem = await tagged(`createWorkItem(${i}/${decomposedItems.length})`, () => createWorkItem({
+    const workItem = await tagged(`createWorkItem(${i}/${finalItems.length})`, () => createWorkItem({
       title: item.title,
       description: descriptionWithCriteria,
       targetRepo: normalizedRepo,
@@ -939,7 +1091,7 @@ export async function decomposeProject(project: Project): Promise<DecompositionR
     workItemPhases = phases.map((phase) =>
       phase
         .map((item) => {
-          const origIdx = decomposedItems.indexOf(item);
+          const origIdx = finalItems.indexOf(item);
           const id = indexToId.get(origIdx);
           return id ? createdItems.find((wi) => wi.id === id) : undefined;
         })
