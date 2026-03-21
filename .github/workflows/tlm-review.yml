@@ -27,13 +27,15 @@ jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Run on PR events, or on check_suite completion ONLY if it's from GitHub Actions (CI)
-    # Skip check_suite events from other apps (Vercel, etc.) to avoid redundant runs
+    # Run on PR events or manual dispatch.
+    # check_suite trigger kept for backward compat but filtered to GitHub Actions CI only.
+    # The TLM action itself polls CI status before reviewing (waits for CI to pass).
     if: >-
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'check_suite' &&
-       github.event.check_suite.app.slug == 'github-actions')
+       github.event.check_suite.app.slug == 'github-actions' &&
+       github.event.check_suite.conclusion == 'success')
     steps:
       - name: Checkout
         uses: actions/checkout@v4
