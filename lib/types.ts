@@ -902,3 +902,12 @@ export interface Episode {
   createdAt: string;
   updatedAt: string;
 }
+
+// ── Inngest Observability ───────────────────────────────────────────────────
+
+export type InngestFunctionStatus = {
+  functionId: string;
+  functionName: string;
+  status: 'idle' | 'running' | 'success' | 'error';
+  lastRunAt: string | null;
+};
