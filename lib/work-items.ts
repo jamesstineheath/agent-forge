@@ -194,6 +194,11 @@ export async function createWorkItem(
       rank: data.rank,
       handoff: null,
       execution: null,
+      prdId:
+        data.source.type === "project" &&
+        data.source.sourceId?.startsWith("PRD-")
+          ? data.source.sourceId
+          : null,
       createdAt: now,
       updatedAt: now,
     })

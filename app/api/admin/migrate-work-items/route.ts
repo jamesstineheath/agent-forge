@@ -47,8 +47,12 @@ export async function POST(request: NextRequest) {
 
     let migrated = 0;
     let skipped = 0;
+    let skippedCancelled = 0;
     let errors = 0;
     const errorDetails: string[] = [];
+
+    // Items older than 7 days in cancelled status are historical noise
+    const CANCELLED_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
 
     // Step 2: Load each blob and insert into Postgres in batches
     const BATCH_SIZE = 50;
@@ -67,6 +71,25 @@ export async function POST(request: NextRequest) {
           if (!item) {
             skipped++;
             continue;
+          }
+
+          // Skip old cancelled items (>7 days) — historical noise
+          if (
+            item.status === "cancelled" &&
+            item.updatedAt &&
+            Date.now() - new Date(item.updatedAt).getTime() > CANCELLED_CUTOFF_MS
+          ) {
+            skippedCancelled++;
+            continue;
+          }
+
+          // Derive prd_id for project-sourced items with PRD- prefix
+          let prdId: string | null = null;
+          if (
+            item.source?.type === "project" &&
+            item.source?.sourceId?.startsWith("PRD-")
+          ) {
+            prdId = item.source.sourceId;
           }
 
           rows.push({
@@ -94,6 +117,7 @@ export async function POST(request: NextRequest) {
             failureCategory: item.failureCategory,
             attribution: item.attribution,
             reasoningMetrics: item.reasoningMetrics,
+            prdId,
             createdAt: new Date(item.createdAt),
             updatedAt: new Date(item.updatedAt),
           });
@@ -123,6 +147,7 @@ export async function POST(request: NextRequest) {
       blobsFound: itemBlobs.length,
       migrated,
       skipped,
+      skippedCancelled,
       errors,
       errorDetails: errorDetails.slice(0, 20), // cap at 20
       dbCount,
