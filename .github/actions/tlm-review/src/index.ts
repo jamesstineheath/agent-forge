@@ -275,8 +275,32 @@ async function checkCIStatus(
   );
 
   if (ciChecks.length === 0) {
-    core.info("No CI check runs found (excluding TLM), proceeding with review.");
-    return "passed";
+    // CI should always be present for PRs targeting main.
+    // If no checks found yet, CI hasn't registered. Poll briefly.
+    core.info("No CI check runs found yet. Waiting for CI to register...");
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      const { data: retryRuns } = await octokit.rest.checks.listForRef({
+        owner,
+        repo,
+        ref,
+      });
+      const retryChecks = retryRuns.check_runs.filter(
+        (cr) =>
+          !SELF_CHECK_NAMES.some((name) =>
+            cr.name.toLowerCase().includes(name)
+          )
+      );
+      if (retryChecks.length > 0) {
+        // CI registered — delegate to full status check
+        return checkCIStatus(octokit, owner, repo, ref, prNumber);
+      }
+    }
+    // After 30s with no CI checks at all, treat as pending (not passed)
+    core.warning(
+      "No CI checks appeared after 30s. Treating as pending, not passed."
+    );
+    return "pending";
   }
 
   const failedChecks = ciChecks.filter((cr) => cr.conclusion === "failure");
@@ -620,6 +644,9 @@ async function run(): Promise<void> {
       'lib/agents/executor.ts',
       'lib/cron-config.ts',
       'lib/cron/job-executor.ts',
+      'lib/db/schema.ts',
+      'lib/db/',
+      'drizzle.config.ts',
     ];
 
     const matchesPatterns = (file: string, patterns: string[]) =>
@@ -686,6 +713,17 @@ async function run(): Promise<void> {
       const fileList = tier2Files.map((f) => `- \`${f}\``).join('\n');
       sensitivePathContext = `\n\nNOTE: This PR touches pipeline-adjacent files that warrant extra scrutiny:\n${fileList}\nIf these changes are risky or could break the pipeline, set decision to "flag_for_human". If they are straightforward and low-risk, you may approve.`;
       core.info(`PR touches ${tier2Files.length} Tier 2 sensitive path(s), adding context for Claude review.`);
+    }
+
+    // Schema change detection: flag PRs that modify schema without migrations
+    const schemaFiles = changedFiles.filter(
+      (f) =>
+        f.includes("schema.ts") ||
+        f.includes("drizzle.config") ||
+        f.includes("migrations/")
+    );
+    if (schemaFiles.length > 0) {
+      sensitivePathContext += `\n\nCRITICAL: This PR modifies database schema files (${schemaFiles.join(", ")}). Schema changes in Drizzle require a corresponding database migration (ALTER TABLE) on the live Neon database. If this PR adds or removes columns in the schema definition without an accompanying migration, it WILL break the production API at deploy time. Flag for human review unless a migration file or migration route is included in this PR.`;
     }
 
     // Truncate very large diffs to avoid token limits.
