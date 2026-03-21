@@ -97,6 +97,8 @@ export interface WorkItem {
   expedite?: boolean;
   triagePriority?: Priority;
   rank?: number;
+  /** Wave number assigned by the wave scheduler for concurrent dispatch ordering. */
+  waveNumber?: number;
   createdAt: string;
   updatedAt: string;
   reasoningMetrics?: ReasoningQualityAssessment;
@@ -239,6 +241,7 @@ export const updateWorkItemSchema = z.object({
   blockedReason: z.enum(["flag_for_human", "escalation", "dependency"]).optional(),
   failureCategory: z.enum(["transient", "execution", "structural", "unknown"]).optional(),
   expedite: z.boolean().optional(),
+  waveNumber: z.number().int().optional(),
 });
 
 export type CreateWorkItemInput = z.infer<typeof createWorkItemSchema>;
