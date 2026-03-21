@@ -163,7 +163,7 @@ export function ProjectCard({
   expanded,
   onToggle,
 }: ProjectCardProps) {
-  const completed = workItems.filter((wi) => wi.status === "merged").length;
+  const completed = workItems.filter((wi) => wi.status === "merged" || wi.status === "verified" || wi.status === "partial").length;
   const executing = workItems.filter((wi) =>
     ACTIVE_STATUSES.includes(wi.status)
   ).length;

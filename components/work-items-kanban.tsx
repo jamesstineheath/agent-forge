@@ -46,7 +46,7 @@ const COLUMNS: ColumnDef[] = [
   { group: "Backlog", statuses: ["filed", "ready", "queued"] },
   { group: "In Progress", statuses: ["generating", "executing", "retrying"] },
   { group: "Review", statuses: ["reviewing", "escalated"] },
-  { group: "Done", statuses: ["merged"] },
+  { group: "Done", statuses: ["merged", "verified", "partial"] },
   { group: "Terminal", statuses: ["failed", "parked", "blocked", "cancelled", "superseded"] },
 ];
 
