@@ -37,7 +37,12 @@ export function parseEstimatedFiles(content: string): string[] {
     .filter(Boolean);
 }
 
-export function hasFileOverlap(filesA: string[], filesB: string[]): boolean {
+export function hasFileOverlap(
+  filesA: string[] | undefined,
+  filesB: string[] | undefined
+): boolean {
+  if (!filesA || filesA.length === 0) return false;
+  if (!filesB || filesB.length === 0) return false;
   const setB = new Set(filesB);
   return filesA.some((f) => setB.has(f));
 }
