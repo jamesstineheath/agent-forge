@@ -18,7 +18,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run TLM Outcome Tracker
-        uses: ./.github/actions/tlm-outcome-tracker
+        uses: jamesstineheath/agent-forge/.github/actions/tlm-outcome-tracker@main
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
