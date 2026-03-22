@@ -1,7 +1,7 @@
 import useSWR from "swr";
 import { useState } from "react";
 import type { KeyedMutator } from "swr";
-import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode, Bug, WaveProgressData, InngestFunctionStatus } from "@/lib/types";
+import type { WorkItem, RepoConfig, ATCState, ATCEvent, Project, TLMMemory, DebateStats, CostAnalytics, Episode, Bug, WaveProgressData, InngestFunctionStatus, Plan, PlanStatus } from "@/lib/types";
 import type { DebateSession } from "@/lib/debate/types";
 import type { Escalation } from "@/lib/escalation";
 import type { WebhookEvent } from "@/lib/event-bus-types";
@@ -506,4 +506,41 @@ export function useTriggerInngestFunction(): {
   };
 
   return { trigger, triggeringId };
+}
+
+// ── Plans (Pipeline v2) ─────────────────────────────────────────────────────
+
+export interface PlanFilters {
+  status?: PlanStatus;
+  targetRepo?: string;
+  prdId?: string;
+}
+
+export function usePlans(filters?: PlanFilters) {
+  const params = new URLSearchParams();
+  if (filters?.status) params.set("status", filters.status);
+  if (filters?.targetRepo) params.set("target_repo", filters.targetRepo);
+  if (filters?.prdId) params.set("prd_id", filters.prdId);
+  const query = params.toString();
+  const url = `/api/plans${query ? `?${query}` : ""}`;
+
+  const { data, error, isLoading, mutate } = useSWR<{ plans: Plan[] }>(url, fetcher, {
+    refreshInterval: 30000,
+  });
+
+  return {
+    plans: data?.plans ?? [],
+    error,
+    isLoading,
+    mutate,
+  };
+}
+
+export function usePlan(id: string | null) {
+  const { data, error, isLoading, mutate } = useSWR<Plan>(
+    id ? `/api/plans/${id}` : null,
+    fetcher,
+    { refreshInterval: 30000 }
+  );
+  return { plan: data ?? null, error, isLoading, mutate };
 }
