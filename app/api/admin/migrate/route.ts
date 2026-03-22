@@ -132,6 +132,16 @@ export async function POST(req: NextRequest) {
     results.push({ name: "add-cost-records-plan-id", status: "skipped", error: message });
   }
 
+  // Migration 10: plans columns added by PRD-35 (spike support)
+  try {
+    await sql`ALTER TABLE plans ADD COLUMN IF NOT EXISTS prd_type TEXT`;
+    await sql`ALTER TABLE plans ADD COLUMN IF NOT EXISTS spike_metadata JSONB`;
+    results.push({ name: "add-plans-spike-columns", status: "applied" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    results.push({ name: "add-plans-spike-columns", status: "failed", error: message });
+  }
+
   const allSucceeded = results.every((r) => r.status === "applied" || r.status === "skipped");
 
   return NextResponse.json(
