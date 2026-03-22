@@ -20,6 +20,7 @@ const DISPATCHER_LOCK_KEY = "atc/dispatcher-lock";
  */
 const V2_ENABLED_REPOS = new Set([
   "jamesstineheath/agent-forge",
+  "jamesstineheath/personal-assistant",
 ]);
 
 /**
