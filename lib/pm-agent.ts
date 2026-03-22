@@ -3,6 +3,8 @@ import { routedAnthropicCall } from "./model-router";
 import { listWorkItems, getWorkItem, updateWorkItem } from "./work-items";
 import { listProjects } from "./projects";
 import { handleSpikeCompletion } from "./spike-completion";
+import { handlePlanSpikeCompletion } from "./spike-plan-completion";
+import { listPlans, updatePlanStatus } from "./plans";
 import { sendEmail } from "./gmail";
 import { fetchPageContent, addCommentToPage, getPageComments } from "./notion";
 import {
@@ -350,11 +352,18 @@ export async function reviewBacklog(config?: Partial<PMAgentConfig>): Promise<Ba
     console.error("[pm-agent] Uncertainty detection phase failed (non-fatal):", err);
   }
 
-  // --- Spike completion phase ---
+  // --- Spike completion phase (legacy work items) ---
   try {
     await processSpikeCompletions(workItems);
   } catch (err) {
     console.error("[pm-agent] Spike completion phase failed (non-fatal):", err);
+  }
+
+  // --- Spike completion phase (Pipeline v2 plans) ---
+  try {
+    await processPlanSpikeCompletions();
+  } catch (err) {
+    console.error("[pm-agent] Plan spike completion phase failed (non-fatal):", err);
   }
 
   return review;
@@ -412,6 +421,45 @@ async function processSpikeCompletions(allWorkItems: WorkItem[]): Promise<void> 
         err,
       );
       // Don't rethrow — continue processing other spikes
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1c. Plan Spike Completion Phase (Pipeline v2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Process completed spike plans: read findings from target repo,
+ * post Notion comment on parent PRD, and transition PRD status.
+ * This is the Pipeline v2 equivalent of processSpikeCompletions().
+ */
+async function processPlanSpikeCompletions(): Promise<void> {
+  const completePlans = await listPlans({ status: "complete" });
+  const spikePlans = completePlans.filter(
+    p => p.prdType === "spike" && p.spikeMetadata && !p.errorLog?.startsWith("spike_processed:")
+  );
+
+  if (spikePlans.length === 0) {
+    console.log("[pm-agent] No completed spike plans awaiting processing");
+    return;
+  }
+
+  console.log(`[pm-agent] Found ${spikePlans.length} completed spike plan(s) to process`);
+
+  for (const plan of spikePlans) {
+    try {
+      const action = await handlePlanSpikeCompletion(plan);
+      console.log(`[pm-agent] Spike plan ${plan.id} completion: ${action.type}`);
+
+      // Mark plan as processed by moving to a terminal state
+      // We reuse "complete" but add a note in the error log field
+      await updatePlanStatus(plan.id, "complete", {
+        completedAt: new Date().toISOString(),
+        errorLog: `spike_processed:${action.type}`,
+      });
+    } catch (err) {
+      console.error(`[pm-agent] Error processing spike plan completion for ${plan.id}:`, err);
     }
   }
 }

@@ -39,6 +39,8 @@ import { generateSpikeHandoff } from "../spike-handoff";
 import { fileSpikeWorkItem } from "../spike-filing";
 import type { SpikeCompletionAction } from "../spike-completion";
 import { handleSpikeCompletion } from "../spike-completion";
+import { handlePlanSpikeCompletion } from "../spike-plan-completion";
+import type { SpikeCompletionAction as PlanSpikeCompletionAction } from "../spike-plan-completion";
 import { buildUncertaintyDetectionPrompt } from "../pm-prompts";
 import { generateSpikePlanPrompt } from "../plan-prompt";
 import type { Plan } from "../types";
@@ -346,6 +348,102 @@ describe("Spike Lifecycle: PM Agent Uncertainty Detection", () => {
     expect(prompt).toContain("uncertaintySignals");
     expect(prompt).toContain("recommendedScope");
     expect(prompt).toContain("technicalQuestion");
+  });
+});
+
+describe("Spike Lifecycle: Plan Spike Completion (Pipeline v2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeSpikePlanForCompletion(): Plan {
+    return {
+      id: "plan-spike-002",
+      prdId: "PRD-42",
+      prdTitle: "Spike: WebSocket feasibility",
+      prdType: "spike",
+      targetRepo: "owner/repo",
+      branchName: "spike/prd-42",
+      status: "complete",
+      acceptanceCriteria: "Investigate WebSocket support",
+      kgContext: null,
+      affectedFiles: null,
+      estimatedBudget: 3,
+      actualCost: null,
+      maxDurationMinutes: 60,
+      startedAt: null,
+      completedAt: new Date().toISOString(),
+      errorLog: null,
+      prNumber: 99,
+      prUrl: null,
+      workflowRunId: null,
+      retryCount: 0,
+      prdRank: null,
+      progress: null,
+      reviewFeedback: null,
+      spikeMetadata: {
+        parentPrdId: "PRD-42",
+        technicalQuestion: "Can we use WebSockets?",
+        scope: "WebSocket feasibility",
+        recommendedBy: "pm-agent",
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  it("maps GO recommendation for plan spike", async () => {
+    const plan = makeSpikePlanForCompletion();
+    mockReadFileContent.mockResolvedValueOnce(`## Parent PRD
+PRD-42
+
+## Technical Question
+Can we use WebSockets?
+
+## What Was Tried
+Tested integration
+
+## Detailed Findings
+WebSockets work great
+
+## Recommendation (GO / GO_WITH_CHANGES / NO_GO)
+GO
+
+## Implications for Parent PRD
+Proceed with original design`);
+
+    const result = await handlePlanSpikeCompletion(plan);
+    expect(result.type).toBe("GO");
+  });
+
+  it("maps NO_GO recommendation for plan spike", async () => {
+    const plan = makeSpikePlanForCompletion();
+    mockReadFileContent.mockResolvedValueOnce(`## Parent PRD
+PRD-42
+
+## Technical Question
+Can we use WebSockets?
+
+## What Was Tried
+Tested integration
+
+## Detailed Findings
+Not feasible due to serverless constraints
+
+## Recommendation (GO / GO_WITH_CHANGES / NO_GO)
+NO_GO
+
+## Implications for Parent PRD
+Need alternative approach`);
+
+    const result = await handlePlanSpikeCompletion(plan);
+    expect(result.type).toBe("NO_GO");
+  });
+
+  it("throws for plan without spikeMetadata", async () => {
+    const plan = makeSpikePlanForCompletion();
+    plan.spikeMetadata = null;
+    await expect(handlePlanSpikeCompletion(plan)).rejects.toThrow("No spikeMetadata");
   });
 });
 
