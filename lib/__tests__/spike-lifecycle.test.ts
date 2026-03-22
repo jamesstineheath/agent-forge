@@ -30,7 +30,7 @@ vi.mock("../model-router", () => ({
   routedAnthropicCall: vi.fn().mockResolvedValue({ text: "Summary comment" }),
 }));
 
-import type { SpikeMetadata, SpikeRecommendation, WorkItem } from "../types";
+import type { SpikeMetadata, SpikeRecommendation, WorkItem, ProjectStatus } from "../types";
 import {
   generateSpikeTemplate,
   parseSpikeFindings,
@@ -105,6 +105,14 @@ describe("Spike Lifecycle: Type Definitions", () => {
     expect(meta.technicalQuestion).toBeTruthy();
     expect(meta.scope).toBeTruthy();
     expect(meta.recommendedBy).toBe("pm-agent");
+  });
+});
+
+describe("Spike Lifecycle: Not Feasible PRD Status (AC-6)", () => {
+  it("ProjectStatus type includes 'Not Feasible'", () => {
+    // Compile-time check: this assignment succeeds only if "Not Feasible" is in the union
+    const status: ProjectStatus = "Not Feasible";
+    expect(status).toBe("Not Feasible");
   });
 });
 
