@@ -1049,10 +1049,56 @@ async function run(): Promise<void> {
               pull_number: prNumber,
               expected_head_sha: pr.head.sha,
             });
-            core.info("Branch updated successfully. CI will re-run and TLM will re-review via check_suite trigger.");
-            core.setOutput("decision", "branch_updated");
-            core.setOutput("summary", "Branch was behind base; updated and deferring to CI re-run.");
-            return;
+            core.info("Branch updated successfully. Waiting for CI to pass before merging...");
+
+            // Poll for CI to pass on the updated branch (up to 5 minutes)
+            const maxWaitMs = 5 * 60 * 1000;
+            const pollIntervalMs = 15_000;
+            const startTime = Date.now();
+            let ciPassed = false;
+
+            while (Date.now() - startTime < maxWaitMs) {
+              await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+              // Re-fetch PR to get updated head SHA after branch update
+              const { data: freshPR } = await octokit.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber,
+              });
+
+              const { data: checkRuns } = await octokit.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: freshPR.head.sha,
+              });
+
+              const buildCheck = checkRuns.check_runs.find(
+                (c) => c.name === "build"
+              );
+
+              if (buildCheck?.status === "completed") {
+                if (buildCheck.conclusion === "success") {
+                  ciPassed = true;
+                  core.info("CI passed on updated branch. Proceeding to merge.");
+                  break;
+                } else {
+                  core.warning(`CI failed on updated branch (conclusion: ${buildCheck.conclusion}). Cannot auto-merge.`);
+                  core.setOutput("decision", "branch_updated_ci_failed");
+                  core.setOutput("summary", `Branch updated but CI failed (${buildCheck.conclusion}). Manual intervention needed.`);
+                  return;
+                }
+              }
+
+              const elapsed = Math.round((Date.now() - startTime) / 1000);
+              core.info(`Waiting for CI... (${elapsed}s elapsed, build status: ${buildCheck?.status ?? "not found"})`);
+            }
+
+            if (!ciPassed) {
+              core.warning("CI did not complete within 5 minutes after branch update. Enabling GitHub auto-merge as fallback.");
+              // Fall through to direct merge attempt which will fail,
+              // then fall back to enablePullRequestAutoMerge
+            }
           } catch (updateErr: unknown) {
             const updateError = updateErr as { status?: number; message?: string };
             if (updateError.status === 409 || updateError.status === 422) {
