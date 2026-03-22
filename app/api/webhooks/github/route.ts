@@ -3,6 +3,7 @@ import { appendEvents } from "@/lib/event-bus";
 import { reactToEvents } from "@/lib/event-reactor";
 import type { WebhookEvent, GitHubEventType, WebhookEventPayload } from "@/lib/event-bus-types";
 import { fileSpikeWorkItem } from "@/lib/spike-filing";
+import { createPlan, listPlans } from "@/lib/plans";
 
 /**
  * Verify GitHub webhook signature using HMAC-SHA256.
@@ -102,6 +103,36 @@ async function handleSpikeApproval(params: {
   const parentPrdId = `gh-issue-${issueNumber}`;
 
   try {
+    // Pipeline v2: Create a spike plan (preferred path)
+    const existingPlans = await listPlans({ prdId: parentPrdId });
+    const existingSpike = existingPlans.find(p => p.prdType === "spike");
+    if (existingSpike) {
+      console.log(`[webhook] Spike plan already exists for ${parentPrdId} — skipping`);
+      return;
+    }
+
+    const plan = await createPlan({
+      prdId: parentPrdId,
+      prdTitle: `Spike: ${parsed.technicalQuestion.slice(0, 80)}`,
+      prdType: "spike",
+      targetRepo: repoFullName,
+      branchName: `spike/${parentPrdId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`,
+      acceptanceCriteria: `Investigate: ${parsed.technicalQuestion}\n\nScope: ${parsed.scope}`,
+      estimatedBudget: 3,
+      maxDurationMinutes: 60,
+      status: "ready",
+      spikeMetadata: {
+        parentPrdId,
+        technicalQuestion: parsed.technicalQuestion,
+        scope: parsed.scope,
+        recommendedBy: "manual",
+      },
+    });
+    console.log(
+      `[webhook] Spike plan filed: ${plan.id} for issue #${issueNumber} in ${repoFullName}`
+    );
+
+    // Legacy: also file a work item for backward compatibility
     const workItem = await fileSpikeWorkItem({
       parentPrdId,
       technicalQuestion: parsed.technicalQuestion,
@@ -113,7 +144,7 @@ async function handleSpikeApproval(params: {
       `[webhook] Spike work item filed: ${workItem.id} for issue #${issueNumber} in ${repoFullName}`
     );
   } catch (err) {
-    console.error("[webhook] Failed to file spike work item:", err);
+    console.error("[webhook] Failed to file spike:", err);
   }
 }
 

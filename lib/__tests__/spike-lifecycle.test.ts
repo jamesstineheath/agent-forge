@@ -30,7 +30,7 @@ vi.mock("../model-router", () => ({
   routedAnthropicCall: vi.fn().mockResolvedValue({ text: "Summary comment" }),
 }));
 
-import type { SpikeMetadata, SpikeRecommendation, WorkItem } from "../types";
+import type { SpikeMetadata, SpikeRecommendation, WorkItem, ProjectStatus } from "../types";
 import {
   generateSpikeTemplate,
   parseSpikeFindings,
@@ -39,7 +39,11 @@ import { generateSpikeHandoff } from "../spike-handoff";
 import { fileSpikeWorkItem } from "../spike-filing";
 import type { SpikeCompletionAction } from "../spike-completion";
 import { handleSpikeCompletion } from "../spike-completion";
+import { handlePlanSpikeCompletion } from "../spike-plan-completion";
+import type { SpikeCompletionAction as PlanSpikeCompletionAction } from "../spike-plan-completion";
 import { buildUncertaintyDetectionPrompt } from "../pm-prompts";
+import { generateSpikePlanPrompt } from "../plan-prompt";
+import type { Plan } from "../types";
 
 import { createWorkItem, updateWorkItem } from "../work-items";
 import { readFileContent } from "../github";
@@ -101,6 +105,14 @@ describe("Spike Lifecycle: Type Definitions", () => {
     expect(meta.technicalQuestion).toBeTruthy();
     expect(meta.scope).toBeTruthy();
     expect(meta.recommendedBy).toBe("pm-agent");
+  });
+});
+
+describe("Spike Lifecycle: Not Feasible PRD Status (AC-6)", () => {
+  it("ProjectStatus type includes 'Not Feasible'", () => {
+    // Compile-time check: this assignment succeeds only if "Not Feasible" is in the union
+    const status: ProjectStatus = "Not Feasible";
+    expect(status).toBe("Not Feasible");
   });
 });
 
@@ -172,6 +184,77 @@ describe("Spike Lifecycle: Handoff Generation", () => {
     expect(() => generateSpikeHandoff(workItem)).toThrow(
       "non-spike work item",
     );
+  });
+});
+
+describe("Spike Lifecycle: Plan Prompt Generation (Pipeline v2)", () => {
+  function makeSpikePlan(overrides?: Partial<Plan>): Plan {
+    return {
+      id: "plan-spike-001",
+      prdId: "PRD-42",
+      prdTitle: "Investigate WebSocket feasibility",
+      prdType: "spike",
+      targetRepo: "jamesstineheath/agent-forge",
+      branchName: "spike/prd-42",
+      status: "ready",
+      acceptanceCriteria: "Determine if WebSockets work with Next.js App Router",
+      kgContext: null,
+      affectedFiles: null,
+      estimatedBudget: 3,
+      actualCost: null,
+      maxDurationMinutes: 60,
+      startedAt: null,
+      completedAt: null,
+      errorLog: null,
+      prNumber: null,
+      prUrl: null,
+      workflowRunId: null,
+      retryCount: 0,
+      prdRank: null,
+      progress: null,
+      reviewFeedback: null,
+      spikeMetadata: {
+        parentPrdId: "PRD-42",
+        technicalQuestion: "Can we use WebSockets for real-time updates?",
+        scope: "Evaluate WebSocket feasibility in Next.js App Router",
+        recommendedBy: "pm-agent",
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it("generates spike-specific prompt with findings template", () => {
+    const plan = makeSpikePlan();
+    const prompt = generateSpikePlanPrompt(plan);
+    expect(prompt).toContain("Spike Investigation");
+    expect(prompt).toContain("spikes/");
+    expect(prompt).toContain("GO_WITH_CHANGES");
+    expect(prompt).toContain("NO_GO");
+    expect(prompt).toContain("Parent PRD");
+    expect(prompt).toContain("Technical Question");
+  });
+
+  it("prohibits production code modifications", () => {
+    const plan = makeSpikePlan();
+    const prompt = generateSpikePlanPrompt(plan).toLowerCase();
+    expect(prompt).toContain("do not");
+    expect(prompt).toContain("no production code");
+  });
+
+  it("includes spike metadata in prompt", () => {
+    const plan = makeSpikePlan();
+    const prompt = generateSpikePlanPrompt(plan);
+    expect(prompt).toContain("PRD-42");
+    expect(prompt).toContain("Can we use WebSockets");
+  });
+
+  it("works without spikeMetadata (falls back to plan fields)", () => {
+    const plan = makeSpikePlan({ spikeMetadata: null });
+    const prompt = generateSpikePlanPrompt(plan);
+    expect(prompt).toContain("Spike Investigation");
+    expect(prompt).toContain("spikes/");
   });
 });
 
@@ -255,6 +338,120 @@ describe("Spike Lifecycle: PM Agent Uncertainty Detection", () => {
     const prdContent = "We need to integrate with a new external payment API";
     const prompt = buildUncertaintyDetectionPrompt(prdContent);
     expect(prompt).toContain(prdContent);
+  });
+
+  it("covers all required uncertainty signal categories", () => {
+    const prompt = buildUncertaintyDetectionPrompt("test").toLowerCase();
+    // AC-3: Must detect these signal types
+    expect(prompt).toContain("unknown api");
+    expect(prompt).toContain("new platform");
+    expect(prompt).toContain("unproven");
+    expect(prompt).toContain("external service");
+    expect(prompt).toContain("hardware");
+    expect(prompt).toContain("uncertainty language");
+  });
+
+  it("outputs JSON with uncertaintySignals, recommendedScope, technicalQuestion", () => {
+    const prompt = buildUncertaintyDetectionPrompt("test");
+    expect(prompt).toContain("uncertaintySignals");
+    expect(prompt).toContain("recommendedScope");
+    expect(prompt).toContain("technicalQuestion");
+  });
+});
+
+describe("Spike Lifecycle: Plan Spike Completion (Pipeline v2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function makeSpikePlanForCompletion(): Plan {
+    return {
+      id: "plan-spike-002",
+      prdId: "PRD-42",
+      prdTitle: "Spike: WebSocket feasibility",
+      prdType: "spike",
+      targetRepo: "owner/repo",
+      branchName: "spike/prd-42",
+      status: "complete",
+      acceptanceCriteria: "Investigate WebSocket support",
+      kgContext: null,
+      affectedFiles: null,
+      estimatedBudget: 3,
+      actualCost: null,
+      maxDurationMinutes: 60,
+      startedAt: null,
+      completedAt: new Date().toISOString(),
+      errorLog: null,
+      prNumber: 99,
+      prUrl: null,
+      workflowRunId: null,
+      retryCount: 0,
+      prdRank: null,
+      progress: null,
+      reviewFeedback: null,
+      spikeMetadata: {
+        parentPrdId: "PRD-42",
+        technicalQuestion: "Can we use WebSockets?",
+        scope: "WebSocket feasibility",
+        recommendedBy: "pm-agent",
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  it("maps GO recommendation for plan spike", async () => {
+    const plan = makeSpikePlanForCompletion();
+    mockReadFileContent.mockResolvedValueOnce(`## Parent PRD
+PRD-42
+
+## Technical Question
+Can we use WebSockets?
+
+## What Was Tried
+Tested integration
+
+## Detailed Findings
+WebSockets work great
+
+## Recommendation (GO / GO_WITH_CHANGES / NO_GO)
+GO
+
+## Implications for Parent PRD
+Proceed with original design`);
+
+    const result = await handlePlanSpikeCompletion(plan);
+    expect(result.type).toBe("GO");
+  });
+
+  it("maps NO_GO recommendation for plan spike", async () => {
+    const plan = makeSpikePlanForCompletion();
+    mockReadFileContent.mockResolvedValueOnce(`## Parent PRD
+PRD-42
+
+## Technical Question
+Can we use WebSockets?
+
+## What Was Tried
+Tested integration
+
+## Detailed Findings
+Not feasible due to serverless constraints
+
+## Recommendation (GO / GO_WITH_CHANGES / NO_GO)
+NO_GO
+
+## Implications for Parent PRD
+Need alternative approach`);
+
+    const result = await handlePlanSpikeCompletion(plan);
+    expect(result.type).toBe("NO_GO");
+  });
+
+  it("throws for plan without spikeMetadata", async () => {
+    const plan = makeSpikePlanForCompletion();
+    plan.spikeMetadata = null;
+    await expect(handlePlanSpikeCompletion(plan)).rejects.toThrow("No spikeMetadata");
   });
 });
 

@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { plans } from "./db/schema";
-import type { Plan, PlanStatus, PlanProgress, CreatePlanInput } from "./types";
+import type { Plan, PlanStatus, PlanProgress, CreatePlanInput, PrdType, SpikeMetadata } from "./types";
 
 /**
  * Convert a database row to a Plan object.
@@ -12,6 +12,7 @@ function rowToPlan(row: typeof plans.$inferSelect): Plan {
     id: row.id,
     prdId: row.prdId,
     prdTitle: row.prdTitle,
+    prdType: (row.prdType ?? "feature") as PrdType,
     targetRepo: row.targetRepo,
     branchName: row.branchName,
     status: row.status as PlanStatus,
@@ -31,6 +32,7 @@ function rowToPlan(row: typeof plans.$inferSelect): Plan {
     prdRank: row.prdRank ?? null,
     progress: (row.progress ?? null) as PlanProgress | null,
     reviewFeedback: row.reviewFeedback ?? null,
+    spikeMetadata: (row.spikeMetadata ?? null) as SpikeMetadata | null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -70,6 +72,7 @@ export async function createPlan(input: CreatePlanInput): Promise<Plan> {
       id,
       prdId: input.prdId,
       prdTitle: input.prdTitle,
+      prdType: input.prdType ?? "feature",
       targetRepo: normalizeTargetRepo(input.targetRepo),
       branchName: input.branchName,
       status: input.status ?? "ready",
@@ -79,6 +82,7 @@ export async function createPlan(input: CreatePlanInput): Promise<Plan> {
       estimatedBudget: input.estimatedBudget ?? null,
       maxDurationMinutes: input.maxDurationMinutes ?? 60,
       prdRank: input.prdRank ?? null,
+      spikeMetadata: input.spikeMetadata ?? null,
       createdAt: now,
       updatedAt: now,
     })
