@@ -324,12 +324,16 @@ export async function reviewBacklog(config?: Partial<PMAgentConfig>): Promise<Ba
 
   await saveJson(STORAGE_KEYS.latestReview, review);
 
-  // Send Gmail summary (non-fatal)
-  await sendEmail({
-    subject: `[Agent Forge] Backlog Review — ${new Date().toLocaleDateString()}`,
-    body: review.summary,
-  }).catch((err) => {
-    console.error("[pm-agent] Gmail send failed (non-fatal):", err);
+  // Send notification (Slack primary, email fallback)
+  const { sendWithFallback, sendSlackMessage } = await import("./slack");
+  await sendWithFallback(
+    () => sendSlackMessage(`:clipboard: *Backlog Review — ${new Date().toLocaleDateString()}*\n${review.summary.substring(0, 2500)}`),
+    () => sendEmail({
+      subject: `[Agent Forge] Backlog Review — ${new Date().toLocaleDateString()}`,
+      body: review.summary,
+    })
+  ).catch((err) => {
+    console.error("[pm-agent] Notification send failed (non-fatal):", err);
   });
 
   // --- Uncertainty detection for Idea-status PRDs ---
@@ -865,13 +869,17 @@ export async function composeDigest(options: DigestOptions): Promise<string> {
   };
   await saveJson(STORAGE_KEYS.latestDigest, digestRecord);
 
-  // Send via Gmail if recipientEmail provided
+  // Send notification (Slack primary, email fallback)
   if (options.recipientEmail) {
-    await sendEmail({
-      subject: `[Agent Forge] Pipeline Digest — ${new Date().toLocaleDateString()}`,
-      body: digestText,
-    }).catch((err) => {
-      console.error("[pm-agent] Digest email send failed (non-fatal):", err);
+    const { sendWithFallback, sendSlackMessage } = await import("./slack");
+    await sendWithFallback(
+      () => sendSlackMessage(`:bar_chart: *Pipeline Digest — ${new Date().toLocaleDateString()}*\n${digestText.substring(0, 2500)}`),
+      () => sendEmail({
+        subject: `[Agent Forge] Pipeline Digest — ${new Date().toLocaleDateString()}`,
+        body: digestText,
+      })
+    ).catch((err) => {
+      console.error("[pm-agent] Digest notification failed (non-fatal):", err);
     });
   }
 

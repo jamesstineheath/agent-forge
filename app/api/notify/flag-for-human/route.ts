@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateAuth } from "@/lib/api-auth";
 import { sendHtmlEmail } from "@/lib/gmail";
+import { sendWithFallback, sendSlackFlagForHuman } from "@/lib/slack";
 
 interface FlagForHumanPayload {
   repo: string;
@@ -59,13 +60,16 @@ export async function POST(req: NextRequest) {
 </div>
 `;
 
-    const threadId = await sendHtmlEmail({
-      to: "james.stine.heath@gmail.com",
-      subject: `[Pipeline Decision] PR #${prNumber} — ${prTitle}`,
-      html,
-    });
+    const result = await sendWithFallback(
+      () => sendSlackFlagForHuman({ repo, prNumber, prTitle, prUrl, summary, riskAssessment, options, recommendedPath }),
+      () => sendHtmlEmail({
+        to: "james.stine.heath@gmail.com",
+        subject: `[Pipeline Decision] PR #${prNumber} — ${prTitle}`,
+        html,
+      })
+    );
 
-    return NextResponse.json({ sent: true, threadId });
+    return NextResponse.json({ sent: true, channel: result.channel, threadId: result.id });
   } catch (err) {
     console.error("[api/notify/flag-for-human] Error:", err);
     return NextResponse.json(

@@ -59,15 +59,14 @@ export const healthMonitorCycle = inngest.createFunction(
       );
       const dashboardHealth = await checkDashboardHealth();
       if (!dashboardHealth.healthy) {
+        const healthMsg = `Dashboard health check failed.\n\nFailing endpoints:\n${dashboardHealth.failures.map((f) => `- ${f}`).join("\n")}`;
+        const { sendWithFallback, sendSlackMessage } = await import("@/lib/slack");
         const { sendEmail } = await import("@/lib/gmail");
-        await sendEmail({
-          subject: "[Agent Forge] Dashboard API Health Alert",
-          body: `Dashboard health check failed.\n\nFailing endpoints:\n${dashboardHealth.failures.map((f) => `- ${f}`).join("\n")}\n\nThis may indicate a database schema mismatch, a deployment failure, or an infrastructure issue. Check Vercel runtime logs for details.`,
-        }).catch((err) =>
-          console.error(
-            "[health-monitor] Failed to send dashboard health alert:",
-            err
-          )
+        await sendWithFallback(
+          () => sendSlackMessage(`:red_circle: *Dashboard API Health Alert*\n${healthMsg}`),
+          () => sendEmail({ subject: "[Agent Forge] Dashboard API Health Alert", body: healthMsg })
+        ).catch((err) =>
+          console.error("[health-monitor] Failed to send dashboard health alert:", err)
         );
       }
 
