@@ -2,6 +2,7 @@
 
 import { SettingsKillSwitch } from "@/components/settings-kill-switch";
 import { SettingsForceOpus } from "@/components/settings-force-opus";
+import { SettingsForceSonnet } from "@/components/settings-force-sonnet";
 import { SettingsConcurrency } from "@/components/settings-concurrency";
 
 export default function SettingsPage() {
@@ -22,6 +23,7 @@ export default function SettingsPage() {
         <div className="max-w-5xl space-y-6">
           <SettingsKillSwitch />
           <SettingsForceOpus />
+          <SettingsForceSonnet />
           <SettingsConcurrency />
         </div>
       </div>
