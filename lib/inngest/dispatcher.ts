@@ -14,6 +14,16 @@ import type { Plan } from "@/lib/types";
 const DISPATCHER_LOCK_KEY = "atc/dispatcher-lock";
 
 /**
+ * Repos whose execute-handoff.yml accepts Pipeline v2 inputs (plan_id, max_budget, max_duration_minutes).
+ * Plans targeting repos NOT in this list will be skipped with a clear error.
+ * Add repos here after updating their execute-handoff.yml for v2.
+ */
+const V2_ENABLED_REPOS = new Set([
+  "jamesstineheath/agent-forge",
+  "jamesstineheath/personal-assistant",
+]);
+
+/**
  * Check if a plan can be dispatched based on KG file overlap with active plans.
  * Plans targeting different repos always pass. Within the same repo, check file overlap.
  */
@@ -108,14 +118,20 @@ export const dispatcherCycle = inngest.createFunction(
             continue;
           }
 
+          // Check if target repo supports v2 dispatch
+          const repoFullName = plan.targetRepo.includes("/")
+            ? plan.targetRepo
+            : `jamesstineheath/${plan.targetRepo}`;
+          if (!V2_ENABLED_REPOS.has(repoFullName)) {
+            skipped++;
+            decisions.push(`Skipped "${plan.prdTitle}" — ${repoFullName} not yet v2-enabled (update execute-handoff.yml)`);
+            console.warn(`[dispatcher] Repo ${repoFullName} not in V2_ENABLED_REPOS, skipping plan ${plan.id}`);
+            continue;
+          }
+
           try {
             // Update status to dispatching
             await updatePlanStatus(plan.id, "dispatching");
-
-            // Extract repo short name for workflow dispatch
-            const repoFullName = plan.targetRepo.includes("/")
-              ? plan.targetRepo
-              : `jamesstineheath/${plan.targetRepo}`;
 
             // Trigger execute-handoff workflow on main (the branch doesn't exist yet —
             // the workflow creates it). Pass branch name as a workflow input.

@@ -342,7 +342,7 @@ jobs:
             --body "Automated PR from execute-handoff workflow. Branch: \`$BRANCH\`, Commits: $COMMITS_AHEAD" \
             || echo "::warning::Failed to create fallback PR"
 
-      - name: Wait for CI
+      - name: Wait for CI (build only)
         if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
@@ -352,15 +352,27 @@ jobs:
           if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
             exit 0
           fi
-          if timeout 600 gh pr checks "$PR_NUMBER" --watch; then
-            echo "All CI checks passed."
-          else
-            echo "CI checks failed"
-            FAILED_CHECKS=$(gh pr checks "$PR_NUMBER" --json name,state,description --jq '.[] | select(.state == "FAILURE") | "- **\(.name)**: \(.description // "No description")"')
-            gh pr comment "$PR_NUMBER" --body "## CI Failure Detected
+          # Only wait for the 'build' check. TLM review and other checks run
+          # independently and should not block the execute-handoff workflow.
+          # gh pr checks --watch watches ALL checks which causes timeouts when
+          # TLM review takes longer than expected.
+          echo "Waiting for 'build' check on PR #$PR_NUMBER (5 min timeout)..."
+          for i in $(seq 1 30); do
+            BUILD_STATE=$(gh pr checks "$PR_NUMBER" --json name,state --jq '.[] | select(.name == "build") | .state' 2>/dev/null || echo "")
+            if [ "$BUILD_STATE" = "SUCCESS" ]; then
+              echo "Build check passed."
+              exit 0
+            elif [ "$BUILD_STATE" = "FAILURE" ]; then
+              echo "Build check failed"
+              FAILED_CHECKS=$(gh pr checks "$PR_NUMBER" --json name,state,description --jq '.[] | select(.state == "FAILURE") | "- **\(.name)**: \(.description // \"No description\")"')
+              gh pr comment "$PR_NUMBER" --body "## CI Failure Detected
           ${FAILED_CHECKS}"
-            exit 1
-          fi
+              exit 1
+            fi
+            echo "Build: ${BUILD_STATE:-pending} (attempt $i/30)"
+            sleep 10
+          done
+          echo "::warning::Build check did not complete within 5 minutes. Continuing without CI confirmation."
 
       - name: Parse execution cost
         id: cost

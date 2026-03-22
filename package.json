@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "bootstrap-repo": "npx tsx scripts/bootstrap-repo.ts",
     "smoke-test": "npx tsx scripts/smoke-test.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",

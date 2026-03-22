@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, use } from "react";
 import Link from "next/link";
-import type { Plan } from "@/lib/types";
+import { usePlan } from "@/lib/hooks";
 
 const STATUS_COLORS: Record<string, string> = {
   ready: "bg-blue-100 text-blue-800",
@@ -14,6 +14,7 @@ const STATUS_COLORS: Record<string, string> = {
   timed_out: "bg-red-100 text-red-800",
   budget_exceeded: "bg-red-100 text-red-800",
   needs_review: "bg-amber-100 text-amber-800",
+  parked: "bg-gray-100 text-gray-800",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -42,52 +43,79 @@ function ProgressBar({ complete, total }: { complete: number; total: number }) {
   );
 }
 
-function formatTimestamp(ts: string): string {
-  return new Date(ts).toLocaleString();
+function formatDuration(startedAt: string | null, completedAt: string | null): string {
+  if (!startedAt) return "-";
+  const start = new Date(startedAt).getTime();
+  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const minutes = Math.round((end - start) / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
+
+const RETRIGGERABLE = new Set(["failed", "timed_out", "budget_exceeded"]);
+const AUTO_DISPATCH_CAP = 100; // dollars — matches dispatcher logic
 
 export default function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { plan, isLoading, error, mutate } = usePlan(id);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [retryFeedback, setRetryFeedback] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
+  const handleApprove = async () => {
+    if (!plan) return;
+    setActionLoading("approve");
+    try {
+      await fetch(`/api/plans/${plan.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ready" }),
+      });
+      mutate();
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
-    const fetchPlan = () => {
-      fetch(`/api/plans/${id}`)
-        .then((r) => {
-          if (!r.ok) throw new Error("Plan not found");
-          return r.json();
-        })
-        .then((data) => {
-          if (!cancelled) setPlan(data);
-        })
-        .catch((err) => {
-          if (!cancelled) setError(err.message);
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    };
+  const handlePark = async () => {
+    if (!plan) return;
+    setActionLoading("park");
+    try {
+      await fetch(`/api/plans/${plan.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "parked" }),
+      });
+      mutate();
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
-    fetchPlan();
+  const handleRetrigger = async () => {
+    if (!plan) return;
+    setActionLoading("retrigger");
+    try {
+      await fetch(`/api/plans/${plan.id}/retrigger`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reviewFeedback: retryFeedback.trim() || undefined,
+        }),
+      });
+      setRetryFeedback("");
+      mutate();
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
-    // Auto-refresh every 30 seconds for executing plans
-    const interval = setInterval(fetchPlan, 30000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [id]);
-
-  if (loading) return <div className="text-muted-foreground p-6">Loading plan...</div>;
-  if (error || !plan) return <div className="text-red-500 p-6">{error ?? "Plan not found"}</div>;
+  if (isLoading) return <div className="text-muted-foreground p-6">Loading plan...</div>;
+  if (error || !plan) return <div className="text-red-500 p-6">{error?.message ?? "Plan not found"}</div>;
 
   const progress = plan.progress;
   const isExecuting = plan.status === "executing";
   const showWaiting = isExecuting && !progress;
+  const githubBranchUrl = `https://github.com/${plan.targetRepo}/tree/${plan.branchName}`;
 
   return (
     <div className="space-y-6">
@@ -100,7 +128,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ id: strin
         <h1 className="text-2xl font-bold">{plan.prdId}: {plan.prdTitle}</h1>
       </div>
 
-      {/* Status + metadata */}
+      {/* Status + metadata cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="rounded-lg border p-4">
           <div className="text-sm text-muted-foreground">Status</div>
@@ -111,24 +139,140 @@ export default function PlanDetailPage({ params }: { params: Promise<{ id: strin
           <div className="mt-1 text-sm font-medium">{plan.targetRepo}</div>
         </div>
         <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">Budget</div>
+          <div className="text-sm text-muted-foreground">Cost (actual / estimated)</div>
           <div className="mt-1 text-sm font-medium">
-            {plan.actualCost ? `$${plan.actualCost.toFixed(2)}` : "-"} / ${plan.estimatedBudget?.toFixed(0) ?? "-"}
+            {plan.actualCost != null ? `$${plan.actualCost.toFixed(2)}` : "-"}{" "}
+            / ${plan.estimatedBudget?.toFixed(0) ?? "-"}
           </div>
         </div>
         <div className="rounded-lg border p-4">
-          <div className="text-sm text-muted-foreground">PR</div>
-          <div className="mt-1 text-sm">
-            {plan.prUrl ? (
-              <a href={plan.prUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                #{plan.prNumber}
-              </a>
-            ) : "-"}
+          <div className="text-sm text-muted-foreground">Duration</div>
+          <div className="mt-1 text-sm font-medium">
+            {formatDuration(plan.startedAt, plan.completedAt)}
+            {plan.maxDurationMinutes && (
+              <span className="text-muted-foreground"> / {plan.maxDurationMinutes}m max</span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Progress section */}
+      {/* Branch & PR links */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-lg border p-4">
+          <div className="text-sm text-muted-foreground mb-1">Branch</div>
+          <a
+            href={githubBranchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-mono text-blue-600 hover:underline break-all"
+          >
+            {plan.branchName}
+          </a>
+        </div>
+        <div className="rounded-lg border p-4">
+          <div className="text-sm text-muted-foreground mb-1">Pull Request</div>
+          {plan.prUrl ? (
+            <a href={plan.prUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+              #{plan.prNumber} — View on GitHub
+            </a>
+          ) : (
+            <span className="text-sm text-muted-foreground">No PR yet</span>
+          )}
+        </div>
+      </div>
+
+      {/* Retry count */}
+      {plan.retryCount > 0 && (
+        <div className="text-sm text-muted-foreground">
+          Retry count: <span className="font-medium">{plan.retryCount}</span>
+        </div>
+      )}
+
+      {/* ── AC2: Review panel for needs_review ── */}
+      {plan.status === "needs_review" && (
+        <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-6 space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-amber-900">Review Required</h3>
+            <p className="text-sm text-amber-800 mt-1">
+              Estimated budget ${plan.estimatedBudget?.toFixed(0) ?? "?"} exceeds ${AUTO_DISPATCH_CAP} auto-dispatch cap.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={handleApprove}
+              disabled={actionLoading !== null}
+              className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-50"
+            >
+              {actionLoading === "approve" ? "Approving..." : "Approve & Dispatch"}
+            </button>
+            <button
+              onClick={handlePark}
+              disabled={actionLoading !== null}
+              className="px-4 py-2 bg-gray-500 text-white text-sm font-medium rounded-md hover:bg-gray-600 disabled:opacity-50"
+            >
+              {actionLoading === "park" ? "Parking..." : "Park"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Acceptance Criteria ── */}
+      {plan.acceptanceCriteria && (
+        <div className="rounded-lg border p-4">
+          <h3 className="text-sm font-medium mb-2">Acceptance Criteria</h3>
+          <pre className="text-sm text-muted-foreground whitespace-pre-wrap">{plan.acceptanceCriteria}</pre>
+        </div>
+      )}
+
+      {/* ── KG Context (Affected Files) ── */}
+      {plan.kgContext && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <h3 className="text-sm font-medium">Knowledge Graph Context</h3>
+          {plan.kgContext.affectedFiles?.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">Affected Files ({plan.kgContext.affectedFiles.length})</div>
+              <div className="flex flex-wrap gap-1">
+                {plan.kgContext.affectedFiles.map((f) => (
+                  <span key={f} className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{f}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {plan.kgContext.relevantADRs?.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">Relevant ADRs</div>
+              <ul className="text-sm text-muted-foreground space-y-1">
+                {plan.kgContext.relevantADRs.map((adr, i) => (
+                  <li key={i} className="flex gap-2">
+                    <StatusBadge status={adr.status} />
+                    <span>{adr.title}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {plan.kgContext.systemMapSections && (
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1">System Map Sections</div>
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap">{plan.kgContext.systemMapSections}</pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Also show affectedFiles if present but kgContext is not */}
+      {!plan.kgContext && plan.affectedFiles && plan.affectedFiles.length > 0 && (
+        <div className="rounded-lg border p-4">
+          <h3 className="text-sm font-medium mb-2">Affected Files</h3>
+          <div className="flex flex-wrap gap-1">
+            {plan.affectedFiles.map((f) => (
+              <span key={f} className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded">{f}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Progress section ── */}
       {showWaiting && (
         <div className="rounded-lg border p-6 bg-purple-50">
           <div className="flex items-center gap-2">
@@ -145,14 +289,12 @@ export default function PlanDetailPage({ params }: { params: Promise<{ id: strin
 
       {progress && (
         <div className="space-y-4">
-          {/* Progress bar */}
           {progress.criteriaTotal > 0 && (
             <div className="rounded-lg border p-4">
               <ProgressBar complete={progress.criteriaComplete} total={progress.criteriaTotal} />
             </div>
           )}
 
-          {/* Current state */}
           {progress.currentState && (
             <div className="rounded-lg border p-4">
               <h3 className="text-sm font-medium mb-2">Current State</h3>
@@ -160,7 +302,6 @@ export default function PlanDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
 
-          {/* Issues */}
           {progress.issues.length > 0 && (
             <div className="rounded-lg border p-4">
               <h3 className="text-sm font-medium mb-2">Issues</h3>
@@ -175,7 +316,6 @@ export default function PlanDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
 
-          {/* Decisions */}
           {progress.decisions.length > 0 && (
             <div className="rounded-lg border p-4">
               <h3 className="text-sm font-medium mb-2">Decisions</h3>
@@ -190,7 +330,6 @@ export default function PlanDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
 
-          {/* Commit timeline */}
           {progress.commits.length > 0 && (
             <div className="rounded-lg border p-4">
               <h3 className="text-sm font-medium mb-3">Commits ({progress.commits.length})</h3>
@@ -210,20 +349,46 @@ export default function PlanDetailPage({ params }: { params: Promise<{ id: strin
             </div>
           )}
 
-          {/* Last updated */}
           {progress.lastUpdated && (
             <div className="text-xs text-muted-foreground">
-              Progress last updated: {formatTimestamp(progress.lastUpdated)}
+              Progress last updated: {new Date(progress.lastUpdated).toLocaleString()}
             </div>
           )}
         </div>
       )}
 
-      {/* Error log */}
+      {/* ── AC4: Error log + retry for failed plans ── */}
       {plan.errorLog && (
         <div className="rounded-lg border border-red-200 p-4 bg-red-50">
           <h3 className="text-sm font-medium text-red-800 mb-2">Error Log</h3>
-          <pre className="text-xs text-red-700 whitespace-pre-wrap">{plan.errorLog}</pre>
+          <pre className="text-xs text-red-700 whitespace-pre-wrap max-h-80 overflow-y-auto">{plan.errorLog}</pre>
+        </div>
+      )}
+
+      {RETRIGGERABLE.has(plan.status) && (
+        <div className="rounded-lg border p-4 space-y-3">
+          <h3 className="text-sm font-medium">Retry Plan</h3>
+          <textarea
+            value={retryFeedback}
+            onChange={(e) => setRetryFeedback(e.target.value)}
+            placeholder="Optional: feedback for the next execution attempt..."
+            className="w-full text-sm border rounded-md p-2 h-20 resize-y"
+          />
+          <button
+            onClick={handleRetrigger}
+            disabled={actionLoading !== null}
+            className="px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-md hover:bg-blue-600 disabled:opacity-50"
+          >
+            {actionLoading === "retrigger" ? "Retrying..." : `Retry (attempt #${plan.retryCount + 1})`}
+          </button>
+        </div>
+      )}
+
+      {/* Review feedback from previous retry */}
+      {plan.reviewFeedback && (
+        <div className="rounded-lg border p-4">
+          <h3 className="text-sm font-medium mb-2">Review Feedback (from last retry)</h3>
+          <pre className="text-sm text-muted-foreground whitespace-pre-wrap">{plan.reviewFeedback}</pre>
         </div>
       )}
     </div>

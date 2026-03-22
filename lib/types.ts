@@ -410,6 +410,8 @@ export interface BootstrapOptions {
   isPrivate?: boolean;
   createVercelProject?: boolean;
   vercelFramework?: string;
+  vercelEnvVars?: Record<string, string>;
+  onProgress?: (step: string, status: 'start' | 'done' | 'skip') => void;
 }
 
 export interface BootstrapStep {
@@ -418,12 +420,19 @@ export interface BootstrapStep {
   detail?: string;
 }
 
+export interface PreflightChecklistItem {
+  category: 'secret' | 'env-var' | 'service' | 'manual';
+  description: string;
+  required: boolean;
+}
+
 export interface BootstrapResult {
   repoUrl: string;
   repoId: number;
   registrationId: string;
   vercelProjectUrl?: string;
   steps: BootstrapStep[];
+  checklist: PreflightChecklistItem[];
 }
 
 // ---------------------------------------------------------------------------
@@ -928,7 +937,8 @@ export type PlanStatus =
   | "failed"
   | "timed_out"
   | "budget_exceeded"
-  | "needs_review";
+  | "needs_review"
+  | "parked";
 
 export interface Plan {
   id: string;
