@@ -24,21 +24,15 @@ export async function getTemplateFiles(pipelineLevel: PipelineLevel): Promise<Te
     return [executeHandoff];
   }
 
-  // full-tlm: all 4 workflows + 3 actions = 7 files
+  // full-tlm: 4 workflows only (actions are referenced cross-repo from agent-forge)
   const [
     tlmReviewWorkflow,
     tlmSpecReviewWorkflow,
     tlmOutcomeTrackerWorkflow,
-    tlmReviewAction,
-    tlmSpecReviewAction,
-    tlmOutcomeTrackerAction,
   ] = await Promise.all([
     readTemplate('workflows/tlm-review.yml'),
     readTemplate('workflows/tlm-spec-review.yml'),
     readTemplate('workflows/tlm-outcome-tracker.yml'),
-    readTemplate('actions/tlm-review/action.yml'),
-    readTemplate('actions/tlm-spec-review/action.yml'),
-    readTemplate('actions/tlm-outcome-tracker/action.yml'),
   ]);
 
   return [
@@ -54,18 +48,6 @@ export async function getTemplateFiles(pipelineLevel: PipelineLevel): Promise<Te
     {
       path: '.github/workflows/tlm-outcome-tracker.yml',
       content: tlmOutcomeTrackerWorkflow,
-    },
-    {
-      path: '.github/actions/tlm-review/action.yml',
-      content: tlmReviewAction,
-    },
-    {
-      path: '.github/actions/tlm-spec-review/action.yml',
-      content: tlmSpecReviewAction,
-    },
-    {
-      path: '.github/actions/tlm-outcome-tracker/action.yml',
-      content: tlmOutcomeTrackerAction,
     },
   ];
 }

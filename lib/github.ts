@@ -819,6 +819,46 @@ export async function setDefaultWorkflowPermissions(
   }
 }
 
+export async function deleteGitHubRepo(
+  owner: string,
+  repo: string
+): Promise<void> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok && res.status !== 404) {
+    const err = await res.text();
+    throw new Error(`Failed to delete repo: ${res.status} ${err}`);
+  }
+}
+
+export async function setBranchProtection(
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<void> {
+  const res = await ghFetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/branches/${branch}/protection`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        required_pull_request_reviews: {
+          required_approving_review_count: 0,
+          dismiss_stale_reviews: false,
+        },
+        enforce_admins: false,
+        required_status_checks: null,
+        restrictions: null,
+      }),
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Failed to set branch protection: ${res.status} ${err}`);
+  }
+}
+
 export async function getPRLifecycleState(
   owner: string,
   repo: string,
