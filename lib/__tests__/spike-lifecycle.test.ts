@@ -40,6 +40,8 @@ import { fileSpikeWorkItem } from "../spike-filing";
 import type { SpikeCompletionAction } from "../spike-completion";
 import { handleSpikeCompletion } from "../spike-completion";
 import { buildUncertaintyDetectionPrompt } from "../pm-prompts";
+import { generateSpikePlanPrompt } from "../plan-prompt";
+import type { Plan } from "../types";
 
 import { createWorkItem, updateWorkItem } from "../work-items";
 import { readFileContent } from "../github";
@@ -175,6 +177,77 @@ describe("Spike Lifecycle: Handoff Generation", () => {
   });
 });
 
+describe("Spike Lifecycle: Plan Prompt Generation (Pipeline v2)", () => {
+  function makeSpikePlan(overrides?: Partial<Plan>): Plan {
+    return {
+      id: "plan-spike-001",
+      prdId: "PRD-42",
+      prdTitle: "Investigate WebSocket feasibility",
+      prdType: "spike",
+      targetRepo: "jamesstineheath/agent-forge",
+      branchName: "spike/prd-42",
+      status: "ready",
+      acceptanceCriteria: "Determine if WebSockets work with Next.js App Router",
+      kgContext: null,
+      affectedFiles: null,
+      estimatedBudget: 3,
+      actualCost: null,
+      maxDurationMinutes: 60,
+      startedAt: null,
+      completedAt: null,
+      errorLog: null,
+      prNumber: null,
+      prUrl: null,
+      workflowRunId: null,
+      retryCount: 0,
+      prdRank: null,
+      progress: null,
+      reviewFeedback: null,
+      spikeMetadata: {
+        parentPrdId: "PRD-42",
+        technicalQuestion: "Can we use WebSockets for real-time updates?",
+        scope: "Evaluate WebSocket feasibility in Next.js App Router",
+        recommendedBy: "pm-agent",
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      ...overrides,
+    };
+  }
+
+  it("generates spike-specific prompt with findings template", () => {
+    const plan = makeSpikePlan();
+    const prompt = generateSpikePlanPrompt(plan);
+    expect(prompt).toContain("Spike Investigation");
+    expect(prompt).toContain("spikes/");
+    expect(prompt).toContain("GO_WITH_CHANGES");
+    expect(prompt).toContain("NO_GO");
+    expect(prompt).toContain("Parent PRD");
+    expect(prompt).toContain("Technical Question");
+  });
+
+  it("prohibits production code modifications", () => {
+    const plan = makeSpikePlan();
+    const prompt = generateSpikePlanPrompt(plan).toLowerCase();
+    expect(prompt).toContain("do not");
+    expect(prompt).toContain("no production code");
+  });
+
+  it("includes spike metadata in prompt", () => {
+    const plan = makeSpikePlan();
+    const prompt = generateSpikePlanPrompt(plan);
+    expect(prompt).toContain("PRD-42");
+    expect(prompt).toContain("Can we use WebSockets");
+  });
+
+  it("works without spikeMetadata (falls back to plan fields)", () => {
+    const plan = makeSpikePlan({ spikeMetadata: null });
+    const prompt = generateSpikePlanPrompt(plan);
+    expect(prompt).toContain("Spike Investigation");
+    expect(prompt).toContain("spikes/");
+  });
+});
+
 describe("Spike Lifecycle: Work Item Filing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -255,6 +328,24 @@ describe("Spike Lifecycle: PM Agent Uncertainty Detection", () => {
     const prdContent = "We need to integrate with a new external payment API";
     const prompt = buildUncertaintyDetectionPrompt(prdContent);
     expect(prompt).toContain(prdContent);
+  });
+
+  it("covers all required uncertainty signal categories", () => {
+    const prompt = buildUncertaintyDetectionPrompt("test").toLowerCase();
+    // AC-3: Must detect these signal types
+    expect(prompt).toContain("unknown api");
+    expect(prompt).toContain("new platform");
+    expect(prompt).toContain("unproven");
+    expect(prompt).toContain("external service");
+    expect(prompt).toContain("hardware");
+    expect(prompt).toContain("uncertainty language");
+  });
+
+  it("outputs JSON with uncertaintySignals, recommendedScope, technicalQuestion", () => {
+    const prompt = buildUncertaintyDetectionPrompt("test");
+    expect(prompt).toContain("uncertaintySignals");
+    expect(prompt).toContain("recommendedScope");
+    expect(prompt).toContain("technicalQuestion");
   });
 });
 
