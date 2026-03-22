@@ -22,7 +22,7 @@ export const pmCycle = inngest.createFunction(
       { event: "agent/project-manager.requested" },
     ],
   },
-  async ({ step }) => {
+  async () => {
     const startTime = Date.now();
     const startedAt = new Date().toISOString();
     try {
@@ -38,51 +38,40 @@ export const pmCycle = inngest.createFunction(
     }
 
     // Step 1: Preflight
-    const preflight = await step.run("preflight", async () => {
-      if (await isPipelineKilled()) {
-        return { skipped: true, reason: "kill-switch" } as const;
-      }
-      const locked = await acquireLock(PROJECT_MANAGER_LOCK_KEY);
-      if (!locked) {
-        return { skipped: true, reason: "lock held" } as const;
-      }
-      return { skipped: false } as const;
-    });
-
-    if (preflight.skipped) {
-      return { success: true, skipped: true, reason: preflight.reason };
+    if (await isPipelineKilled()) {
+      return { success: true, skipped: true, reason: "kill-switch" };
+    }
+    const locked = await acquireLock(PROJECT_MANAGER_LOCK_KEY);
+    if (!locked) {
+      return { success: true, skipped: true, reason: "lock held" };
     }
 
     try {
       // Step 2: Run project manager (single step — decomposition inside can take minutes)
-      const pmResult = await step.run("pm-agent-cycle", async () => {
-        const ctx: CycleContext = { now: new Date(), events: [] };
-        await runProjectManager(ctx);
-        return { events: ctx.events };
-      });
+      const ctx: CycleContext = { now: new Date(), events: [] };
+      await runProjectManager(ctx);
+      const pmResult = { events: ctx.events };
 
       // Step 3: Persist
-      await step.run("persist", async () => {
-        await persistEvents(pmResult.events);
+      await persistEvents(pmResult.events);
 
-        // Pipeline v2: plan counts for ATC state
-        const readyPlans = await listPlans({ status: "ready" });
-        await saveJson(ATC_STATE_KEY, {
-          lastRunAt: new Date().toISOString(),
-          activeExecutions: [],
-          queuedItems: readyPlans.length,
-          recentEvents: pmResult.events.slice(-20),
-        });
-
-        const trace = startTrace("project-manager");
-        addPhase(trace, { name: "pm-cycle", durationMs: 0 });
-        completeTrace(trace, "success", `Project manager cycle complete, ${pmResult.events.length} events`);
-        await persistTrace(trace);
-        await cleanupOldTraces("project-manager", 7);
-
-        await recordAgentRun("project-manager");
-        await releaseLock(PROJECT_MANAGER_LOCK_KEY);
+      // Pipeline v2: plan counts for ATC state
+      const readyPlans = await listPlans({ status: "ready" });
+      await saveJson(ATC_STATE_KEY, {
+        lastRunAt: new Date().toISOString(),
+        activeExecutions: [],
+        queuedItems: readyPlans.length,
+        recentEvents: pmResult.events.slice(-20),
       });
+
+      const trace = startTrace("project-manager");
+      addPhase(trace, { name: "pm-cycle", durationMs: 0 });
+      completeTrace(trace, "success", `Project manager cycle complete, ${pmResult.events.length} events`);
+      await persistTrace(trace);
+      await cleanupOldTraces("project-manager", 7);
+
+      await recordAgentRun("project-manager");
+      await releaseLock(PROJECT_MANAGER_LOCK_KEY);
 
       try {
         await writeExecutionLog({
@@ -98,9 +87,7 @@ export const pmCycle = inngest.createFunction(
 
       return { success: true, events: pmResult.events.length };
     } catch (err) {
-      await step.run("release-lock-on-error", async () => {
-        await releaseLock(PROJECT_MANAGER_LOCK_KEY);
-      });
+      await releaseLock(PROJECT_MANAGER_LOCK_KEY);
 
       try {
         await writeExecutionLog({

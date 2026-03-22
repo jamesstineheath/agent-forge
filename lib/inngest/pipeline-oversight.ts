@@ -25,7 +25,7 @@ export const pipelineOversight = inngest.createFunction(
       { event: "agent/supervisor.requested" },
     ],
   },
-  async ({ step }) => {
+  async () => {
     const startedAt = new Date().toISOString();
     const startMs = Date.now();
 
@@ -37,94 +37,77 @@ export const pipelineOversight = inngest.createFunction(
 
     try {
     // Preflight: kill switch only (no lock needed for read-only monitoring)
-    const preflight = await step.run("preflight", async () => {
-      if (await isPipelineKilled()) {
-        return { skipped: true, reason: "kill-switch" } as const;
-      }
-      return { skipped: false } as const;
-    });
-
-    if (preflight.skipped) {
-      return { success: true, skipped: true, reason: preflight.reason };
+    if (await isPipelineKilled()) {
+      return { success: true, skipped: true, reason: "kill-switch" };
     }
 
     const allEvents: ATCEvent[] = [];
 
     // Step 1: Escalation Management
-    const escalationResult = await step.run("escalation-management", async () => {
-      const start = Date.now();
-      const output = await runEscalationManagement();
-      return { output, durationMs: Date.now() - start };
-    });
+    const escalationStart = Date.now();
+    const escalationOutput = await runEscalationManagement();
+    const escalationResult = { output: escalationOutput, durationMs: Date.now() - escalationStart };
     allEvents.push(...escalationResult.output.events);
 
     // Step 2: Intent Validation
-    const intentResult = await step.run("intent-validation", async () => {
-      const start = Date.now();
-      const output = await runIntentValidationPhase();
-      return { output, durationMs: Date.now() - start };
-    });
+    const intentStart = Date.now();
+    const intentOutput = await runIntentValidationPhase();
+    const intentResult = { output: intentOutput, durationMs: Date.now() - intentStart };
     allEvents.push(...intentResult.output.events);
 
     // Step 3: Spend Monitoring
-    const spendResult = await step.run("spend-monitoring", async () => {
-      const start = Date.now();
-      const output = await runSpendMonitoring();
-      return { output, durationMs: Date.now() - start };
-    });
+    const spendStart = Date.now();
+    const spendOutput = await runSpendMonitoring();
+    const spendResult = { output: spendOutput, durationMs: Date.now() - spendStart };
     allEvents.push(...spendResult.output.events);
 
     // Step 4: Agent Health
-    const healthResult = await step.run("agent-health", async () => {
-      const start = Date.now();
-      const output = await runAgentHealth();
-      return { output, durationMs: Date.now() - start };
-    });
+    const healthStart = Date.now();
+    const healthOutput = await runAgentHealth();
+    const healthResult = { output: healthOutput, durationMs: Date.now() - healthStart };
     allEvents.push(...healthResult.output.events);
 
     // Persist
-    await step.run("persist-results", async () => {
-      if (allEvents.length > 0) {
-        await persistEvents(allEvents);
-      }
+    if (allEvents.length > 0) {
+      await persistEvents(allEvents);
+    }
 
-      const trace = startTrace("supervisor");
-      const phases = [
-        { name: "escalation-management", result: escalationResult },
-        { name: "intent-validation", result: intentResult },
-        { name: "spend-monitoring", result: spendResult },
-        { name: "agent-health", result: healthResult },
-      ];
+    const trace = startTrace("supervisor");
+    const phases = [
+      { name: "escalation-management", result: escalationResult },
+      { name: "intent-validation", result: intentResult },
+      { name: "spend-monitoring", result: spendResult },
+      { name: "agent-health", result: healthResult },
+    ];
 
-      for (const { name, result } of phases) {
-        addPhase(trace, { name, durationMs: result.durationMs });
-        for (const d of result.output.decisions) addDecision(trace, { action: name, reason: d });
-        for (const e of result.output.errors) addError(trace, `${name}: ${e}`);
-      }
+    for (const { name, result } of phases) {
+      addPhase(trace, { name, durationMs: result.durationMs });
+      for (const d of result.output.decisions) addDecision(trace, { action: name, reason: d });
+      for (const e of result.output.errors) addError(trace, `${name}: ${e}`);
+    }
 
-      completeTrace(trace, "success", `Oversight cycle: ${allEvents.length} events`);
-      await persistTrace(trace);
+    completeTrace(trace, "success", `Oversight cycle: ${allEvents.length} events`);
+    await persistTrace(trace);
 
-      // Update ATC state (Pipeline v2: plan counts)
-      const readyPlans = await listPlans({ status: "ready" });
-      const executingPlans = await listPlans({ status: "executing" });
-      await saveJson(ATC_STATE_KEY, {
-        lastRunAt: new Date().toISOString(),
-        activeExecutions: executingPlans.map(p => ({
-          workItemId: p.id,
-          targetRepo: p.targetRepo,
-          branch: p.branchName,
-          status: p.status,
-          startedAt: p.startedAt ?? p.createdAt,
-          elapsedMinutes: p.startedAt ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000) : 0,
-          filesBeingModified: p.affectedFiles ?? [],
-        })),
-        queuedItems: readyPlans.length,
-        recentEvents: allEvents.slice(-20),
-      });
-
-      await recordAgentRun("supervisor");
+    // Update ATC state (Pipeline v2: plan counts)
+    const readyPlans = await listPlans({ status: "ready" });
+    const executingPlans = await listPlans({ status: "executing" });
+    await saveJson(ATC_STATE_KEY, {
+      lastRunAt: new Date().toISOString(),
+      activeExecutions: executingPlans.map(p => ({
+        workItemId: p.id,
+        targetRepo: p.targetRepo,
+        branch: p.branchName,
+        status: p.status,
+        startedAt: p.startedAt ?? p.createdAt,
+        elapsedMinutes: p.startedAt ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000) : 0,
+        filesBeingModified: p.affectedFiles ?? [],
+      })),
+      queuedItems: readyPlans.length,
+      recentEvents: allEvents.slice(-20),
     });
+
+    await recordAgentRun("supervisor");
 
     try {
       await writeExecutionLog({

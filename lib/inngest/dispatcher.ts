@@ -47,7 +47,7 @@ export const dispatcherCycle = inngest.createFunction(
       { event: "agent/dispatcher.requested" },
     ],
   },
-  async ({ step }) => {
+  async () => {
     const startTime = Date.now();
     const startedAt = new Date().toISOString();
     try {
@@ -63,36 +63,30 @@ export const dispatcherCycle = inngest.createFunction(
     }
 
     // Step 1: Preflight
-    const preflight = await step.run("v2-preflight", async () => {
-      console.log("[dispatcher v2] Starting preflight");
-      if (await isPipelineKilled()) {
-        console.log("[dispatcher v2] Kill switch is ON — skipping");
-        return { skipped: true, reason: "kill-switch" } as const;
-      }
-      const locked = await acquireLock(DISPATCHER_LOCK_KEY);
-      if (!locked) {
-        console.log("[dispatcher v2] Lock held — skipping");
-        return { skipped: true, reason: "lock held" } as const;
-      }
-      console.log("[dispatcher v2] Preflight passed");
-      return { skipped: false } as const;
-    });
-
-    if (preflight.skipped) {
-      return { success: true, skipped: true, reason: preflight.reason };
+    console.log("[dispatcher v2] Starting preflight");
+    if (await isPipelineKilled()) {
+      console.log("[dispatcher v2] Kill switch is ON — skipping");
+      return { success: true, skipped: true, reason: "kill-switch" };
     }
+    const locked = await acquireLock(DISPATCHER_LOCK_KEY);
+    if (!locked) {
+      console.log("[dispatcher v2] Lock held — skipping");
+      return { success: true, skipped: true, reason: "lock held" };
+    }
+    console.log("[dispatcher v2] Preflight passed");
 
     const trace = startTrace("dispatcher");
     const decisions: string[] = [];
 
     try {
       // Step 2: Dispatch ready plans
-      const dispatchResult = await step.run("v2-dispatch-plans", async () => {
-        const readyPlans = await listPlans({ status: "ready" });
-        if (readyPlans.length === 0) {
-          return { dispatched: 0, skipped: 0, decisions: ["No ready plans"] };
-        }
+      const readyPlans = await listPlans({ status: "ready" });
+      let dispatched = 0;
+      let skipped = 0;
 
+      if (readyPlans.length === 0) {
+        decisions.push("No ready plans");
+      } else {
         // Sort by PRD rank (lower = higher priority), then by createdAt
         readyPlans.sort((a, b) => {
           if (a.prdRank !== null && b.prdRank !== null) {
@@ -103,10 +97,6 @@ export const dispatcherCycle = inngest.createFunction(
           return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
         });
 
-        let dispatched = 0;
-        let skipped = 0;
-        const localDecisions: string[] = [];
-
         for (const plan of readyPlans) {
           // Check concurrency: can we dispatch this plan?
           const activePlans = await getActivePlansForRepo(plan.targetRepo);
@@ -114,7 +104,7 @@ export const dispatcherCycle = inngest.createFunction(
 
           if (!allowed) {
             skipped++;
-            localDecisions.push(`Skipped "${plan.prdTitle}" — file overlap with active plan in ${plan.targetRepo}`);
+            decisions.push(`Skipped "${plan.prdTitle}" — file overlap with active plan in ${plan.targetRepo}`);
             continue;
           }
 
@@ -137,7 +127,7 @@ export const dispatcherCycle = inngest.createFunction(
             });
 
             dispatched++;
-            localDecisions.push(
+            decisions.push(
               `Dispatched "${plan.prdTitle}" to ${repoFullName} (branch: ${plan.branchName}, budget: $${plan.estimatedBudget})`
             );
             console.log(`[dispatcher] Dispatched plan ${plan.id} for "${plan.prdTitle}"`);
@@ -146,51 +136,45 @@ export const dispatcherCycle = inngest.createFunction(
             await updatePlanStatus(plan.id, "failed", {
               errorLog: `Dispatch failed: ${msg}`,
             });
-            localDecisions.push(`Failed to dispatch "${plan.prdTitle}": ${msg}`);
+            decisions.push(`Failed to dispatch "${plan.prdTitle}": ${msg}`);
             console.error(`[dispatcher] Failed to dispatch plan ${plan.id}:`, err);
           }
         }
-
-        return { dispatched, skipped, decisions: localDecisions };
-      });
-
-      decisions.push(...dispatchResult.decisions);
+      }
 
       // Step 3: Persist
-      await step.run("v2-persist", async () => {
-        const readyPlans = await listPlans({ status: "ready" });
-        const executingPlans = await listPlans({ status: "executing" });
-        const dispatchingPlans = await listPlans({ status: "dispatching" });
+      const readyPlansForState = await listPlans({ status: "ready" });
+      const executingPlans = await listPlans({ status: "executing" });
+      const dispatchingPlans = await listPlans({ status: "dispatching" });
 
-        await saveJson(ATC_STATE_KEY, {
-          lastRunAt: new Date().toISOString(),
-          activeExecutions: [...executingPlans, ...dispatchingPlans].map(p => ({
-            workItemId: p.id,
-            targetRepo: p.targetRepo,
-            branch: p.branchName,
-            status: p.status,
-            startedAt: p.startedAt ?? p.createdAt,
-            elapsedMinutes: p.startedAt
-              ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000)
-              : 0,
-            filesBeingModified: p.affectedFiles ?? [],
-          })),
-          queuedItems: readyPlans.length,
-          recentEvents: decisions.slice(-20).map(d => ({
-            type: "auto_dispatch" as const,
-            timestamp: new Date().toISOString(),
-            details: d,
-          })),
-        });
-
-        addPhase(trace, { name: "dispatch-plans", durationMs: Date.now() - startTime });
-        for (const d of decisions) addDecision(trace, { action: "dispatch", reason: d });
-        completeTrace(trace, "success", `Dispatched ${dispatchResult.dispatched}, skipped ${dispatchResult.skipped}`);
-        await persistTrace(trace);
-        await cleanupOldTraces("dispatcher", 7);
-        await recordAgentRun("dispatcher");
-        await releaseLock(DISPATCHER_LOCK_KEY);
+      await saveJson(ATC_STATE_KEY, {
+        lastRunAt: new Date().toISOString(),
+        activeExecutions: [...executingPlans, ...dispatchingPlans].map(p => ({
+          workItemId: p.id,
+          targetRepo: p.targetRepo,
+          branch: p.branchName,
+          status: p.status,
+          startedAt: p.startedAt ?? p.createdAt,
+          elapsedMinutes: p.startedAt
+            ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000)
+            : 0,
+          filesBeingModified: p.affectedFiles ?? [],
+        })),
+        queuedItems: readyPlansForState.length,
+        recentEvents: decisions.slice(-20).map(d => ({
+          type: "auto_dispatch" as const,
+          timestamp: new Date().toISOString(),
+          details: d,
+        })),
       });
+
+      addPhase(trace, { name: "dispatch-plans", durationMs: Date.now() - startTime });
+      for (const d of decisions) addDecision(trace, { action: "dispatch", reason: d });
+      completeTrace(trace, "success", `Dispatched ${dispatched}, skipped ${skipped}`);
+      await persistTrace(trace);
+      await cleanupOldTraces("dispatcher", 7);
+      await recordAgentRun("dispatcher");
+      await releaseLock(DISPATCHER_LOCK_KEY);
 
       try {
         await writeExecutionLog({
@@ -204,11 +188,9 @@ export const dispatcherCycle = inngest.createFunction(
         // non-fatal
       }
 
-      return { success: true, dispatched: dispatchResult.dispatched };
+      return { success: true, dispatched };
     } catch (err) {
-      await step.run("v2-release-lock-on-error", async () => {
-        await releaseLock(DISPATCHER_LOCK_KEY);
-      });
+      await releaseLock(DISPATCHER_LOCK_KEY);
 
       try {
         await writeExecutionLog({

@@ -12,7 +12,7 @@ export const pmSweep = inngest.createFunction(
       { cron: "0 8 * * *" },
     ],
   },
-  async ({ step }) => {
+  async () => {
     const startedAt = new Date().toISOString();
     const startMs = Date.now();
 
@@ -23,31 +23,21 @@ export const pmSweep = inngest.createFunction(
     }
 
     try {
-    const preflight = await step.run("preflight", async () => {
-      if (await isPipelineKilled()) {
-        return { skipped: true, reason: "kill-switch" } as const;
-      }
-      return { skipped: false } as const;
-    });
-
-    if (preflight.skipped) {
-      return { success: true, skipped: true, reason: preflight.reason };
+    if (await isPipelineKilled()) {
+      return { success: true, skipped: true, reason: "kill-switch" };
     }
 
     // Run the full PM sweep as a single step (includes backlog review, health assessment, digest)
-    const result = await step.run("pm-sweep", async () => {
-      const start = Date.now();
-      const output = await runPmSweep();
-      return { output, durationMs: Date.now() - start };
-    });
+    const sweepStart = Date.now();
+    const sweepOutput = await runPmSweep();
+    const result = { output: sweepOutput, durationMs: Date.now() - sweepStart };
 
-    await step.run("persist", async () => {
-      const trace = startTrace("supervisor");
-      addPhase(trace, { name: "pm-sweep", durationMs: result.durationMs });
-      for (const e of result.output.errors) addError(trace, `pm-sweep: ${e}`);
-      completeTrace(trace, "success", `PM sweep: ${result.output.decisions.length} decisions`);
-      await persistTrace(trace);
-    });
+    // Persist
+    const trace = startTrace("supervisor");
+    addPhase(trace, { name: "pm-sweep", durationMs: result.durationMs });
+    for (const e of result.output.errors) addError(trace, `pm-sweep: ${e}`);
+    completeTrace(trace, "success", `PM sweep: ${result.output.decisions.length} decisions`);
+    await persistTrace(trace);
 
     try {
       await writeExecutionLog({

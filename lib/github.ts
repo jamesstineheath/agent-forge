@@ -236,7 +236,14 @@ export async function listPullRequests(
 ): Promise<PRSummary[]> {
   const qs = new URLSearchParams();
   qs.set("state", params.state ?? "open");
-  if (params.head) qs.set("head", params.head);
+  if (params.head) {
+    // GitHub API requires "owner:branch" format for the head filter.
+    // If just a branch name is passed, prepend the repo owner.
+    const head = params.head.includes(":")
+      ? params.head
+      : `${repo.split("/")[0]}:${params.head}`;
+    qs.set("head", head);
+  }
   qs.set("per_page", String(params.perPage ?? 20));
 
   const res = await ghFetch(`${GITHUB_API}/repos/${repo}/pulls?${qs}`);
