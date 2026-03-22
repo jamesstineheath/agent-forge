@@ -200,28 +200,36 @@ async function handleEngineerEscalation(escalation: Escalation): Promise<void> {
 }
 
 async function handleProductOwnerEscalation(escalation: Escalation): Promise<void> {
-  console.log(`[escalation] Sending product owner email for escalation ${escalation.id}`);
+  console.log(`[escalation] Sending product owner notification for escalation ${escalation.id}`);
+  const { sendWithFallback, sendSlackEscalation } = await import("./slack");
   const workItem = escalation.workItemId ? await getWorkItem(escalation.workItemId) : null;
   if (workItem) {
     const { sendEscalationEmail } = await import("./gmail");
-    const threadId = await sendEscalationEmail(escalation, workItem);
-    if (threadId) {
-      await updateEscalation(escalation.id, { threadId });
+    const result = await sendWithFallback(
+      () => sendSlackEscalation(escalation, workItem),
+      () => sendEscalationEmail(escalation, workItem)
+    );
+    if (result.id) {
+      await updateEscalation(escalation.id, { threadId: result.id });
     }
   } else if (escalation.projectId) {
     // Project-level escalation
     const { sendProjectEscalationEmail } = await import("./gmail");
+    const { sendSlackMessage } = await import("./slack");
     const projectTitle = (escalation.contextSnapshot.projectTitle as string) || escalation.projectId;
     const context = Object.keys(escalation.contextSnapshot).length > 0
       ? JSON.stringify(escalation.contextSnapshot, null, 2)
       : undefined;
-    await sendProjectEscalationEmail({
-      projectId: escalation.projectId,
-      projectTitle,
-      reason: escalation.reason,
-      context,
-      escalationType: "project",
-    });
+    await sendWithFallback(
+      () => sendSlackMessage(`:rotating_light: *Project Escalation: ${projectTitle}*\nReason: ${escalation.reason}${context ? `\n\`\`\`${context.substring(0, 500)}\`\`\`` : ""}`),
+      () => sendProjectEscalationEmail({
+        projectId: escalation.projectId!,
+        projectTitle,
+        reason: escalation.reason,
+        context,
+        escalationType: "project",
+      }).then(sent => sent ? "sent" : null)
+    );
   }
 }
 
@@ -526,8 +534,12 @@ Options:
 View item: https://agent-forge.vercel.app/work-items/${workItemId}
 `.trim();
 
+  const { sendWithFallback, sendSlackMessage } = await import('./slack');
   const { sendEmail } = await import('./gmail');
-  await sendEmail({ subject, body });
+  await sendWithFallback(
+    () => sendSlackMessage(`:warning: *${subject}*\n${body.substring(0, 2000)}`),
+    () => sendEmail({ subject, body })
+  );
 
   console.log(`[escalation] Fast-lane item ${workItemId} escalated: ${reason}`);
 }

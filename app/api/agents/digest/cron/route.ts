@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { buildDailyDigest, renderDigestHtml } from '@/lib/digest';
 import { sendHtmlEmail } from '@/lib/gmail';
+import { sendWithFallback, sendSlackDigest } from '@/lib/slack';
 
 export const maxDuration = 60;
 
@@ -20,11 +21,10 @@ export async function GET(request: Request) {
       process.env.GMAIL_DIGEST_RECIPIENT ?? 'james.stine.heath@gmail.com';
     const subject = `Agent Forge Daily Digest \u2014 ${digest.healthSummary}`;
 
-    await sendHtmlEmail({
-      to: recipientEmail,
-      subject,
-      html,
-    });
+    await sendWithFallback(
+      () => sendSlackDigest(digest),
+      () => sendHtmlEmail({ to: recipientEmail, subject, html })
+    );
 
     return NextResponse.json({
       ok: true,

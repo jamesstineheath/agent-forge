@@ -120,31 +120,36 @@ export async function runEscalationManagement(): Promise<SupervisorPhaseOutput> 
     await saveJson(ATC_EVENTS_KEY, updated);
   }
 
-  // §11: Poll Gmail for escalation replies
+  // §11: Poll Gmail for escalation replies (skipped when Slack handles interactivity)
   try {
-    console.log('[supervisor] §11: Polling Gmail for escalation replies...');
-    const pendingForGmail = await getPendingEscalations();
-    const { checkForReply, parseReplyContent } = await import('../gmail');
+    const { isSlackConfigured } = await import('../slack');
+    if (!isSlackConfigured()) {
+      console.log('[supervisor] §11: Polling Gmail for escalation replies...');
+      const pendingForGmail = await getPendingEscalations();
+      const { checkForReply, parseReplyContent } = await import('../gmail');
 
-    for (const esc of pendingForGmail) {
-      if (!esc.threadId) continue;
+      for (const esc of pendingForGmail) {
+        if (!esc.threadId) continue;
 
-      const replyMessage = await checkForReply(esc.threadId);
-      if (replyMessage) {
-        const replyContent = await parseReplyContent(replyMessage.id);
-        console.log(`[supervisor] Found reply to escalation ${esc.id}:`, replyContent);
+        const replyMessage = await checkForReply(esc.threadId);
+        if (replyMessage) {
+          const replyContent = await parseReplyContent(replyMessage.id);
+          console.log(`[supervisor] Found reply to escalation ${esc.id}:`, replyContent);
 
-        const resolved = await resolveEscalation(esc.id, replyContent);
-        if (resolved) {
-          out.events.push(makeEvent(
-            "escalation_resolved",
-            esc.workItemId,
-            "pending",
-            "resolved",
-            `Escalation ${esc.id} auto-resolved via Gmail reply: ${replyContent.slice(0, 100)}`
-          ));
+          const resolved = await resolveEscalation(esc.id, replyContent);
+          if (resolved) {
+            out.events.push(makeEvent(
+              "escalation_resolved",
+              esc.workItemId,
+              "pending",
+              "resolved",
+              `Escalation ${esc.id} auto-resolved via Gmail reply: ${replyContent.slice(0, 100)}`
+            ));
+          }
         }
       }
+    } else {
+      console.log('[supervisor] §11: Skipping Gmail polling (Slack interactivity handles replies)');
     }
   } catch (err) {
     console.error("[supervisor] Gmail reply polling failed:", err);
@@ -162,8 +167,13 @@ export async function runEscalationManagement(): Promise<SupervisorPhaseOutput> 
       if (ageMs > REMINDER_THRESHOLD && !esc.reminderSentAt) {
         const workItem = await getWorkItem(esc.workItemId);
         if (workItem) {
+          const { sendWithFallback, sendSlackEscalation } = await import('../slack');
           const { sendEscalationEmail } = await import('../gmail');
-          const threadId = await sendEscalationEmail(esc, workItem, true);
+          const result = await sendWithFallback(
+            () => sendSlackEscalation(esc, workItem, true),
+            () => sendEscalationEmail(esc, workItem, true)
+          );
+          const threadId = result.id;
           if (threadId) {
             await updateEscalation(esc.id, { reminderSentAt: new Date().toISOString() });
             out.events.push(makeEvent(
@@ -521,11 +531,16 @@ export async function runSpendMonitoring(): Promise<SupervisorPhaseOutput> {
           }
         );
 
+        const spendMsg = `Vercel Spend Alert: ${threshold}% threshold crossed\nCurrent: $${spendStatus.currentSpend.toFixed(2)} of $${spendStatus.budget.toFixed(2)} (${spendStatus.percentUsed.toFixed(1)}%)`;
+        const { sendWithFallback, sendSlackMessage } = await import('../slack');
         const { sendEmail } = await import('../gmail');
-        await sendEmail({
-          subject: `[Agent Forge] Vercel Spend Alert: ${threshold}% threshold crossed`,
-          body: `A Vercel spend threshold has been crossed.\n\nThreshold: ${threshold}%\nCurrent spend: $${spendStatus.currentSpend.toFixed(2)}\nBudget: $${spendStatus.budget.toFixed(2)}\nPercent used: ${spendStatus.percentUsed.toFixed(1)}%\n\nPlease review your Vercel usage.`,
-        });
+        await sendWithFallback(
+          () => sendSlackMessage(`:money_with_wings: *${spendMsg}*`),
+          () => sendEmail({
+            subject: `[Agent Forge] ${spendMsg.split('\n')[0]}`,
+            body: spendMsg,
+          })
+        );
 
         spendStatus.alertsSent.push(String(threshold));
       }
@@ -716,13 +731,16 @@ export async function runDriftDetection(): Promise<SupervisorPhaseOutput> {
       ));
       out.decisions.push(`Drift detected: JSD=${snapshot.driftScore.toFixed(4)}`);
       try {
+        const driftMsg = `Drift Alert — JSD=${snapshot.driftScore.toFixed(4)}`;
+        const driftBody = formatDriftAlert(snapshot);
+        const { sendWithFallback, sendSlackMessage } = await import('../slack');
         const { sendEmail } = await import('../gmail');
-        await sendEmail({
-          subject: `[Agent Forge] Drift Alert — JSD=${snapshot.driftScore.toFixed(4)}`,
-          body: formatDriftAlert(snapshot),
-        });
-      } catch (emailErr) {
-        console.warn('[supervisor §18] Failed to send drift alert email:', emailErr);
+        await sendWithFallback(
+          () => sendSlackMessage(`:chart_with_downwards_trend: *${driftMsg}*\n${driftBody.substring(0, 1500)}`),
+          () => sendEmail({ subject: `[Agent Forge] ${driftMsg}`, body: driftBody })
+        );
+      } catch (alertErr) {
+        console.warn('[supervisor §18] Failed to send drift alert:', alertErr);
       }
     } else {
       console.log(`[supervisor §18] No drift detected — JSD=${snapshot.driftScore.toFixed(4)}`);
