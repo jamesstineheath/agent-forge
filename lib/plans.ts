@@ -30,6 +30,7 @@ function rowToPlan(row: typeof plans.$inferSelect): Plan {
     retryCount: row.retryCount ?? 0,
     prdRank: row.prdRank ?? null,
     progress: (row.progress ?? null) as PlanProgress | null,
+    reviewFeedback: row.reviewFeedback ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -133,6 +134,7 @@ export async function updatePlanStatus(
     startedAt: string;
     completedAt: string;
     retryCount: number;
+    reviewFeedback: string;
   }>
 ): Promise<Plan | null> {
   const setCols: Record<string, unknown> = {
@@ -148,6 +150,7 @@ export async function updatePlanStatus(
   if (fields?.startedAt !== undefined) setCols.startedAt = new Date(fields.startedAt);
   if (fields?.completedAt !== undefined) setCols.completedAt = new Date(fields.completedAt);
   if (fields?.retryCount !== undefined) setCols.retryCount = fields.retryCount;
+  if (fields?.reviewFeedback !== undefined) setCols.reviewFeedback = fields.reviewFeedback;
 
   const rows = await db
     .update(plans)

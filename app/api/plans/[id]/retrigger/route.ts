@@ -2,10 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateAuth } from "@/lib/api-auth";
 import { getPlan, updatePlanStatus } from "@/lib/plans";
 
-const RETRIGGERABLE_STATUSES = new Set(["failed", "timed_out", "budget_exceeded"]);
+const RETRIGGERABLE_STATUSES = new Set(["failed", "timed_out", "budget_exceeded", "reviewing"]);
 
 /**
- * POST /api/plans/[id]/retrigger — Reset a failed plan to ready for re-dispatch.
+ * POST /api/plans/[id]/retrigger — Reset a plan to ready for re-dispatch.
+ *
+ * Accepts optional reviewFeedback in body, which is appended to the plan
+ * prompt on the next execution as retry context.
+ *
+ * Body: { reviewFeedback?: string }
  */
 export async function POST(
   req: NextRequest,
@@ -27,8 +32,12 @@ export async function POST(
     );
   }
 
+  const body = await req.json().catch(() => ({}));
+  const reviewFeedback = body.reviewFeedback as string | undefined;
+
   const updated = await updatePlanStatus(id, "ready", {
     retryCount: plan.retryCount + 1,
+    reviewFeedback: reviewFeedback ?? undefined,
   });
 
   return NextResponse.json({ success: true, plan: updated });

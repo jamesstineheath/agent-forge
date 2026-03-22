@@ -113,7 +113,16 @@ export async function POST(req: NextRequest) {
     results.push({ name: "add-plans-progress-column", status: "failed", error: message });
   }
 
-  // Migration 8: cost_records plan_id column
+  // Migration 8: plans.review_feedback column
+  try {
+    await sql`ALTER TABLE plans ADD COLUMN IF NOT EXISTS review_feedback TEXT`;
+    results.push({ name: "add-plans-review-feedback-column", status: "applied" });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    results.push({ name: "add-plans-review-feedback-column", status: "failed", error: message });
+  }
+
+  // Migration 9: cost_records plan_id column
   try {
     await sql`ALTER TABLE cost_records ADD COLUMN IF NOT EXISTS plan_id TEXT`;
     results.push({ name: "add-cost-records-plan-id", status: "applied" });
