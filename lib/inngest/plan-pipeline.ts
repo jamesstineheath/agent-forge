@@ -10,6 +10,7 @@ import { fetchPageContent, updateProjectStatus } from "@/lib/notion";
 import { createPlan, listPlans, generateBranchName } from "@/lib/plans";
 import { loadGraph } from "@/lib/knowledge-graph/storage";
 import { queryGraph, getBlastRadius, getRelevantSystemMapSections, getRelevantADRs } from "@/lib/knowledge-graph/query";
+import { queryTriagedBugs, updateBugPage, type TriagedBug } from "@/lib/bugs";
 
 const PLAN_PIPELINE_LOCK_KEY = "atc/plan-pipeline-lock";
 
@@ -103,11 +104,127 @@ async function queryApprovedPRDs(): Promise<ApprovedPRD[]> {
 const BUDGET_PER_CRITERION = 3; // default $/criterion (historical actuals run 5-10x below estimates at $8)
 const MAX_AUTO_BUDGET = 100; // above this → needs_review
 
+/** Default budget for bug plans (bugs are typically smaller scope). */
+const BUG_DEFAULT_BUDGET = 5;
+const BUG_DEFAULT_DURATION = 60;
+
 /** Duration estimates based on criteria count. */
 function estimateMaxDuration(criteriaCount: number): number {
   if (criteriaCount <= 3) return 60;
   if (criteriaCount <= 6) return 120;
   return 180;
+}
+
+/**
+ * A unified work item for the plan pipeline — either a PRD or a bug.
+ * Used for severity-based ordering.
+ */
+interface PipelineItem {
+  type: "prd" | "bug";
+  /** For PRDs: projectId. For bugs: "BUG-{pageId}" */
+  id: string;
+  /** Notion page ID */
+  pageId: string;
+  title: string;
+  targetRepo: string | null;
+  /** PRD rank (null for bugs) */
+  rank: number | null;
+  /** Bug severity (null for PRDs) */
+  severity: TriagedBug["severity"] | null;
+  /** ISO timestamp for creation-time ordering */
+  createdTime: string;
+  /** Bug context (acceptance criteria equivalent) — null for PRDs (fetched later) */
+  bugContext: string | null;
+  /** Bug affected files — null for PRDs (computed via KG) */
+  bugAffectedFiles: string[] | null;
+}
+
+/**
+ * Build a severity-ordered list of pipeline items.
+ *
+ * Ordering rules:
+ * - Critical bugs first (before all PRDs)
+ * - High bugs interleaved with PRDs (sorted by creation time)
+ * - Medium/Low bugs only after all PRDs
+ */
+function buildOrderedPipelineItems(
+  prds: ApprovedPRD[],
+  bugs: TriagedBug[],
+): PipelineItem[] {
+  const criticalBugs: PipelineItem[] = [];
+  const highBugs: PipelineItem[] = [];
+  const lowBugs: PipelineItem[] = [];
+
+  for (const bug of bugs) {
+    const item: PipelineItem = {
+      type: "bug",
+      id: `BUG-${bug.id}`,
+      pageId: bug.id,
+      title: bug.title,
+      targetRepo: bug.targetRepo,
+      rank: null,
+      severity: bug.severity,
+      createdTime: bug.createdTime,
+      bugContext: bug.context,
+      bugAffectedFiles: bug.affectedFiles,
+    };
+
+    if (bug.severity === "Critical") {
+      criticalBugs.push(item);
+    } else if (bug.severity === "High") {
+      highBugs.push(item);
+    } else {
+      lowBugs.push(item);
+    }
+  }
+
+  const prdItems: PipelineItem[] = prds.map((prd) => ({
+    type: "prd" as const,
+    id: prd.projectId,
+    pageId: prd.id,
+    title: prd.title,
+    targetRepo: prd.targetRepo,
+    rank: prd.rank,
+    severity: null,
+    createdTime: new Date().toISOString(), // PRDs don't have createdTime, use now for interleaving
+    bugContext: null,
+    bugAffectedFiles: null,
+  }));
+
+  // High bugs interleaved with PRDs by creation order
+  const interleaved = [...highBugs, ...prdItems].sort((a, b) => {
+    // PRDs maintain rank order among themselves
+    if (a.type === "prd" && b.type === "prd") {
+      return (a.rank ?? 999) - (b.rank ?? 999);
+    }
+    // Bugs sorted by creation time among themselves
+    if (a.type === "bug" && b.type === "bug") {
+      return new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime();
+    }
+    // Bug vs PRD: interleave by creation time
+    return new Date(a.createdTime).getTime() - new Date(b.createdTime).getTime();
+  });
+
+  // Medium/Low bugs only if no PRDs waiting
+  const tail = prdItems.length === 0 ? lowBugs : [];
+
+  return [...criticalBugs, ...interleaved, ...tail];
+}
+
+/**
+ * Generate a branch name for a bug plan.
+ * Convention: bug-{shortId}/{slugified-title}
+ */
+function generateBugBranchName(bugPageId: string, title: string): string {
+  const shortId = bugPageId.replace(/-/g, "").slice(0, 8);
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 50);
+  return `bug-${shortId}/${slug}`;
 }
 
 /**
@@ -172,37 +289,48 @@ export const planPipeline = inngest.createFunction(
         console.log(`[plan-pipeline v2] PRDs: ${approvedPRDs.map(p => `${p.projectId} "${p.title}" (repo: ${p.targetRepo ?? "none"})`).join(", ")}`);
       }
 
-      if (approvedPRDs.length === 0) {
-        decisions.push("No Approved PRDs found");
+      // Query Bugs database for Triaged bugs
+      let triagedBugs: TriagedBug[] = [];
+      try {
+        triagedBugs = await queryTriagedBugs();
+        console.log(`[plan-pipeline v2] queryTriagedBugs() returned ${triagedBugs.length} bug(s)`);
+        if (triagedBugs.length > 0) {
+          console.log(`[plan-pipeline v2] Bugs: ${triagedBugs.map(b => `${b.severity} "${b.title}" (repo: ${b.targetRepo})`).join(", ")}`);
+        }
+      } catch (bugErr) {
+        console.error("[plan-pipeline v2] Failed to query triaged bugs:", bugErr);
+        errors.push(`Failed to query triaged bugs: ${bugErr instanceof Error ? bugErr.message : String(bugErr)}`);
+      }
+
+      // Build severity-ordered pipeline items
+      const pipelineItems = buildOrderedPipelineItems(approvedPRDs, triagedBugs);
+
+      if (pipelineItems.length === 0) {
+        decisions.push("No Approved PRDs or Triaged bugs found");
       } else {
         // Get existing plans to avoid duplicates
         const existingPlans = await listPlans();
         const existingPrdIds = new Set(existingPlans.map(p => p.prdId));
         console.log(`[plan-pipeline v2] Existing plans: ${existingPlans.length} (prdIds: ${[...existingPrdIds].join(", ") || "none"})`);
 
-        for (const prd of approvedPRDs) {
-          // Skip if plan already exists for this PRD
-          if (existingPrdIds.has(prd.projectId)) {
-            console.log(`[plan-pipeline v2] Skipping "${prd.title}" — plan already exists for ${prd.projectId}`);
+        for (const item of pipelineItems) {
+          // Skip if plan already exists for this item
+          if (existingPrdIds.has(item.id)) {
+            console.log(`[plan-pipeline v2] Skipping "${item.title}" — plan already exists for ${item.id}`);
             continue;
           }
 
           try {
-            // 1. Fetch PRD content (acceptance criteria)
-            const prdContent = await fetchPageContent(prd.id);
-            if (!prdContent || prdContent.trim().length === 0) {
-              errors.push(`PRD "${prd.title}" has no content — skipped`);
-              continue;
-            }
-            console.log(`[plan-pipeline v2] Fetched content for "${prd.title}" (${prdContent.length} chars)`);
-
-            // 2. Query KG for affected files
-            const targetRepo = prd.targetRepo;
+            const targetRepo = item.targetRepo;
             if (!targetRepo) {
-              errors.push(`PRD "${prd.title}" has no target repo — skipped`);
+              errors.push(`${item.type === "bug" ? "Bug" : "PRD"} "${item.title}" has no target repo — skipped`);
               continue;
             }
 
+            let acceptanceCriteria: string;
+            let estimatedBudget: number;
+            let maxDuration: number;
+            let branchName: string;
             let kgContext: {
               affectedFiles: string[];
               systemMapSections: string;
@@ -211,87 +339,134 @@ export const planPipeline = inngest.createFunction(
             } | null = null;
             let affectedFiles: string[] = [];
 
-            try {
-              const graph = await loadGraph(targetRepo);
-              if (graph) {
-                const keywords = extractKeywords(prdContent);
-                const matchedFiles = new Set<string>();
+            if (item.type === "bug") {
+              // Bug: use context as acceptance criteria, affected files from bug report
+              acceptanceCriteria = item.bugContext || item.title;
+              affectedFiles = item.bugAffectedFiles ?? [];
+              estimatedBudget = BUG_DEFAULT_BUDGET;
+              maxDuration = BUG_DEFAULT_DURATION;
+              branchName = generateBugBranchName(item.pageId, item.title);
 
-                for (const keyword of keywords) {
-                  const results = queryGraph(graph, { namePattern: keyword });
-                  for (const entity of results.entities) {
-                    matchedFiles.add(entity.filePath);
+              // Use bug's affected files as KG hints if available
+              if (affectedFiles.length > 0) {
+                try {
+                  const graph = await loadGraph(targetRepo);
+                  if (graph) {
+                    const blast = getBlastRadius(graph, affectedFiles, 2);
+                    const systemMapSections = getRelevantSystemMapSections("", blast.affectedFiles);
+                    const relevantADRs = getRelevantADRs([], blast.affectedFiles, []);
+
+                    kgContext = {
+                      affectedFiles: blast.affectedFiles.slice(0, 50),
+                      systemMapSections,
+                      relevantADRs,
+                      entityCount: graph.entities.size,
+                    };
+                    affectedFiles = blast.affectedFiles;
                   }
+                } catch (kgErr) {
+                  console.warn(`[plan-pipeline v2] KG query failed for bug "${item.title}":`, kgErr);
                 }
-
-                const matchedFileArray = [...matchedFiles];
-                if (matchedFileArray.length > 0) {
-                  const blast = getBlastRadius(graph, matchedFileArray, 2);
-                  affectedFiles = blast.affectedFiles;
-                }
-
-                const systemMapSections = getRelevantSystemMapSections("", affectedFiles);
-                const relevantADRs = getRelevantADRs([], affectedFiles, keywords);
-
-                kgContext = {
-                  affectedFiles: affectedFiles.slice(0, 50),
-                  systemMapSections,
-                  relevantADRs,
-                  entityCount: graph.entities.size,
-                };
-                console.log(`[plan-pipeline v2] KG context: ${affectedFiles.length} affected files, ${graph.entities.size} entities`);
-              } else {
-                console.log(`[plan-pipeline v2] No KG graph for ${targetRepo}`);
               }
-            } catch (kgErr) {
-              console.warn(`[plan-pipeline v2] KG query failed for ${targetRepo}:`, kgErr);
+            } else {
+              // PRD: fetch content and compute KG context
+              const prdContent = await fetchPageContent(item.pageId);
+              if (!prdContent || prdContent.trim().length === 0) {
+                errors.push(`PRD "${item.title}" has no content — skipped`);
+                continue;
+              }
+              console.log(`[plan-pipeline v2] Fetched content for "${item.title}" (${prdContent.length} chars)`);
+
+              acceptanceCriteria = prdContent;
+              branchName = generateBranchName(item.id, item.title);
+
+              try {
+                const graph = await loadGraph(targetRepo);
+                if (graph) {
+                  const keywords = extractKeywords(prdContent);
+                  const matchedFiles = new Set<string>();
+
+                  for (const keyword of keywords) {
+                    const results = queryGraph(graph, { namePattern: keyword });
+                    for (const entity of results.entities) {
+                      matchedFiles.add(entity.filePath);
+                    }
+                  }
+
+                  const matchedFileArray = [...matchedFiles];
+                  if (matchedFileArray.length > 0) {
+                    const blast = getBlastRadius(graph, matchedFileArray, 2);
+                    affectedFiles = blast.affectedFiles;
+                  }
+
+                  const systemMapSections = getRelevantSystemMapSections("", affectedFiles);
+                  const relevantADRs = getRelevantADRs([], affectedFiles, keywords);
+
+                  kgContext = {
+                    affectedFiles: affectedFiles.slice(0, 50),
+                    systemMapSections,
+                    relevantADRs,
+                    entityCount: graph.entities.size,
+                  };
+                  console.log(`[plan-pipeline v2] KG context: ${affectedFiles.length} affected files, ${graph.entities.size} entities`);
+                } else {
+                  console.log(`[plan-pipeline v2] No KG graph for ${targetRepo}`);
+                }
+              } catch (kgErr) {
+                console.warn(`[plan-pipeline v2] KG query failed for ${targetRepo}:`, kgErr);
+              }
+
+              const criteriaCount = countCriteria(prdContent);
+              estimatedBudget = criteriaCount * BUDGET_PER_CRITERION;
+              maxDuration = estimateMaxDuration(criteriaCount);
             }
 
-            // 3. Estimate budget and duration
-            const isSpike = prd.type === "spike";
-            const criteriaCount = isSpike ? 1 : countCriteria(prdContent);
-            const estimatedBudget = isSpike ? 3 : criteriaCount * BUDGET_PER_CRITERION;
-            const maxDuration = isSpike ? 60 : estimateMaxDuration(criteriaCount);
+            // Scope guardrail (bugs are always auto-dispatched — small budget)
+            const isBug = item.type === "bug";
+            const status = (isBug || estimatedBudget <= MAX_AUTO_BUDGET) ? "ready" : "needs_review";
 
-            // 4. Scope guardrail (spikes are always auto-dispatched — small budget)
-            const status = (!isSpike && estimatedBudget > MAX_AUTO_BUDGET) ? "needs_review" : "ready";
-
-            // 5. Create Plan record
-            const branchName = isSpike
-              ? `spike/${prd.projectId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`
-              : generateBranchName(prd.projectId, prd.title);
+            // Create Plan record
             const plan = await createPlan({
-              prdId: prd.projectId,
-              prdTitle: prd.title,
-              prdType: prd.type,
+              prdId: item.id,
+              prdTitle: item.title,
               targetRepo,
               branchName,
-              acceptanceCriteria: prdContent,
+              acceptanceCriteria,
               kgContext,
               affectedFiles: affectedFiles.length > 0 ? affectedFiles : undefined,
               estimatedBudget,
               maxDurationMinutes: maxDuration,
               status,
-              prdRank: prd.rank ?? undefined,
+              prdRank: item.rank ?? undefined,
             });
 
-            // 6. Update PRD status to Executing
-            try {
-              await updateProjectStatus(prd.id, "Executing");
-            } catch (notionErr) {
-              console.warn(`[plan-pipeline v2] Failed to update PRD status for "${prd.title}":`, notionErr);
+            // Update source in Notion
+            if (item.type === "bug") {
+              try {
+                await updateBugPage(item.pageId, plan.id);
+                console.log(`[plan-pipeline v2] Updated bug "${item.title}" — status: In Progress, workItemId: ${plan.id}`);
+              } catch (notionErr) {
+                console.warn(`[plan-pipeline v2] Failed to update bug status for "${item.title}":`, notionErr);
+              }
+            } else {
+              try {
+                await updateProjectStatus(item.pageId, "Executing");
+              } catch (notionErr) {
+                console.warn(`[plan-pipeline v2] Failed to update PRD status for "${item.title}":`, notionErr);
+              }
             }
 
             plansCreated++;
-            const statusNote = status === "needs_review" ? " (needs_review: budget > $30)" : "";
+            const typeLabel = item.type === "bug" ? `[${item.severity}]` : "";
+            const statusNote = status === "needs_review" ? " (needs_review: budget > $100)" : "";
             decisions.push(
-              `Created plan ${plan.id} for "${prd.title}" — ${criteriaCount} criteria, est. $${estimatedBudget}, ${maxDuration}min${statusNote}`
+              `Created ${item.type} plan ${plan.id} ${typeLabel} for "${item.title}" — est. $${estimatedBudget}, ${maxDuration}min${statusNote}`
             );
-            console.log(`[plan-pipeline v2] Created plan ${plan.id} for "${prd.title}" (${status})`);
+            console.log(`[plan-pipeline v2] Created ${item.type} plan ${plan.id} for "${item.title}" (${status})`);
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            errors.push(`Failed to create plan for "${prd.title}": ${msg}`);
-            console.error(`[plan-pipeline v2] Failed to create plan for "${prd.title}":`, err);
+            errors.push(`Failed to create plan for "${item.title}": ${msg}`);
+            console.error(`[plan-pipeline v2] Failed to create plan for "${item.title}":`, err);
           }
         }
       }
@@ -343,8 +518,8 @@ export const planPipeline = inngest.createFunction(
         console.error('[plan-pipeline] Failed to write success log:', e);
       }
 
-      console.log(`[plan-pipeline v2] Complete: ${plansCreated} plans created, ${decisions.length} decisions, ${errors.length} errors`);
-      return { success: true, plansCreated, decisions: decisions.length, errors: errors.length };
+      console.log(`[plan-pipeline v2] Complete: ${plansCreated} plans created (${triagedBugs.length} bugs scanned), ${decisions.length} decisions, ${errors.length} errors`);
+      return { success: true, plansCreated, bugsScanned: triagedBugs.length, decisions: decisions.length, errors: errors.length };
     } catch (err) {
       try {
         await writeExecutionLog({
