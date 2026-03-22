@@ -452,6 +452,19 @@ export function useModelRoutingAnalytics(params?: ModelRoutingParams) {
   return { data, error, isLoading };
 }
 
+// ── Security Alerts ──────────────────────────────────────────────────────────
+
+import type { SecurityOverview } from "@/lib/security";
+
+export function useSecurityAlerts() {
+  const { data, error, isLoading, mutate } = useSWR<SecurityOverview>(
+    "/api/security/alerts",
+    fetcher,
+    { refreshInterval: 120000 }
+  );
+  return { data, error, isLoading, mutate };
+}
+
 // ── Inngest Status ────────────────────────────────────────────────────────────
 
 export function useInngestStatus(): {

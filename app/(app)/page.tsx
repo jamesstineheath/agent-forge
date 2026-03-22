@@ -9,6 +9,7 @@ import { BugSummary } from "@/components/bug-summary";
 import { ActivityFeed } from "@/components/activity-feed";
 import { WebhookEventFeed } from "@/components/webhook-event-feed";
 import { QADashboard } from "@/components/qa-dashboard";
+import { SecuritySummary } from "@/components/security-summary";
 import { ForceOpusToggle } from "@/app/components/force-opus-toggle";
 import {
   useWorkItems,
@@ -252,6 +253,11 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+          </ErrorBoundary>
+
+          {/* Security Posture */}
+          <ErrorBoundary section="Security">
+          <SecuritySummary />
           </ErrorBoundary>
 
           {/* Config / Kill Switches */}
