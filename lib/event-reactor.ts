@@ -382,4 +382,15 @@ async function handlePlanPRMerged(
     prUrl,
     completedAt: new Date().toISOString(),
   });
+
+  // Auto-close associated Notion bug if this plan originated from a bug report
+  if (plan.prdId.startsWith("BUG-")) {
+    try {
+      const { findAndCloseBug } = await import("./bug-closer");
+      await findAndCloseBug(plan.id, prUrl);
+      console.log(`${LOG_PREFIX} [plan] closed Notion bug for bug plan ${plan.id}`);
+    } catch (err) {
+      console.error(`${LOG_PREFIX} [plan] failed to close Notion bug for plan ${plan.id}:`, err);
+    }
+  }
 }

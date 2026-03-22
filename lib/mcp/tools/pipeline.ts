@@ -17,6 +17,7 @@ import {
   listPullRequests,
 } from "@/lib/github";
 import { readAllExecutionLogs, INNGEST_FUNCTION_REGISTRY } from "@/lib/inngest/execution-log";
+import { listPlans } from "@/lib/plans";
 
 export function registerPipelineTools(server: McpServer) {
   server.tool(
@@ -159,8 +160,26 @@ export function registerPipelineTools(server: McpServer) {
         }));
       }
 
+      // Fetch plan stats including bug plan breakdown
+      let planStats: {
+        prd: { ready: number; executing: number; complete: number };
+        bug: { ready: number; executing: number; complete: number };
+      } = { prd: { ready: 0, executing: 0, complete: 0 }, bug: { ready: 0, executing: 0, complete: 0 } };
+
+      try {
+        const allPlans = await listPlans();
+        for (const plan of allPlans) {
+          const bucket = plan.prdId.startsWith("BUG-") ? "bug" : "prd";
+          if (plan.status === "ready") planStats[bucket].ready++;
+          else if (plan.status === "executing" || plan.status === "dispatching") planStats[bucket].executing++;
+          else if (plan.status === "complete") planStats[bucket].complete++;
+        }
+      } catch (err) {
+        console.error("[MCP] check_pipeline_health: failed to read plan stats", err);
+      }
+
       return {
-        content: [{ type: "text" as const, text: JSON.stringify({ workflows: summary, inngestFunctions }, null, 2) }],
+        content: [{ type: "text" as const, text: JSON.stringify({ workflows: summary, inngestFunctions, planStats }, null, 2) }],
       };
     }
   );
