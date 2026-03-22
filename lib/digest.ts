@@ -3,6 +3,9 @@ import { listEscalations } from './escalation';
 import { queryEvents } from './event-bus';
 import { getATCEvents } from './atc/events';
 import { listPullRequests, getPullRequestChecks } from './github';
+import { getSecurityOverview } from './security';
+import { listRepos } from './repos';
+import type { SecurityOverview } from './security';
 import type { WorkItemIndexEntry } from './types';
 import type { ATCEvent } from './types';
 import type { Escalation } from './escalation';
@@ -31,6 +34,7 @@ export interface DigestData {
   escalations: EscalationSummary[];
   feedbackProposals: FeedbackProposal[];
   eventStats: EventStats;
+  securityOverview: SecurityOverview | null;
   issueCount: number;
   healthSummary: string;
 }
@@ -219,7 +223,19 @@ export async function buildDailyDigest(): Promise<DigestData> {
     byType,
   };
 
-  // 8. Health summary
+  // 8. Security alerts
+  let securityOverview: SecurityOverview | null = null;
+  try {
+    const repoIndex = await listRepos();
+    const repoNames = repoIndex.map((r) => r.fullName);
+    if (repoNames.length > 0) {
+      securityOverview = await getSecurityOverview(repoNames);
+    }
+  } catch (err) {
+    console.warn('[digest] Failed to fetch security alerts:', err);
+  }
+
+  // 9. Health summary
   const unhealthyAgents = agentHealth.filter((a) => !a.healthy);
   const issueCount =
     failed.length +
@@ -243,6 +259,7 @@ export async function buildDailyDigest(): Promise<DigestData> {
     escalations: recentEscalations,
     feedbackProposals,
     eventStats,
+    securityOverview,
     issueCount,
     healthSummary,
   };
@@ -392,6 +409,32 @@ export function renderDigestHtml(data: DigestData): string {
         )
       : '';
 
+  // Security section
+  let securitySection = '';
+  if (data.securityOverview && data.securityOverview.totalAlerts > 0) {
+    const secRows = data.securityOverview.repos
+      .filter((r) => r.totalOpen > 0)
+      .map((r) => {
+        const repoShort = r.repo.split('/').pop() ?? r.repo;
+        const depTotal = r.dependabot.critical + r.dependabot.high + r.dependabot.medium + r.dependabot.low;
+        const csTotal = r.codeScanning.critical + r.codeScanning.high + r.codeScanning.medium + r.codeScanning.low;
+        const parts = [];
+        if (depTotal > 0) parts.push(`Dependabot: ${depTotal}`);
+        if (csTotal > 0) parts.push(`CodeQL: ${csTotal}`);
+        if (r.secretScanning.open > 0) parts.push(`Secrets: ${r.secretScanning.open}`);
+        return `
+          <tr>
+            <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;font-weight:500;">${escHtml(repoShort)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #f0f0f0;color:#6b7280;font-size:13px;">${parts.join(' &middot; ')}</td>
+          </tr>`;
+      })
+      .join('');
+    securitySection = section(
+      `\uD83D\uDEE1 Security Alerts (${data.securityOverview.totalAlerts} open)`,
+      table(secRows)
+    );
+  }
+
   const topEventTypes = Object.entries(data.eventStats.byType)
     .sort(([, a], [, b]) => b - a)
     .slice(0, 10)
@@ -432,6 +475,7 @@ export function renderDigestHtml(data: DigestData): string {
       ${mergedSection}
       ${openSection}
       ${workSection}
+      ${securitySection}
       ${agentSection}
       ${escSection}
       ${fbSection}

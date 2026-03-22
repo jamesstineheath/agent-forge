@@ -12,6 +12,7 @@ import { registerPMTools } from "./tools/pm";
 import { registerGitHubReadTools } from "./tools/github-read";
 import { registerBugTools } from "./tools/bugs";
 import { registerPlanTools } from "./tools/plans";
+import { registerSecurityTools } from "./tools/security";
 
 export function createMcpServer(): McpServer {
   const server = new McpServer({
@@ -27,6 +28,7 @@ export function createMcpServer(): McpServer {
   registerPMTools(server);
   registerGitHubReadTools(server);
   registerBugTools(server);
+  registerSecurityTools(server);
 
   return server;
 }
