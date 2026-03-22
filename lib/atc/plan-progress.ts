@@ -3,8 +3,8 @@
  * and writes structured progress snapshots to plan records.
  */
 
-import { getFileContent, listBranchCommits } from "@/lib/github";
-import { listPlans, updatePlanProgress } from "@/lib/plans";
+import { getFileContent, listBranchCommits, listPullRequests } from "@/lib/github";
+import { listPlans, updatePlanProgress, updatePlanStatus } from "@/lib/plans";
 import type { PlanProgress } from "@/lib/types";
 
 /**
@@ -123,4 +123,65 @@ export async function pollPlanProgress(): Promise<{
   }
 
   return { updated, errors };
+}
+
+/**
+ * Reconcile plans stuck in "reviewing" status.
+ * Checks if their PRs have been merged or closed on GitHub.
+ * Called by Health Monitor as a safety net for missed webhook events.
+ */
+export async function reconcileReviewingPlans(): Promise<{
+  reconciled: number;
+  errors: string[];
+}> {
+  const reviewingPlans = await listPlans({ status: "reviewing" });
+  let reconciled = 0;
+  const errors: string[] = [];
+
+  for (const plan of reviewingPlans) {
+    try {
+      const repoFullName = plan.targetRepo.includes("/")
+        ? plan.targetRepo
+        : `jamesstineheath/${plan.targetRepo}`;
+
+      // Check for PRs on this branch
+      const prs = await listPullRequests(repoFullName, {
+        head: plan.branchName,
+        state: "all",
+      });
+
+      if (prs.length === 0) continue;
+
+      // Check if any PR was merged
+      const mergedPR = prs.find(pr => pr.merged_at !== null);
+      if (mergedPR) {
+        console.log(`[plan-reconciliation] Plan ${plan.id} has merged PR #${mergedPR.number}, transitioning to complete`);
+        await updatePlanStatus(plan.id, "complete", {
+          prNumber: mergedPR.number,
+          prUrl: mergedPR.url,
+          completedAt: mergedPR.merged_at ?? new Date().toISOString(),
+        });
+        reconciled++;
+        continue;
+      }
+
+      // Check if all PRs are closed (none merged)
+      const allClosed = prs.every(pr => pr.state === "closed");
+      if (allClosed) {
+        console.log(`[plan-reconciliation] Plan ${plan.id} has all PRs closed (none merged), transitioning to failed`);
+        await updatePlanStatus(plan.id, "failed", {
+          errorLog: `All PRs closed without merge: ${prs.map(pr => `#${pr.number}`).join(", ")}`,
+        });
+        reconciled++;
+      }
+    } catch (err) {
+      errors.push(`${plan.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (reconciled > 0) {
+    console.log(`[plan-reconciliation] Reconciled ${reconciled} reviewing plan(s)`);
+  }
+
+  return { reconciled, errors };
 }

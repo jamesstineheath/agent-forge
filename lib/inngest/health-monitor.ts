@@ -23,7 +23,7 @@ export const healthMonitorCycle = inngest.createFunction(
       { event: "agent/health-monitor.requested" },
     ],
   },
-  async ({ step }) => {
+  async () => {
     const startTime = Date.now();
     const startedAt = new Date().toISOString();
     try {
@@ -39,101 +39,84 @@ export const healthMonitorCycle = inngest.createFunction(
     }
 
     // Step 1: Preflight
-    const preflight = await step.run("preflight", async () => {
-      if (await isPipelineKilled()) {
-        return { skipped: true, reason: "kill-switch" } as const;
-      }
-      const locked = await acquireLock(HEALTH_MONITOR_LOCK_KEY);
-      if (!locked) {
-        return { skipped: true, reason: "lock held" } as const;
-      }
-      return { skipped: false } as const;
-    });
-
-    if (preflight.skipped) {
-      return { success: true, skipped: true, reason: preflight.reason };
+    if (await isPipelineKilled()) {
+      return { success: true, skipped: true, reason: "kill-switch" };
+    }
+    const locked = await acquireLock(HEALTH_MONITOR_LOCK_KEY);
+    if (!locked) {
+      return { success: true, skipped: true, reason: "lock held" };
     }
 
     try {
       // Step 2: Health Monitoring
-      const healthResult = await step.run("health-monitoring", async () => {
-        const ctx: CycleContext = { now: new Date(), events: [] };
-        const activeExecutions = await runHealthMonitor(ctx);
-        return { events: ctx.events, activeExecutions };
-      });
+      const ctx: CycleContext = { now: new Date(), events: [] };
+      const activeExecutions = await runHealthMonitor(ctx);
+      const healthResult = { events: ctx.events, activeExecutions };
 
       // Step 2b: Dashboard self-health check
-      const dashboardHealth = await step.run(
-        "dashboard-health-check",
-        async () => {
-          const { checkDashboardHealth } = await import(
-            "@/lib/atc/health-monitor"
-          );
-          const result = await checkDashboardHealth();
-          if (!result.healthy) {
-            const { sendEmail } = await import("@/lib/gmail");
-            await sendEmail({
-              subject: "[Agent Forge] Dashboard API Health Alert",
-              body: `Dashboard health check failed.\n\nFailing endpoints:\n${result.failures.map((f) => `- ${f}`).join("\n")}\n\nThis may indicate a database schema mismatch, a deployment failure, or an infrastructure issue. Check Vercel runtime logs for details.`,
-            }).catch((err) =>
-              console.error(
-                "[health-monitor] Failed to send dashboard health alert:",
-                err
-              )
-            );
-          }
-          return result;
-        }
+      const { checkDashboardHealth } = await import(
+        "@/lib/atc/health-monitor"
       );
+      const dashboardHealth = await checkDashboardHealth();
+      if (!dashboardHealth.healthy) {
+        const { sendEmail } = await import("@/lib/gmail");
+        await sendEmail({
+          subject: "[Agent Forge] Dashboard API Health Alert",
+          body: `Dashboard health check failed.\n\nFailing endpoints:\n${dashboardHealth.failures.map((f) => `- ${f}`).join("\n")}\n\nThis may indicate a database schema mismatch, a deployment failure, or an infrastructure issue. Check Vercel runtime logs for details.`,
+        }).catch((err) =>
+          console.error(
+            "[health-monitor] Failed to send dashboard health alert:",
+            err
+          )
+        );
+      }
 
       // Step 2c: Plan progress polling
-      const progressResult = await step.run("plan-progress-polling", async () => {
-        const { pollPlanProgress } = await import("@/lib/atc/plan-progress");
-        return pollPlanProgress();
-      });
+      const { pollPlanProgress } = await import("@/lib/atc/plan-progress");
+      const progressResult = await pollPlanProgress();
+
+      // Step 2d: Reconcile stuck reviewing plans
+      const { reconcileReviewingPlans } = await import("@/lib/atc/plan-progress");
+      await reconcileReviewingPlans();
 
       // Step 3: HLO Polling (absorbed from Supervisor)
-      const hloResult = await step.run("hlo-polling", async () => {
-        const start = Date.now();
-        const output = await runHloPolling();
-        return { output, durationMs: Date.now() - start };
-      });
+      const hloStart = Date.now();
+      const hloOutput = await runHloPolling();
+      const hloResult = { output: hloOutput, durationMs: Date.now() - hloStart };
 
       // Step 4: Persist
-      await step.run("persist", async () => {
-        const allEvents = [...healthResult.events, ...hloResult.output.events];
-        await persistEvents(allEvents);
+      const allEvents = [...healthResult.events, ...hloResult.output.events];
+      await persistEvents(allEvents);
 
-        // Pipeline v2: plan counts for ATC state
-        const readyPlans = await listPlans({ status: "ready" });
-        const executingPlans = await listPlans({ status: "executing" });
-        await saveJson(ATC_STATE_KEY, {
-          lastRunAt: new Date().toISOString(),
-          activeExecutions: executingPlans.map(p => ({
-            workItemId: p.id,
-            targetRepo: p.targetRepo,
-            branch: p.branchName,
-            status: p.status,
-            startedAt: p.startedAt ?? p.createdAt,
-            elapsedMinutes: p.startedAt ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000) : 0,
-            filesBeingModified: p.affectedFiles ?? [],
-          })),
-          queuedItems: readyPlans.length,
-          recentEvents: allEvents.slice(-20),
-        });
-
-        const trace = startTrace("health-monitor");
-        addPhase(trace, { name: "health-check-cycle", durationMs: 0 });
-        addPhase(trace, { name: "plan-progress-polling", durationMs: 0 });
-        addPhase(trace, { name: "hlo-polling", durationMs: hloResult.durationMs });
-        for (const e of hloResult.output.errors) addError(trace, `hlo-polling: ${e}`);
-        completeTrace(trace, "success", `Health monitor cycle complete, ${allEvents.length} events`);
-        await persistTrace(trace);
-        await cleanupOldTraces("health-monitor", 7);
-
-        await recordAgentRun("health-monitor");
-        await releaseLock(HEALTH_MONITOR_LOCK_KEY);
+      // Pipeline v2: plan counts for ATC state
+      const readyPlans = await listPlans({ status: "ready" });
+      const executingPlans = await listPlans({ status: "executing" });
+      await saveJson(ATC_STATE_KEY, {
+        lastRunAt: new Date().toISOString(),
+        activeExecutions: executingPlans.map(p => ({
+          workItemId: p.id,
+          targetRepo: p.targetRepo,
+          branch: p.branchName,
+          status: p.status,
+          startedAt: p.startedAt ?? p.createdAt,
+          elapsedMinutes: p.startedAt ? Math.round((Date.now() - new Date(p.startedAt).getTime()) / 60000) : 0,
+          filesBeingModified: p.affectedFiles ?? [],
+        })),
+        queuedItems: readyPlans.length,
+        recentEvents: allEvents.slice(-20),
       });
+
+      const trace = startTrace("health-monitor");
+      addPhase(trace, { name: "health-check-cycle", durationMs: 0 });
+      addPhase(trace, { name: "plan-progress-polling", durationMs: 0 });
+      addPhase(trace, { name: "hlo-polling", durationMs: hloResult.durationMs });
+      for (const e of hloResult.output.errors) addError(trace, `hlo-polling: ${e}`);
+      completeTrace(trace, "success", `Health monitor cycle complete, ${allEvents.length} events`);
+      await persistTrace(trace);
+      await cleanupOldTraces("health-monitor", 7);
+
+      await recordAgentRun("health-monitor");
+      await releaseLock(HEALTH_MONITOR_LOCK_KEY);
 
       try {
         await writeExecutionLog({
@@ -149,9 +132,7 @@ export const healthMonitorCycle = inngest.createFunction(
 
       return { success: true, events: healthResult.events.length + hloResult.output.events.length };
     } catch (err) {
-      await step.run("release-lock-on-error", async () => {
-        await releaseLock(HEALTH_MONITOR_LOCK_KEY);
-      });
+      await releaseLock(HEALTH_MONITOR_LOCK_KEY);
 
       try {
         await writeExecutionLog({

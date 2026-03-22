@@ -8,6 +8,7 @@
 
 import type { WebhookEvent } from "./event-bus-types";
 import { findWorkItemByBranch, findWorkItemByPR, updateWorkItem } from "./work-items";
+import { findPlanByBranch, findPlanByPR, updatePlanStatus } from "./plans";
 import { triggerWorkflow, deleteBranch, mergePR } from "./github";
 import { dispatchUnblockedItems } from "./atc/dispatcher";
 import { MAX_RETRIES } from "./atc/types";
@@ -36,6 +37,9 @@ async function reactToEvent(event: WebhookEvent): Promise<void> {
       break;
     case "github.ci.failed":
       await handleCIFailed(event);
+      break;
+    case "github.pr.opened":
+      await handlePROpened(event);
       break;
     case "github.pr.merged":
       await handlePRMerged(event);
@@ -141,15 +145,39 @@ async function handleCIFailed(event: WebhookEvent): Promise<void> {
 }
 
 /**
- * PR merged → transition to merged + dispatch unblocked items.
+ * PR opened → link PR to plan record so dashboard shows the PR link.
+ */
+async function handlePROpened(event: WebhookEvent): Promise<void> {
+  const { prNumber, branch } = event.payload;
+  if (!prNumber || !branch || branch === "main") return;
+
+  // Link PR to plan (if this branch belongs to a plan)
+  const plan = await findPlanByBranch(branch);
+  if (!plan) return;
+
+  // Only update if plan doesn't already have a PR linked
+  if (plan.prNumber) return;
+
+  const prUrl = `https://github.com/${event.repo}/pull/${prNumber}`;
+  console.log(`${LOG_PREFIX} [plan] PR #${prNumber} opened for plan ${plan.id}, linking`);
+
+  await updatePlanStatus(plan.id, plan.status, {
+    prNumber,
+    prUrl,
+  });
+}
+
+/**
+ * PR merged → transition work item to merged + transition plan to complete.
  */
 async function handlePRMerged(event: WebhookEvent): Promise<void> {
   const { prNumber, branch } = event.payload;
   if (!prNumber) return;
 
-  // Try PR-based lookup first, then fall back to branch-based lookup.
-  // The PR lookup can fail if repo normalization differs between the webhook
-  // event's repo field and the work item's targetRepo.
+  // Pipeline v2: Check if this PR belongs to a plan
+  await handlePlanPRMerged(event.repo, prNumber, branch);
+
+  // Legacy: Check if this PR belongs to a work item
   let item = await findWorkItemByPR(event.repo, prNumber);
   if (!item && branch) {
     item = await findWorkItemByBranch(branch);
@@ -322,4 +350,36 @@ async function handleWorkflowCompleted(event: WebhookEvent): Promise<void> {
       },
     });
   }
+}
+
+// ── Pipeline v2: Plan lifecycle transitions ────────────────────────────────
+
+/**
+ * When a PR is merged, find any plan associated with its branch and
+ * transition it to "complete". Links the PR to the plan record.
+ */
+async function handlePlanPRMerged(
+  repo: string,
+  prNumber: number,
+  branch?: string,
+): Promise<void> {
+  let plan = await findPlanByPR(repo, prNumber);
+  if (!plan && branch) {
+    plan = await findPlanByBranch(branch);
+    if (plan) {
+      console.log(`${LOG_PREFIX} [plan] findPlanByPR missed PR #${prNumber}, found via branch: ${plan.id}`);
+    }
+  }
+  if (!plan) return;
+
+  if (plan.status === "complete") return;
+
+  const prUrl = `https://github.com/${repo}/pull/${prNumber}`;
+  console.log(`${LOG_PREFIX} [plan] PR #${prNumber} merged for plan ${plan.id} ("${plan.prdTitle}")`);
+
+  await updatePlanStatus(plan.id, "complete", {
+    prNumber,
+    prUrl,
+    completedAt: new Date().toISOString(),
+  });
 }
