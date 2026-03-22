@@ -9,7 +9,7 @@ import {
   json,
   index,
 } from "drizzle-orm/pg-core";
-import type { SpikeMetadata } from "../types";
+import type { SpikeMetadata, PrdType } from "../types";
 
 /**
  * Work items table — replaces the Vercel Blob two-layer store.
@@ -107,6 +107,7 @@ export const plans = pgTable(
     id: text("id").primaryKey(),
     prdId: text("prd_id").notNull(),
     prdTitle: text("prd_title").notNull(),
+    prdType: text("prd_type").notNull().default("feature").$type<PrdType>(),
     targetRepo: text("target_repo").notNull(),
     branchName: text("branch_name").notNull(),
     status: text("status").notNull().default("ready"),
@@ -141,6 +142,7 @@ export const plans = pgTable(
       lastUpdated: string;
     } | null>(),
     reviewFeedback: text("review_feedback"),
+    spikeMetadata: json("spike_metadata").$type<SpikeMetadata>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -25,6 +25,7 @@ interface ApprovedPRD {
   title: string;
   targetRepo: string | null;
   rank: number | null;
+  type: "feature" | "spike";
 }
 
 /**
@@ -69,6 +70,7 @@ async function queryApprovedPRDs(): Promise<ApprovedPRD[]> {
         Rank?: { number?: number | null };
         "AF Project ID"?: { rich_text?: Array<{ plain_text?: string }> };
         ID?: { unique_id?: { prefix?: string; number?: number } };
+        Type?: { select?: { name?: string } };
       };
     }
 
@@ -81,12 +83,14 @@ async function queryApprovedPRDs(): Promise<ApprovedPRD[]> {
         }
       }
 
+      const rawType = page.properties?.Type?.select?.name?.toLowerCase();
       return {
         id: page.id,
         projectId: projectId ?? page.id,
         title: page.properties?.["PRD Title"]?.title?.[0]?.plain_text ?? "Untitled",
         targetRepo: page.properties?.["Target Repo"]?.select?.name ?? null,
         rank: page.properties?.Rank?.number ?? null,
+        type: rawType === "spike" ? "spike" as const : "feature" as const,
       };
     });
   } catch (err) {
@@ -244,18 +248,22 @@ export const planPipeline = inngest.createFunction(
             }
 
             // 3. Estimate budget and duration
-            const criteriaCount = countCriteria(prdContent);
-            const estimatedBudget = criteriaCount * BUDGET_PER_CRITERION;
-            const maxDuration = estimateMaxDuration(criteriaCount);
+            const isSpike = prd.type === "spike";
+            const criteriaCount = isSpike ? 1 : countCriteria(prdContent);
+            const estimatedBudget = isSpike ? 3 : criteriaCount * BUDGET_PER_CRITERION;
+            const maxDuration = isSpike ? 60 : estimateMaxDuration(criteriaCount);
 
-            // 4. Scope guardrail
-            const status = estimatedBudget > MAX_AUTO_BUDGET ? "needs_review" : "ready";
+            // 4. Scope guardrail (spikes are always auto-dispatched — small budget)
+            const status = (!isSpike && estimatedBudget > MAX_AUTO_BUDGET) ? "needs_review" : "ready";
 
             // 5. Create Plan record
-            const branchName = generateBranchName(prd.projectId, prd.title);
+            const branchName = isSpike
+              ? `spike/${prd.projectId.toLowerCase().replace(/[^a-z0-9-]/g, "-")}`
+              : generateBranchName(prd.projectId, prd.title);
             const plan = await createPlan({
               prdId: prd.projectId,
               prdTitle: prd.title,
+              prdType: prd.type,
               targetRepo,
               branchName,
               acceptanceCriteria: prdContent,

@@ -917,6 +917,8 @@ export type InngestFunctionStatus = {
 
 // ── Pipeline v2: Plans ──────────────────────────────────────────────────────
 
+export type PrdType = "feature" | "spike";
+
 export type PlanStatus =
   | "ready"
   | "dispatching"
@@ -932,6 +934,7 @@ export interface Plan {
   id: string;
   prdId: string;
   prdTitle: string;
+  prdType: PrdType;
   targetRepo: string;
   branchName: string;
   status: PlanStatus;
@@ -956,6 +959,7 @@ export interface Plan {
   prdRank: number | null;
   progress: PlanProgress | null;
   reviewFeedback: string | null;
+  spikeMetadata: SpikeMetadata | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -973,6 +977,7 @@ export interface PlanProgress {
 export interface CreatePlanInput {
   prdId: string;
   prdTitle: string;
+  prdType?: PrdType;
   targetRepo: string;
   branchName: string;
   acceptanceCriteria: string;
@@ -982,4 +987,5 @@ export interface CreatePlanInput {
   maxDurationMinutes?: number;
   status?: PlanStatus;
   prdRank?: number;
+  spikeMetadata?: SpikeMetadata;
 }
