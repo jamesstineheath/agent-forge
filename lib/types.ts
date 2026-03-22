@@ -935,7 +935,8 @@ export type PlanStatus =
   | "failed"
   | "timed_out"
   | "budget_exceeded"
-  | "needs_review";
+  | "needs_review"
+  | "parked";
 
 export interface Plan {
   id: string;

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import type { Plan } from "@/lib/types";
+import { usePlans } from "@/lib/hooks";
+import type { PlanStatus } from "@/lib/types";
 
 const STATUS_COLORS: Record<string, string> = {
   ready: "bg-blue-100 text-blue-800",
@@ -14,6 +15,7 @@ const STATUS_COLORS: Record<string, string> = {
   timed_out: "bg-red-100 text-red-800",
   budget_exceeded: "bg-red-100 text-red-800",
   needs_review: "bg-amber-100 text-amber-800",
+  parked: "bg-gray-100 text-gray-800",
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -33,45 +35,40 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+const FILTER_STATUSES: PlanStatus[] = [
+  "needs_review", "ready", "executing", "reviewing", "complete", "failed",
+];
+
 export default function PlansPage() {
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("");
-
-  useEffect(() => {
-    const fetchPlans = () => {
-      const url = filter ? `/api/plans?status=${filter}` : "/api/plans";
-      fetch(url)
-        .then((r) => r.json())
-        .then((data) => setPlans(data.plans ?? []))
-        .catch(() => setPlans([]))
-        .finally(() => setLoading(false));
-    };
-
-    fetchPlans();
-    const interval = setInterval(fetchPlans, 30000);
-    return () => clearInterval(interval);
-  }, [filter]);
+  const [filter, setFilter] = useState<PlanStatus | "">("");
+  const { plans, isLoading, mutate } = usePlans(
+    filter ? { status: filter } : undefined
+  );
 
   const handleRetrigger = async (planId: string) => {
     try {
       await fetch(`/api/plans/${planId}/retrigger`, { method: "POST" });
-      // Refresh
-      const r = await fetch(filter ? `/api/plans?status=${filter}` : "/api/plans");
-      const data = await r.json();
-      setPlans(data.plans ?? []);
+      mutate();
     } catch {
       // Silent fail
     }
   };
 
-  // Summary counts
+  // Summary counts (across all plans when no filter)
   const counts = plans.reduce((acc, p) => {
     acc[p.status] = (acc[p.status] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
-  const totalCost = plans.reduce((sum, p) => sum + (p.actualCost ?? 0), 0);
+  const totalEstimatedCost = plans
+    .filter((p) => p.status === "ready" || p.status === "executing")
+    .reduce((sum, p) => sum + (p.estimatedBudget ?? 0), 0);
+
+  const totalActualCost = plans
+    .filter((p) => p.status === "complete")
+    .reduce((sum, p) => sum + (p.actualCost ?? 0), 0);
+
+  const needsReviewCount = counts["needs_review"] ?? 0;
 
   return (
     <div className="space-y-6">
@@ -80,29 +77,62 @@ export default function PlansPage() {
         <p className="text-muted-foreground">Pipeline v2: One plan per PRD, one branch, one PR.</p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {(["ready", "executing", "reviewing", "complete", "failed"] as const).map((status) => (
+      {/* AC3: Summary card */}
+      <div className="rounded-lg border p-4 bg-muted/30">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div>
+            <div className="text-muted-foreground">Total Plans</div>
+            <div className="text-2xl font-bold">{plans.length}</div>
+          </div>
+          <div>
+            <div className="text-muted-foreground">Active (ready + executing)</div>
+            <div className="text-2xl font-bold">{(counts["ready"] ?? 0) + (counts["executing"] ?? 0)}</div>
+            {totalEstimatedCost > 0 && (
+              <div className="text-xs text-muted-foreground">Est. cost: ${totalEstimatedCost.toFixed(0)}</div>
+            )}
+          </div>
+          <div>
+            <div className="text-muted-foreground">Completed</div>
+            <div className="text-2xl font-bold">{counts["complete"] ?? 0}</div>
+            {totalActualCost > 0 && (
+              <div className="text-xs text-muted-foreground">Actual cost: ${totalActualCost.toFixed(2)}</div>
+            )}
+          </div>
+          <div>
+            <div className="text-muted-foreground">Failed / Timed Out</div>
+            <div className="text-2xl font-bold text-red-600">
+              {(counts["failed"] ?? 0) + (counts["timed_out"] ?? 0) + (counts["budget_exceeded"] ?? 0)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Status filter chips */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => setFilter("")}
+          className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${!filter ? "ring-2 ring-primary bg-primary/10" : "hover:bg-accent"}`}
+        >
+          All
+        </button>
+        {FILTER_STATUSES.map((status) => (
           <button
             key={status}
             onClick={() => setFilter(filter === status ? "" : status)}
-            className={`rounded-lg border p-4 text-left transition-colors hover:bg-accent ${filter === status ? "ring-2 ring-primary" : ""}`}
+            className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${filter === status ? "ring-2 ring-primary bg-primary/10" : "hover:bg-accent"} ${status === "needs_review" && needsReviewCount > 0 ? "border-amber-400 bg-amber-50" : ""}`}
           >
-            <div className="text-2xl font-bold">{counts[status] ?? 0}</div>
-            <div className="text-sm text-muted-foreground capitalize">{status.replace(/_/g, " ")}</div>
+            {status.replace(/_/g, " ")}
+            <span className="ml-1 font-medium">{counts[status] ?? 0}</span>
+            {/* AC2: attention indicator */}
+            {status === "needs_review" && needsReviewCount > 0 && (
+              <span className="ml-1 inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+            )}
           </button>
         ))}
       </div>
 
-      {/* Total cost */}
-      {totalCost > 0 && (
-        <div className="text-sm text-muted-foreground">
-          Total actual cost: <span className="font-medium">${totalCost.toFixed(2)}</span>
-        </div>
-      )}
-
       {/* Plans table */}
-      {loading ? (
+      {isLoading ? (
         <div className="text-muted-foreground">Loading plans...</div>
       ) : plans.length === 0 ? (
         <div className="text-muted-foreground">No plans found{filter ? ` with status "${filter}"` : ""}.</div>
@@ -126,12 +156,20 @@ export default function PlansPage() {
             </thead>
             <tbody>
               {plans.map((plan) => (
-                <tr key={plan.id} className="border-b hover:bg-muted/30">
+                <tr
+                  key={plan.id}
+                  className={`border-b hover:bg-muted/30 ${plan.status === "needs_review" ? "bg-amber-50/50" : ""}`}
+                >
                   <td className="p-3">
                     <Link href={`/plans/${plan.id}`} className="font-medium hover:underline">{plan.prdId}</Link>
                     <div className="text-xs text-muted-foreground truncate max-w-[200px]">{plan.prdTitle}</div>
                   </td>
-                  <td className="p-3"><StatusBadge status={plan.status} /></td>
+                  <td className="p-3">
+                    <StatusBadge status={plan.status} />
+                    {plan.status === "needs_review" && (
+                      <span className="ml-1 inline-block h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                    )}
+                  </td>
                   <td className="p-3 text-xs">
                     {plan.status === "executing" && plan.progress ? (
                       <Link href={`/plans/${plan.id}`} className="text-purple-600 font-medium hover:underline">
@@ -155,7 +193,7 @@ export default function PlansPage() {
                     ) : "-"}
                   </td>
                   <td className="p-3 text-right">${plan.estimatedBudget?.toFixed(0) ?? "-"}</td>
-                  <td className="p-3 text-right">{plan.actualCost ? `$${plan.actualCost.toFixed(2)}` : "-"}</td>
+                  <td className="p-3 text-right">{plan.actualCost != null ? `$${plan.actualCost.toFixed(2)}` : "-"}</td>
                   <td className="p-3 text-right">{formatDuration(plan.startedAt, plan.completedAt)}</td>
                   <td className="p-3 text-center">{plan.retryCount > 0 ? plan.retryCount : "-"}</td>
                   <td className="p-3">
@@ -166,6 +204,14 @@ export default function PlansPage() {
                       >
                         Retry
                       </button>
+                    )}
+                    {plan.status === "needs_review" && (
+                      <Link
+                        href={`/plans/${plan.id}`}
+                        className="text-xs px-2 py-1 bg-amber-500 text-white rounded hover:bg-amber-600"
+                      >
+                        Review
+                      </Link>
                     )}
                   </td>
                 </tr>
